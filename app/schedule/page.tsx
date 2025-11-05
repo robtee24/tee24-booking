@@ -16,7 +16,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type BayCol = { id: string; number: number; name: string | null };
@@ -88,7 +88,25 @@ function nameCompact(fn: string, ln: string) {
   return `${first ? first[0] + "." : ""} ${last}`.trim();
 }
 
+/** Wrapper to satisfy Next's CSR bailout rule for useSearchParams */
 export default function LocationSchedulePage() {
+  return (
+    <Suspense fallback={<ScheduleFallback />}>
+      <ScheduleInner />
+    </Suspense>
+  );
+}
+
+function ScheduleFallback() {
+  return (
+    <main className="mx-auto max-w-2xl p-6">
+      <h1 className="text-xl font-semibold mb-2">Location schedule (read-only)</h1>
+      <p className="text-sm text-gray-700">Loading…</p>
+    </main>
+  );
+}
+
+function ScheduleInner() {
   const sp = useSearchParams();
   const slug = sp.get("slug")?.trim() || "";
   const dParam = coerceDay(sp.get("d"));
@@ -337,5 +355,6 @@ export default function LocationSchedulePage() {
     </div>
   );
 }
+
 
 
