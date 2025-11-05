@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://placeholder:password@localhost:5432/db?schema=public" // placeholder
+  url      = "file:./prisma/dev.db"
 }
 
 /**
