@@ -261,10 +261,10 @@ export async function POST(req: NextRequest) {
         start,
         end,
         firstName: String(firstName),
-        // ✅ FIX: provide empty string if lastName is missing to satisfy required string type
+        // ensure required strings
         lastName: lastName ? String(lastName) : "",
         email: emailLower ?? "",
-        phone: phoneForStorage ?? "", // store first normalized number (if provided)
+        phone: phoneForStorage ?? "",
         managementToken,
       },
       select: {
@@ -368,7 +368,6 @@ export async function POST(req: NextRequest) {
       }
     } else {
       // No text template configured
-      // (Do not throw; just log for visibility)
       console.error("Admin SMS confirmation skipped: no TEXT confirmation template configured.");
     }
 
@@ -394,7 +393,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-
-
-
