@@ -107,9 +107,10 @@ function ScheduleFallback() {
 }
 
 function ScheduleInner() {
-  const sp = useSearchParams();
-  const slug = sp.get("slug")?.trim() || "";
-  const dParam = coerceDay(sp.get("d"));
+  // ✅ Next 16: useSearchParams can be null at build/prerender — make it null-safe
+  const sp = useSearchParams() as URLSearchParams | null;
+  const slug = (sp?.get("slug") ?? "").trim();
+  const dParam = coerceDay(sp?.get("d") ?? null);
 
   const [data, setData] = useState<ApiOk | null>(null);
   const [loading, setLoading] = useState(false);
@@ -355,6 +356,7 @@ function ScheduleInner() {
     </div>
   );
 }
+
 
 
 
