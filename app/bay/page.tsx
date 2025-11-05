@@ -88,8 +88,8 @@ export default function Page() {
 /** The original component (unchanged logic) */
 function BayCalendarPage() {
   const sp = useSearchParams();
-  const id = sp.get("id")?.trim() || "";
-  const dParam = coerceDay(sp.get("d"));
+  const id = ((sp && sp.get("id")) || "").trim();
+  const dParam = coerceDay(sp?.get("d"));
 
   const [data, setData] = useState<ApiOk | null>(null);
   const [loading, setLoading] = useState(false);
