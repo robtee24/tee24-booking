@@ -30,7 +30,8 @@ type LocationSettings = {
 
 /* ---------- Page ---------- */
 export default function LocationDetailsPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const rawParams = useParams() as { slug?: string } | null;
+  const slug = (rawParams?.slug ?? '').toString();
   const router = useRouter();
   const searchParams = useSearchParams();
 

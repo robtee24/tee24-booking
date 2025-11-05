@@ -53,36 +53,33 @@ function getOrigin() {
   return process.env.NEXT_PUBLIC_BASE_URL || '';
 }
 
-// robust clipboard (guards for SSR)
+// robust clipboard
 async function copyToClipboard(text: string) {
   try {
-    if (typeof navigator !== 'undefined' && 'clipboard' in navigator && typeof window !== 'undefined' && window.isSecureContext) {
+    if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
       return true;
     }
   } catch {}
   try {
-    if (typeof document !== 'undefined') {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      return true;
-    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    return true;
   } catch {
-    // noop
+    return false;
   }
-  return false;
 }
 
 export default function BaysAdminPage() {
-  // ❗ null-safe useParams for Next 16/TS
-  const params = useParams<{ slug: string } | null>();
-  const locationSlug = (params?.slug ?? '').toString();
+  // ✅ Do NOT put `| null` in the generic. Cast the untyped return instead.
+  const rawParams = useParams() as { slug?: string } | null;
+  const locationSlug = (rawParams?.slug ?? '').toString();
 
   const [location, setLocation] = useState<LocationDTO | null>(null);
   const [bays, setBays] = useState<Bay[]>([]);

@@ -125,7 +125,8 @@ function labelForHour(i: number) {
 }
 
 export default function LocationBookingsPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const params = useParams() as { slug?: string } | null;
+  const slug = (params?.slug ?? "").toString();
 
   // state
   const [date, setDate] = useState<Date>(startOfDay(new Date()));

@@ -44,7 +44,6 @@ function insertAtCaret_contentEditable(el: HTMLElement, html: string) {
   el.focus();
   const sel = window.getSelection?.();
   if (!sel || sel.rangeCount === 0) {
-    // fallback: append
     el.insertAdjacentHTML('beforeend', html);
     return;
   }
@@ -136,7 +135,6 @@ function RichEmailEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // Keep DOM in sync with value (but do not disrupt typing)
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -155,7 +153,6 @@ function RichEmailEditor({
     };
     // eslint-disable-next-line deprecation/deprecation
     document.execCommand(map[cmd]);
-    // capture updated HTML
     const el = ref.current;
     if (el) onChange(el.innerHTML);
   };
@@ -196,9 +193,7 @@ function RichEmailEditor({
         onInput={(e) => onChange((e.target as HTMLDivElement).innerHTML)}
         onBlur={(e) => onChange((e.target as HTMLDivElement).innerHTML)}
         suppressContentEditableWarning
-        style={{
-          whiteSpace: 'pre-wrap',
-        }}
+        style={{ whiteSpace: 'pre-wrap' }}
       />
       <p className="mt-1 text-xs text-gray-500">
         This editor stores <strong>HTML</strong>. Merge fields are inserted like <code>{'{{firstName}}'}</code>.
@@ -254,8 +249,9 @@ function SmsToolbar({
 /* ----------------------------- Page ----------------------------- */
 
 export default function NotificationsPage() {
-  const params = useParams<{ slug: string }>();
-  const slug = params?.slug;
+  // ✅ Null-safe params pattern for Next 16
+  const rawParams = useParams() as { slug?: string } | null;
+  const slug = (rawParams?.slug ?? '').toString();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -271,10 +267,7 @@ export default function NotificationsPage() {
   const [emailNotifs, setEmailNotifs] = useState<ScheduledItem[]>([]);
   const [textNotifs, setTextNotifs] = useState<ScheduledItem[]>([]);
 
-  const dirty = useMemo(() => {
-    // Simple always-dirty signal (same as before)
-    return true;
-  }, [
+  const dirty = useMemo(() => true, [
     confirmEmailEnabled,
     confirmEmailTpl,
     confirmSmsEnabled,
@@ -291,9 +284,7 @@ export default function NotificationsPage() {
         setError(null);
         setOkMsg(null);
 
-        const res = await fetch(`/api/admin/locations/${slug}/notifications`, {
-          cache: 'no-store',
-        });
+        const res = await fetch(`/api/admin/locations/${slug}/notifications`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`Load failed: ${res.status}`);
         const data: LoadedData = await res.json();
         if (abort) return;
@@ -320,9 +311,7 @@ export default function NotificationsPage() {
       }
     }
     if (slug) load();
-    return () => {
-      abort = true;
-    };
+    return () => { abort = true; };
   }, [slug]);
 
   async function onSave() {
@@ -388,14 +377,10 @@ export default function NotificationsPage() {
 
   function removeFrom(kind: 'email' | 'text', idx: number) {
     if (kind === 'email') {
-      const next = emailNotifs
-        .filter((_, i) => i !== idx)
-        .map((n, i) => ({ ...n, orderIndex: i }));
+      const next = emailNotifs.filter((_, i) => i !== idx).map((n, i) => ({ ...n, orderIndex: i }));
       setEmailNotifs(next);
     } else {
-      const next = textNotifs
-        .filter((_, i) => i !== idx)
-        .map((n, i) => ({ ...n, orderIndex: i }));
+      const next = textNotifs.filter((_, i) => i !== idx).map((n, i) => ({ ...n, orderIndex: i }));
       setTextNotifs(next);
     }
   }
@@ -709,5 +694,3 @@ async function safeJson(res: Response) {
     return null;
   }
 }
-
-
