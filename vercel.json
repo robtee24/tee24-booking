@@ -4,10 +4,5 @@
     "env": {
       "NEXT_PRIVATE_TARGET": "server"
     }
-  },
-  "functions": {
-    "app/api/ping/route.ts": {
-      "runtime": "nodejs18.x"
-    }
   }
 }
