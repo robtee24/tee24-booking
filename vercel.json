@@ -1,7 +1,12 @@
 {
+  "version": 3,
   "build": {
     "env": {
-      "NEXT_PRIVATE_TARGET": "server"
+      "NEXT_PRIVATE_TARGET": "server",
+      "NODE_ENV": "production"
     }
-  }
+  },
+  "routes": [
+    { "src": "/api/ping", "dest": "/api/ping" }
+  ]
 }
