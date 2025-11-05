@@ -1,0 +1,187 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+/**
+ * =========================
+ * Enums
+ * =========================
+ */
+enum AdminRole {
+  ROOT
+  FULL
+  SCOPED
+}
+
+enum NotificationKind {
+  CONFIRMATION // use hoursBefore = 0
+  NOTIFICATION // hoursBefore > 0
+}
+
+enum NotificationChannel {
+  EMAIL
+  TEXT
+}
+
+// NEW ENUMS
+enum BayKind {
+  SINGLE   // one golfer, handedness-specific
+  GROUP    // multi-golfer, either handedness
+}
+
+enum Handedness {
+  RH
+  LH
+}
+
+/**
+ * =========================
+ * Models
+ * =========================
+ */
+
+model Location {
+  id   String @id @default(uuid())
+  name String
+  slug String @unique
+
+  // Soft enable/disable for booking & admin visibility
+  disabled Boolean @default(false)
+
+  // Messaging defaults
+  bookingNote   String?
+  emailTemplate String?
+  smsTemplate   String?
+  passAccessUrl String? // URL to purchase / passes page
+
+  // Hours & Booking Rules
+  open24Hours                    Boolean @default(false)
+  hours                          Json // init to [] in app if null
+  minBookingMinutes              Int     @default(60)
+  maxBookingMinutes              Int     @default(120)
+  maxActiveBookingsPerGuest      Int     @default(2)
+  activeBookingIdentifyBy        String  @default("either") // or use enum (recommended)
+  activeBookingWindowHours       Int     @default(24)
+  maxConsecutiveBookingsPerGuest Int     @default(2)
+
+  // Relations
+  bays           Bay[]
+  bookings       Booking[]
+  adminLinks     AdminLocation[]
+  notifications  Notification[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bay {
+  id         String   @id @default(uuid())
+  number     Int
+  /// Human-friendly label (e.g., “Front Left”, “VIP 1”). Optional to avoid breaking existing rows.
+  name       String?
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // NEW FIELDS
+  kind        BayKind     @default(GROUP)
+  handedness  Handedness? // only set when kind = SINGLE
+  capacity    Int         @default(4) // for groups; can leave 1 for singles if you want
+
+  @@unique([locationId, number])
+  @@index([locationId])
+}
+
+model Booking {
+  id              String    @id @default(uuid())
+  locationId      String
+  bayNumber       Int
+  start           DateTime
+  end             DateTime
+  firstName       String
+  lastName        String
+  phone           String
+  email           String
+  managementToken String    @unique @default(uuid())
+  canceledAt      DateTime?
+  createdAt       DateTime  @default(now())
+  Location        Location  @relation(fields: [locationId], references: [id])
+
+  @@index([locationId, bayNumber, start])
+  @@index([locationId, start, end])
+  @@index([email, start])
+}
+
+// --- Admins & Access Control ---
+
+model Admin {
+  id        String    @id @default(cuid())
+  phone     String    @unique
+  name      String?
+  role      AdminRole @default(SCOPED)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // For SCOPED admins, which locations they can access
+  locations AdminLocation[]
+}
+
+model AdminLocation {
+  id         String   @id @default(cuid())
+  adminId    String
+  locationId String
+  createdAt  DateTime @default(now())
+
+  admin    Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, locationId])
+}
+
+/**
+ * =========================
+ * NEW: Notifications (final)
+ * =========================
+ */
+model Notification {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  kind    NotificationKind
+  channel NotificationChannel
+
+  hoursBefore Int     @default(0) // 0 = confirmation; >0 = hours before booking
+  template    String
+  enabled     Boolean @default(true)
+  order       Int     @default(0) // manual sort / sequence
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, kind, channel, hoursBefore])
+  @@index([locationId, kind, channel])
+}
+
+model NotificationLog {
+  id              String   @id @default(cuid())
+  bookingId       String
+  notificationId  String
+  channel         NotificationChannel
+  status          String   // "SENT" | "FAILED"
+  providerId      String?  // message id from provider (email/sms)
+  error           String?  // error text if failed
+  sentAt          DateTime @default(now())
+
+  @@unique([bookingId, notificationId, channel]) // idempotency
+  @@index([bookingId])
+  @@index([notificationId])
+}
+
