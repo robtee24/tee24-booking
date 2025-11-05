@@ -20,7 +20,10 @@ function clear(res: NextResponse, name: string) {
 export async function POST(_req: NextRequest) {
   const res = NextResponse.json({ ok: true });
 
-  // Clear common/likely cookies + any that start with "admin" or end with "_token"/"_session".
+  // ✅ NEW: await the cookies() Promise
+  const cookieStore = await reqCookies();
+  const all = cookieStore.getAll();
+
   const known = new Set([
     "admin_auth",
     "admin_session",
@@ -32,7 +35,7 @@ export async function POST(_req: NextRequest) {
     "refresh_token",
   ]);
 
-  for (const c of reqCookies().getAll()) {
+  for (const c of all) {
     const n = c.name;
     const lower = n.toLowerCase();
     if (
@@ -52,7 +55,12 @@ export async function POST(_req: NextRequest) {
 export async function GET(req: NextRequest) {
   const redirect = req.nextUrl.searchParams.get("redirect");
   const res = NextResponse.json({ ok: true });
-  for (const c of reqCookies().getAll()) {
+
+  // ✅ NEW: await the cookies() Promise
+  const cookieStore = await reqCookies();
+  const all = cookieStore.getAll();
+
+  for (const c of all) {
     const n = c.name;
     const lower = n.toLowerCase();
     if (
@@ -64,12 +72,19 @@ export async function GET(req: NextRequest) {
       n === "access_token" ||
       n === "refresh_token"
     ) {
-      // clear it
       for (const path of ["/", "/admin"]) {
-        res.cookies.set({ name: n, value: "", path, httpOnly: true, sameSite: "lax", maxAge: 0 });
+        res.cookies.set({
+          name: n,
+          value: "",
+          path,
+          httpOnly: true,
+          sameSite: "lax",
+          maxAge: 0,
+        });
       }
     }
   }
-  // If you REALLY want a redirect on GET, do a client-side one after calling this.
+
+  // You can optionally redirect client-side using the ?redirect param if desired.
   return res;
 }
