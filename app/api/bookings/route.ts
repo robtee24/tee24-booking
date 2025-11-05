@@ -278,9 +278,10 @@ export async function POST(req: NextRequest) {
         start,
         end,
         firstName: String(firstName),
-        lastName: lastName ? String(lastName) : null,
-        email: emailLower,
-        phone: phoneNorm ?? phone,
+        // Ensure non-null strings for required columns:
+        lastName: lastName ? String(lastName) : "",
+        email: emailLower ?? "",
+        phone: (phoneNorm ?? phone ?? "") as string,
         managementToken,
       },
       select: {
