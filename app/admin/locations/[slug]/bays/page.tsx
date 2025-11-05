@@ -53,31 +53,37 @@ function getOrigin() {
   return process.env.NEXT_PUBLIC_BASE_URL || '';
 }
 
-// robust clipboard
+// robust clipboard (guards for SSR)
 async function copyToClipboard(text: string) {
   try {
-    if (navigator.clipboard && window.isSecureContext) {
+    if (typeof navigator !== 'undefined' && 'clipboard' in navigator && typeof window !== 'undefined' && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
       return true;
     }
   } catch {}
   try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    return true;
+    if (typeof document !== 'undefined') {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    }
   } catch {
-    return false;
+    // noop
   }
+  return false;
 }
 
 export default function BaysAdminPage() {
-  const { slug } = useParams<{ slug: string }>();
+  // ❗ null-safe useParams for Next 16/TS
+  const params = useParams<{ slug: string } | null>();
+  const locationSlug = (params?.slug ?? '').toString();
+
   const [location, setLocation] = useState<LocationDTO | null>(null);
   const [bays, setBays] = useState<Bay[]>([]);
   const [state, setState] = useState<FetchState>({ status: 'idle' });
@@ -106,7 +112,6 @@ export default function BaysAdminPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const origin = useMemo(getOrigin, []);
-  const locationSlug = String(slug || '');
   const viewOrigin = process.env.NEXT_PUBLIC_BASE_URL || origin;
   const todayISO = useMemo(() => ymd(new Date()), []);
 
@@ -747,5 +752,6 @@ export default function BaysAdminPage() {
     </div>
   );
 }
+
 
 
