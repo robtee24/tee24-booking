@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type BookingDTO = {
@@ -69,7 +69,24 @@ function fmtHourLabel(h: number) {
   }).format(base);
 }
 
-export default function BayCalendarPage() {
+/** --- NEW: Suspense wrapper required by Next for useSearchParams --- */
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-2xl p-6">
+          <h1 className="text-xl font-semibold mb-2">Bay calendar (read-only)</h1>
+          <p className="text-sm text-gray-700">Loading…</p>
+        </main>
+      }
+    >
+      <BayCalendarPage />
+    </Suspense>
+  );
+}
+
+/** The original component (unchanged logic) */
+function BayCalendarPage() {
   const sp = useSearchParams();
   const id = sp.get("id")?.trim() || "";
   const dParam = coerceDay(sp.get("d"));
@@ -187,12 +204,12 @@ export default function BayCalendarPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link href={mkUrl(prevISO)} className="px-3 py-1.5 rounded border hover:bg-gray-50">←</Link>
+            <Link href={mkUrl(shiftISO(dParam, -1))} className="px-3 py-1.5 rounded border hover:bg-gray-50">←</Link>
             <div className="px-2 text-base font-semibold">
               {data ? fmtLongDateNY(data.dateISO) : fmtLongDateNY(dParam)}
             </div>
-            <Link href={mkUrl(nextISO)} className="px-3 py-1.5 rounded border hover:bg-gray-50">→</Link>
-            <Link href={mkUrl(todayISO)} className="ml-2 px-3 py-1.5 rounded border hover:bg-gray-50">Today</Link>
+            <Link href={mkUrl(shiftISO(dParam, +1))} className="px-3 py-1.5 rounded border hover:bg-gray-50">→</Link>
+            <Link href={mkUrl(nyISO())} className="ml-2 px-3 py-1.5 rounded border hover:bg-gray-50">Today</Link>
           </div>
         </header>
 
@@ -248,8 +265,3 @@ export default function BayCalendarPage() {
     </div>
   );
 }
-
-
-
-
-
