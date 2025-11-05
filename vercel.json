@@ -1,6 +1,8 @@
 {
   "functions": {
-    "app/**/*": { "maxDuration": 30 }
+    "app/api/**/*.ts": {
+      "maxDuration": 30
+    }
   },
   "build": {
     "env": {
