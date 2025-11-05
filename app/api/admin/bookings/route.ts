@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
         firstName: String(firstName),
         // ✅ FIX: provide empty string if lastName is missing to satisfy required string type
         lastName: lastName ? String(lastName) : "",
-        email: emailLower,
+        email: emailLower ?? "",
         phone: phoneForStorage, // store first normalized number (if provided)
         managementToken,
       },
