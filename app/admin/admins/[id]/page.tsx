@@ -10,8 +10,11 @@ import EditAdminForm from "./EditAdminForm";
 export default async function AdminDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  // In this Next version, `params` is a Promise — await it.
+  const { id } = await params;
+
   const session = await getAdminSession();
   if (!session) {
     return (
@@ -45,8 +48,6 @@ export default async function AdminDetailPage({
       </div>
     );
   }
-
-  const { id } = params;
 
   const admin = await prisma.admin.findUnique({
     where: { id },
