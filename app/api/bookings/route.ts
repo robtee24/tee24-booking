@@ -269,7 +269,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create booking (no include here)
+    // ✅ Create booking (no nulls for required strings)
     const managementToken = crypto.randomBytes(16).toString("hex");
     const created = await prisma.booking.create({
       data: {
@@ -278,10 +278,9 @@ export async function POST(req: NextRequest) {
         start,
         end,
         firstName: String(firstName),
-        // Ensure non-null strings for required columns:
         lastName: lastName ? String(lastName) : "",
         email: emailLower ?? "",
-        phone: (phoneNorm ?? phone ?? "") as string,
+        phone: phoneNorm ?? phone ?? "",
         managementToken,
       },
       select: {
