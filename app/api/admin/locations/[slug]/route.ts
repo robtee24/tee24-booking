@@ -4,52 +4,74 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-// Derive slug safely from Next params OR from the URL path as a fallback
-function getSlug(req: Request, params: Record<string, string | undefined> | undefined) {
-  const p = params || {};
-  const key = p.slug ?? (p as any)?.id;
+// Safely extract slug from params or URL
+async function getSlug(
+  req: Request,
+  ctx?: { params?: Promise<{ slug?: string; id?: string }> }
+): Promise<string | undefined> {
+  let key: string | undefined;
+
+  if (ctx?.params) {
+    const p = await ctx.params;
+    key = p?.slug ?? p?.id;
+  }
+
   if (key) return key;
 
-  // Fallback: parse from URL: /api/admin/locations/:slug
+  // Fallback: parse from /api/admin/locations/:slug
   try {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
-    // [..., "api","admin","locations",":slug"]
     const idx = parts.findIndex((seg) => seg === "locations");
-    if (idx >= 0 && parts[idx + 1]) return decodeURIComponent(parts[idx + 1]);
+    if (idx >= 0 && parts[idx + 1]) {
+      return decodeURIComponent(parts[idx + 1]);
+    }
   } catch {}
   return undefined;
 }
 
-/** GET: existence + disabled state */
-export async function GET(req: Request, ctx: { params?: Record<string, string | undefined> }) {
+/** GET */
+export async function GET(
+  req: Request,
+  ctx: { params: Promise<{ slug: string }> }
+) {
   try {
-    const slug = getSlug(req, ctx?.params);
-    if (!slug) return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    const slug = await getSlug(req, ctx);
+    if (!slug)
+      return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
 
     const loc = await prisma.location.findUnique({
       where: { slug },
       select: { id: true, slug: true, name: true, disabled: true },
     });
-    if (!loc) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    if (!loc)
+      return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+
     return NextResponse.json({ ok: true, location: loc });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: "server error", code: e?.code, message: e?.message },
+      { ok: false, error: "server error", message: e?.message },
       { status: 500 }
     );
   }
 }
 
-/** PATCH /api/admin/locations/:slug  body: { disabled: boolean } */
-export async function PATCH(req: Request, ctx: { params?: Record<string, string | undefined> }) {
+/** PATCH */
+export async function PATCH(
+  req: Request,
+  ctx: { params: Promise<{ slug: string }> }
+) {
   try {
-    const slug = getSlug(req, ctx?.params);
-    if (!slug) return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    const slug = await getSlug(req, ctx);
+    if (!slug)
+      return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
 
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({} as any));
     if (typeof body?.disabled !== "boolean") {
-      return NextResponse.json({ ok: false, error: "disabled boolean required" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "disabled boolean required" },
+        { status: 400 }
+      );
     }
 
     const updated = await prisma.location.update({
@@ -62,30 +84,57 @@ export async function PATCH(req: Request, ctx: { params?: Record<string, string 
   } catch (e: any) {
     const status = e?.code === "P2025" ? 404 : 500;
     return NextResponse.json(
-      { ok: false, error: status === 404 ? "location not found" : "server error", code: e?.code, message: e?.message },
+      {
+        ok: false,
+        error: status === 404 ? "location not found" : "server error",
+        message: e?.message,
+      },
       { status }
     );
   }
 }
 
-/** DELETE /api/admin/locations/:slug */
-export async function DELETE(req: Request, ctx: { params?: Record<string, string | undefined> }) {
+/** DELETE — forcibly remove location and all dependencies */
+export async function DELETE(
+  req: Request,
+  ctx: { params: Promise<{ slug: string }> }
+) {
   try {
-    const slug = getSlug(req, ctx?.params);
-    if (!slug) return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    const slug = await getSlug(req, ctx);
+    if (!slug)
+      return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
 
-    await prisma.location.delete({ where: { slug } });
+    const loc = await prisma.location.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    if (!loc)
+      return NextResponse.json({ ok: false, error: "location not found" }, { status: 404 });
+
+    // Transaction: delete all dependent data before location
+    await prisma.$transaction(async (tx) => {
+      try {
+        await tx.booking.deleteMany({ where: { locationId: loc.id } });
+      } catch {}
+      try {
+        await tx.adminLocation.deleteMany({ where: { locationId: loc.id } });
+      } catch {}
+      try {
+        await tx.bay.deleteMany({ where: { locationId: loc.id } });
+      } catch {}
+      await tx.location.delete({ where: { id: loc.id } });
+    });
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    if (e?.code === "P2025") {
-      return NextResponse.json({ ok: false, error: "location not found", code: e?.code }, { status: 404 });
-    }
+    console.error("DELETE /api/admin/locations error:", e);
     return NextResponse.json(
-      { ok: false, error: "cannot delete location (has dependencies?)", code: e?.code, message: e?.message },
-      { status: 400 }
+      {
+        ok: false,
+        error: "server error",
+        message: e?.message ?? null,
+      },
+      { status: 500 }
     );
   }
 }
-
-
-
