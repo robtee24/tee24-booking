@@ -55,6 +55,21 @@ export async function POST(req: Request) {
           '<p>Hi {{firstName}},</p><p>Confirmed for {{date}} {{start}}–{{end}} at <strong>{{locationName}}</strong>, Bay {{bayNumber}}.</p><p>{{bookingNote}}</p><p>Manage: <a href="{{manageUrl}}">{{manageUrl}}</a></p>',
         smsTemplate:
           "Tee24: {{firstName}} your bay {{bayNumber}} at {{locationName}} is booked for {{date}} {{start}}–{{end}}. Manage: {{manageUrl}}",
+
+        // ✅ REQUIRED: provide a default for non-null JSON column `hours`
+        // Keep {} or use a simple weekly default (example below).
+        hours: {},
+
+        // Example weekly default:
+        // hours: {
+        //   mon: [["08:00", "22:00"]],
+        //   tue: [["08:00", "22:00"]],
+        //   wed: [["08:00", "22:00"]],
+        //   thu: [["08:00", "22:00"]],
+        //   fri: [["08:00", "22:00"]],
+        //   sat: [["08:00", "22:00"]],
+        //   sun: [["08:00", "22:00"]],
+        // },
       },
       select: { id: true, name: true, slug: true }, // NOTE: no 'disabled' here
     });
@@ -62,9 +77,18 @@ export async function POST(req: Request) {
     // Return disabled:false for UI compatibility
     return NextResponse.json({ ok: true, location: { ...loc, disabled: false } }, { status: 201 });
   } catch (e: any) {
-    console.error("POST /api/admin/locations error:", e?.message || e);
-    return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
+    console.error("POST /api/admin/locations error:", e?.code, e?.message, e?.stack);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "server error",
+        code: e?.code ?? null,
+        message: e?.message ?? null,
+      },
+      { status: 500 }
+    );
   }
 }
+
 
 
