@@ -1,26 +1,22 @@
 // app/bay/[id]/page.tsx
 /**
  * Debug page to inspect exactly what Next.js passes into a dynamic segment page.
- * Visit: /bay/<anything>
- *
- * Updated for Next.js 15+ (params is now a Promise)
+ * Compatible with Next.js 15+ (both params and searchParams are Promises).
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PageParams = Promise<{ id?: string }>;
-type SearchParams = Record<string, string | string[] | undefined>;
-
 export default async function Page({
   params,
   searchParams,
 }: {
-  params: PageParams;
-  searchParams?: SearchParams;
+  params: Promise<{ id?: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const resolved = await params;
-  const id = resolved?.id ?? "(missing)";
+  const resolvedParams = await params;
+  const resolvedSearch = (await searchParams) ?? {};
+  const id = resolvedParams?.id ?? "(missing)";
 
   return (
     <main style={{ padding: 24, fontFamily: "ui-sans-serif, system-ui" }}>
@@ -46,7 +42,7 @@ export default async function Page({
               wordBreak: "break-word",
             }}
           >
-            {JSON.stringify(resolved, null, 2)}
+            {JSON.stringify(resolvedParams, null, 2)}
           </pre>
         </div>
 
@@ -68,7 +64,7 @@ export default async function Page({
             {JSON.stringify(
               {
                 id,
-                searchParams: searchParams ?? "(none)",
+                searchParams: resolvedSearch,
               },
               null,
               2
