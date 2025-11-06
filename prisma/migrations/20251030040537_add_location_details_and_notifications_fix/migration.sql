@@ -1,21 +1,11 @@
--- CreateTable
-CREATE TABLE "Notification" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "locationId" TEXT NOT NULL,
-    "kind" TEXT NOT NULL,
-    "channel" TEXT NOT NULL,
-    "hoursBefore" INTEGER NOT NULL DEFAULT 0,
-    "template" TEXT NOT NULL,
-    "enabled" BOOLEAN NOT NULL DEFAULT true,
-    "order" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Notification_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
-
 -- RedefineTables
--- Safe for both SQLite and PostgreSQL using transaction
+-- Safe for both SQLite and PostgreSQL - explicitly manage FKs referencing Location
 BEGIN;
+
+-- Drop all foreign key constraints referencing Location
+ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_locationId_fkey";
+ALTER TABLE "Bay" DROP CONSTRAINT IF EXISTS "Bay_locationId_fkey";
+ALTER TABLE "Notification" DROP CONSTRAINT IF EXISTS "Notification_locationId_fkey";
 
 -- Create updated Location table with new settings
 CREATE TABLE "new_Location" (
@@ -51,12 +41,36 @@ FROM "Location";
 DROP TABLE "Location";
 ALTER TABLE "new_Location" RENAME TO "Location";
 
--- Recreate indexes
+-- Re-add foreign key constraints
+ALTER TABLE "Bay" ADD CONSTRAINT "Bay_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Recreate indexes on Location
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 CREATE INDEX "Location_slug_idx" ON "Location"("slug");
 
 COMMIT;
 
--- Create indexes on Notification
+-- Create Notification table and its indexes (outside transaction for safety)
+CREATE TABLE "Notification" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "locationId" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
+    "channel" TEXT NOT NULL,
+    "hoursBefore" INTEGER NOT NULL DEFAULT 0,
+    "template" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "Notification_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 CREATE INDEX "Notification_locationId_kind_channel_idx" ON "Notification"("locationId", "kind", "channel");
 CREATE UNIQUE INDEX "Notification_locationId_kind_channel_hoursBefore_key" ON "Notification"("locationId", "kind", "channel", "hoursBefore");
