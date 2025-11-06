@@ -1,8 +1,14 @@
 -- RedefineTables
--- Safe for both SQLite and PostgreSQL using transaction
+-- Safe for both SQLite and PostgreSQL - explicitly drop ALL FKs referencing Location
 BEGIN;
 
--- Create updated Location table with new 'disabled' column
+-- Drop ALL foreign key constraints that reference Location
+ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_locationId_fkey";
+ALTER TABLE "Bay" DROP CONSTRAINT IF EXISTS "Bay_locationId_fkey";
+ALTER TABLE "AdminLocation" DROP CONSTRAINT IF EXISTS "AdminLocation_locationId_fkey";
+ALTER TABLE "Notification" DROP CONSTRAINT IF EXISTS "Notification_locationId_fkey";
+
+-- Create new Location table with 'disabled' column
 CREATE TABLE "new_Location" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -12,7 +18,7 @@ CREATE TABLE "new_Location" (
     "emailTemplate" TEXT,
     "smsTemplate" TEXT,
     "open24Hours" BOOLEAN NOT NULL DEFAULT false,
-    "hours" TEXT NOT NULL DEFAULT '[]',  -- SQLite: JSON stored as TEXT
+    "hours" TEXT NOT NULL DEFAULT '[]',  -- SQLite: JSON as TEXT
     "minBookingMinutes" INTEGER NOT NULL DEFAULT 60,
     "maxBookingMinutes" INTEGER NOT NULL DEFAULT 120,
     "maxActiveBookingsPerGuest" INTEGER NOT NULL DEFAULT 2,
@@ -42,6 +48,19 @@ FROM "Location";
 -- Replace old table
 DROP TABLE "Location";
 ALTER TABLE "new_Location" RENAME TO "Location";
+
+-- Re-add ALL foreign key constraints
+ALTER TABLE "Bay" ADD CONSTRAINT "Bay_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "AdminLocation" ADD CONSTRAINT "AdminLocation_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Recreate indexes
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
