@@ -1,4 +1,4 @@
--- Create Notification table first (must exist before Location references it via FK)
+-- Create Notification table first (must exist before Location is recreated)
 CREATE TABLE "Notification" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "locationId" TEXT NOT NULL,
@@ -10,20 +10,20 @@ CREATE TABLE "Notification" (
     "order" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL
-    -- FK will be added *after* Location is recreated
+    -- FK added later, after Location is recreated
 );
 
--- Create indexes on Notification (safe to do now)
+-- Create indexes on Notification
 CREATE INDEX "Notification_locationId_kind_channel_idx" ON "Notification"("locationId", "kind", "channel");
 CREATE UNIQUE INDEX "Notification_locationId_kind_channel_hoursBefore_key" ON "Notification"("locationId", "kind", "channel", "hoursBefore");
 
 -- RedefineTables: Recreate Location with new columns
 BEGIN;
 
--- Drop all FKs referencing Location (including from Notification)
+-- Drop all FKs referencing Location
 ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_locationId_fkey";
 ALTER TABLE "Bay" DROP CONSTRAINT IF EXISTS "Bay_locationId_fkey";
-ALTER TABLE "Notification" DROP CONSTRAINT IF EXISTS "Notification_locationId_fkey";
+-- No need to drop Notification FK — it doesn't exist yet
 
 -- Create new Location table
 CREATE TABLE "new_Location" (
@@ -66,6 +66,7 @@ ALTER TABLE "Bay" ADD CONSTRAINT "Bay_locationId_fkey"
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_locationId_fkey"
     FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- Now add FK to Notification (table exists, Location is new)
 ALTER TABLE "Notification" ADD CONSTRAINT "Notification_locationId_fkey"
     FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
