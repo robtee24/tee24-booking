@@ -1,7 +1,6 @@
 -- RedefineTables
--- SQLite: Use PRAGMA to allow table recreation with active foreign keys
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
+-- Safe for both SQLite and PostgreSQL using transaction
+BEGIN;
 
 -- Create updated Location table with new 'bookingNote' column
 CREATE TABLE "new_Location" (
@@ -24,6 +23,4 @@ ALTER TABLE "new_Location" RENAME TO "Location";
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 CREATE INDEX "Location_slug_idx" ON "Location"("slug");
 
--- Re-enable constraints (SQLite only)
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+COMMIT;

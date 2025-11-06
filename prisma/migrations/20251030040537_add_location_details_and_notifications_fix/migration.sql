@@ -14,10 +14,10 @@ CREATE TABLE "Notification" (
 );
 
 -- RedefineTables
--- SQLite: Use PRAGMA to safely recreate Location with FK references
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
+-- Safe for both SQLite and PostgreSQL using transaction
+BEGIN;
 
+-- Create updated Location table with new settings
 CREATE TABLE "new_Location" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE "new_Location" (
     "emailTemplate" TEXT,
     "smsTemplate" TEXT,
     "open24Hours" BOOLEAN NOT NULL DEFAULT false,
-    "hours" TEXT NOT NULL DEFAULT '[]',  -- SQLite has no JSONB; store as TEXT
+    "hours" TEXT NOT NULL DEFAULT '[]',  -- SQLite: JSON stored as TEXT
     "minBookingMinutes" INTEGER NOT NULL DEFAULT 60,
     "maxBookingMinutes" INTEGER NOT NULL DEFAULT 120,
     "maxActiveBookingsPerGuest" INTEGER NOT NULL DEFAULT 2,
@@ -37,7 +37,7 @@ CREATE TABLE "new_Location" (
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Copy existing data; preserve defaults and convert NULLs safely
+-- Copy existing data safely
 INSERT INTO "new_Location" (
     "id", "name", "slug", "bookingNote", "emailTemplate", "smsTemplate"
 )
@@ -55,9 +55,7 @@ ALTER TABLE "new_Location" RENAME TO "Location";
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 CREATE INDEX "Location_slug_idx" ON "Location"("slug");
 
--- Re-enable constraints
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+COMMIT;
 
 -- Create indexes on Notification
 CREATE INDEX "Notification_locationId_kind_channel_idx" ON "Notification"("locationId", "kind", "channel");

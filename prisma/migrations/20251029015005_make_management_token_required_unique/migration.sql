@@ -1,7 +1,6 @@
 -- RedefineTables
--- SQLite: Use PRAGMA to safely recreate table with FK constraints
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
+-- Safe for both SQLite and PostgreSQL using transaction
+BEGIN;
 
 -- Create new Booking table with managementToken as required
 CREATE TABLE "new_Booking" (
@@ -20,7 +19,7 @@ CREATE TABLE "new_Booking" (
     CONSTRAINT "Booking_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
--- Copy all data; existing NULLs in managementToken will cause INSERT to fail (as warned)
+-- Copy all data; will fail if any managementToken is NULL (intentional)
 INSERT INTO "new_Booking" (
     "id", "locationId", "bayNumber", "start", "end",
     "firstName", "lastName", "phone", "email",
@@ -42,6 +41,4 @@ CREATE INDEX "Booking_locationId_bayNumber_start_idx" ON "Booking"("locationId",
 CREATE INDEX "Booking_locationId_start_end_idx" ON "Booking"("locationId", "start", "end");
 CREATE INDEX "Booking_email_start_idx" ON "Booking"("email", "start");
 
--- Re-enable constraints
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+COMMIT;

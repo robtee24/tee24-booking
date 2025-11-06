@@ -1,6 +1,6 @@
--- RedefineTables (SQLite-safe pattern)
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
+-- RedefineTables
+-- Safe for both SQLite and PostgreSQL using transaction
+BEGIN;
 
 -- Create new Bay table with added 'name' column (nullable)
 CREATE TABLE "new_Bay" (
@@ -21,9 +21,7 @@ DROP TABLE "Bay";
 ALTER TABLE "new_Bay" RENAME TO "Bay";
 
 -- Recreate indexes
-CREATE INDEX "Bay_locationId_idx" ON "  ("locationId");
+CREATE INDEX "Bay_locationId_idx" ON "Bay"("locationId");
 CREATE UNIQUE INDEX "Bay_locationId_number_key" ON "Bay"("locationId", "number");
 
--- Re-enable constraints
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+COMMIT;

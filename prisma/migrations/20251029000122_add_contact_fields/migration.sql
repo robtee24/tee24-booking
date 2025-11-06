@@ -1,7 +1,6 @@
 -- RedefineTables
--- SQLite: Use PRAGMA to allow table recreation
-PRAGMA defer_foreign_keys=ON;
-PRAGMA foreign_keys=OFF;
+-- PostgreSQL: Use transaction for atomic table recreation
+BEGIN;
 
 -- Create the new table with updated schema
 CREATE TABLE "new_Booking" (
@@ -32,6 +31,4 @@ ALTER TABLE "new_Booking" RENAME TO "Booking";
 CREATE INDEX "Booking_locationId_bayNumber_start_idx" ON "Booking"("locationId", "bayNumber", "start");
 CREATE INDEX "Booking_locationId_start_end_idx" ON "Booking"("locationId", "start", "end");
 
--- Re-enable constraints (SQLite only)
-PRAGMA foreign_keys=ON;
-PRAGMA defer_foreign_keys=OFF;
+COMMIT;
