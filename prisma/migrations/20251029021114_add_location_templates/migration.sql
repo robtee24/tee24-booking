@@ -1,8 +1,12 @@
 -- RedefineTables
--- Safe for both SQLite and PostgreSQL using transaction
+-- Safe for both SQLite and PostgreSQL - explicitly drop/re-add FKs referencing Location
 BEGIN;
 
--- Create updated Location table with new optional template columns
+-- Drop all foreign key constraints referencing Location (must come first)
+ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "Booking_locationId_fkey";
+ALTER TABLE "Bay" DROP CONSTRAINT IF EXISTS "Bay_locationId_fkey";
+
+-- Create new Location table with optional template columns
 CREATE TABLE "new_Location" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -12,7 +16,7 @@ CREATE TABLE "new_Location" (
     "smsTemplate" TEXT
 );
 
--- Copy existing data; new columns will be NULL (or default for bookingNote)
+-- Copy existing data safely
 INSERT INTO "new_Location" ("id", "name", "slug", "bookingNote")
 SELECT "id", "name", "slug", COALESCE("bookingNote", '')
 FROM "Location";
@@ -20,6 +24,13 @@ FROM "Location";
 -- Replace old table
 DROP TABLE "Location";
 ALTER TABLE "new_Location" RENAME TO "Location";
+
+-- Re-add foreign key constraints
+ALTER TABLE "Bay" ADD CONSTRAINT "Bay_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_locationId_fkey"
+    FOREIGN KEY ("locationId") REFERENCES "Location" ("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Recreate indexes
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
