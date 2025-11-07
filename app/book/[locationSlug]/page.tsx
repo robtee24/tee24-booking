@@ -1,3 +1,4 @@
+// src/app/book/[locationSlug]/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -35,30 +36,31 @@ function formatPhone(value: string) {
 }
 
 // Generate start times that fit entirely inside a slot (respecting duration & bay)
-function generateTimesForSlot(slot: Slot, durationMin: number, dateStr: string, bay: "any" | number) {
+function generateTimesForSlot(
+  slot: Slot,
+  durationMin: number,
+  dateStr: string,
+  bay: "any" | number
+) {
   if (bay !== "any" && !slot.availableBays.includes(bay)) return [];
   if (bay === "any" && slot.availableBays.length === 0) return [];
 
   const startISO = new Date(slot.start);
   const endISO = new Date(slot.end);
-
-  const dayStart = new Date(`${dateStr}T00:00:00`);
-  const dayEnd = new Date(`${dateStr}T23:59:59`);
+  const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
 
   const windowStart = new Date(Math.max(dayStart.getTime(), startISO.getTime()));
-  const windowEnd = new Date(Math.min(dayEnd.getTime(), endISO.getTime()));
-
-  const latestStart = addMinutes(windowEnd, -durationMin);
-  if (latestStart < windowStart) return [];
-
   const firstStart = ceilToStep(windowStart, STEP_MINUTES);
 
   const out: string[] = [];
-  for (let t = firstStart; t <= latestStart; t = addMinutes(t, STEP_MINUTES)) {
+  for (let t = firstStart; t.getTime() <= endISO.getTime() - durationMin * 60000; t = addMinutes(t, STEP_MINUTES)) {
+    if (t < windowStart) continue;
     out.push(hhmm(t));
   }
+
   return out;
 }
+
 function uniqSortedTimes(times: string[]) { return Array.from(new Set(times)).sort(); }
 
 // Validators

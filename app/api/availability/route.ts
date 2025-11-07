@@ -1,7 +1,6 @@
 // app/api/availability/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -14,9 +13,6 @@ function toISO(d: Date) {
 
 function startOfDay(dateStr: string) {
   return new Date(`${dateStr}T00:00:00`);
-}
-function endOfDay(dateStr: string) {
-  return new Date(`${dateStr}T23:59:59`);
 }
 
 type Busy = { start: Date; end: Date };
@@ -67,6 +63,7 @@ function ceilToStep(d: Date, stepMin = STEP_MIN) {
   t.setMinutes(next, 0, 0);
   return t;
 }
+
 function floorToStep(d: Date, stepMin = STEP_MIN) {
   const t = new Date(d);
   t.setSeconds(0, 0);
@@ -97,20 +94,42 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "hand must be RH or LH when kind=SINGLE" }, { status: 400 });
     }
 
+    const dayStart = startOfDay(dateStr);
+    const dayOfWeek = dayStart.getDay();
+
     const location = await prisma.location.findUnique({
       where: { slug: locationSlug },
       select: {
         id: true,
         open24Hours: true,
+        hours: true,
       },
     });
     if (!location) {
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    // Window for the day
-    const windowStart = startOfDay(dateStr);
-    const windowEnd = endOfDay(dateStr);
+    // Compute operating window for this day
+    let operatingStart: Date;
+    let operatingEnd: Date;
+    if (location.open24Hours) {
+      operatingStart = dayStart;
+      operatingEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    } else {
+      const dayHours = (location.hours as any[])?.find((h: any) => h.day === dayOfWeek);
+      if (!dayHours || dayHours.closed) {
+        return NextResponse.json({ slots: [] });
+      }
+      const [oh, om] = dayHours.open.split(":").map(Number);
+      operatingStart = new Date(dayStart);
+      operatingStart.setHours(oh, om, 0, 0);
+      const [ch, cm] = dayHours.close.split(":").map(Number);
+      operatingEnd = new Date(dayStart);
+      operatingEnd.setHours(ch, cm, 0, 0);
+      if (operatingEnd <= operatingStart) {
+        operatingEnd.setDate(operatingEnd.getDate() + 1);
+      }
+    }
 
     // Load bays for location with kind/handedness/capacity
     const bays = await prisma.bay.findMany({
@@ -134,15 +153,15 @@ export async function GET(req: Request) {
 
     const bayNumbers = eligibleBays.map((b) => b.number);
 
-    // Fetch existing bookings for those bays that overlap the day
+    // Fetch existing bookings for those bays that overlap *operating window*
     const bookings = await prisma.booking.findMany({
       where: {
         locationId: location.id,
         bayNumber: { in: bayNumbers },
-        // any overlap with the day
+        // any overlap with operating window
         NOT: [
-          { end: { lt: windowStart } },
-          { start: { gt: windowEnd } },
+          { end: { lt: operatingStart } },
+          { start: { gt: operatingEnd } },
         ],
       },
       orderBy: { start: "asc" },
@@ -161,10 +180,9 @@ export async function GET(req: Request) {
     // Create free windows per bay, step-aligned
     type Slot = { start: string; end: string; availableBays: number[] };
     const slots: Slot[] = [];
-
     for (const bn of bayNumbers) {
       const busy = busyByBay.get(bn) || [];
-      const free = invertBusy(busy, windowStart, windowEnd);
+      const free = invertBusy(busy, operatingStart, operatingEnd);
       for (const f of free) {
         // Align to step so the UI’s step math works perfectly
         const s = ceilToStep(f.start, STEP_MIN);
@@ -187,4 +205,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to compute availability" }, { status: 500 });
   }
 }
-
