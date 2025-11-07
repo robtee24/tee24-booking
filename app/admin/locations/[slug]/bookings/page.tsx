@@ -181,11 +181,17 @@ export default function LocationBookingsPage() {
   }, [load]);
 
   // derived
-  const bays = data?.bays || [];
+  const bays = useMemo(() => {
+    return (data?.bays || []).sort((a, b) => a.number - b.number);
+  }, [data?.bays]);
+  
   const totalPages = Math.ceil(bays.length / maxVisible) || 1;
   const safePage = Math.min(page, totalPages - 1);
-  const visibleBays = bays.slice(safePage * maxVisible, safePage * maxVisible + maxVisible);
 
+  const visibleBays = useMemo(() => {
+    return bays.slice(safePage * maxVisible, (safePage + 1) * maxVisible);
+  }, [bays, safePage, maxVisible]);
+  
   const timeStep = Math.max(5, data?.minBookingMinutes || 60);
   const timeOptions = useMemo(() => buildTimeOptions(timeStep), [timeStep]);
 
