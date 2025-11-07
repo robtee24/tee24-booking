@@ -1,6 +1,6 @@
 // app/api/admin/location-settings/route.ts
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -68,7 +68,7 @@ export async function GET(req: Request) {
 
     // LIST MODE
     if (!slug) {
-      const locations = await prisma.location.findMany({
+      const locations = await getPrisma().location.findMany({
         select: { id: true, name: true, slug: true },
         orderBy: { name: 'asc' },
       });
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
     }
 
     // SINGLE MODE
-    const loc = await prisma.location.findUnique({
+    const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: {
         id: true,
@@ -148,7 +148,7 @@ export async function PATCH(req: Request) {
     }
 
     // Find existing
-    const existing = await prisma.location.findUnique({
+    const existing = await getPrisma().location.findUnique({
       where: { slug: currentSlug },
       select: { id: true, name: true, slug: true },
     });
@@ -170,7 +170,7 @@ export async function PATCH(req: Request) {
       if (!ns) return NextResponse.json({ error: 'Slug cannot be empty' }, { status: 400 });
       // If slug changes, enforce uniqueness
       if (ns !== existing.slug) {
-        const taken = await prisma.location.findUnique({ where: { slug: ns }, select: { id: true } });
+        const taken = await getPrisma().location.findUnique({ where: { slug: ns }, select: { id: true } });
         if (taken) {
           return NextResponse.json({ error: `Slug "${ns}" is already in use` }, { status: 409 });
         }
@@ -232,7 +232,7 @@ export async function PATCH(req: Request) {
       maxConsecutiveBookingsPerGuest,
     });
 
-    const updated = await prisma.location.update({
+    const updated = await getPrisma().location.update({
       where: { slug: existing.slug }, // use current slug to find the row
       data,
       select: {

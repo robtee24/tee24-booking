@@ -2,8 +2,8 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getAdminSession, isRoot } from "@/lib/session";
+import { getPrisma } from "@/lib/db";
+import { getAdminSession, isRoot } from "@/lib/session.server";
 
 type AdminRole = "ROOT" | "FULL" | "SCOPED";
 
@@ -70,7 +70,7 @@ export async function GET(
   const id = await getParamId(req, ctx);
   if (!id) return json({ error: "missing id" }, { status: 400 });
 
-  const admin = await prisma.admin.findUnique({
+  const admin = await getPrisma().admin.findUnique({
     where: { id },
     include: {
       locations: {
@@ -102,10 +102,10 @@ export async function PUT(
     ? (body.locationIds as any[]).map((x) => String(x)).filter(Boolean)
     : [];
 
-  const exists = await prisma.admin.findUnique({ where: { id }, select: { id: true } });
+  const exists = await getPrisma().admin.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return json({ error: "not found" }, { status: 404 });
 
-  await prisma.$transaction(async (tx) => {
+  await getPrisma().$transaction(async (tx) => {
     await tx.admin.update({ where: { id }, data: { name, role } });
     // reset links
     await tx.adminLocation.deleteMany({ where: { adminId: id } });
@@ -116,7 +116,7 @@ export async function PUT(
     }
   });
 
-  const admin = await prisma.admin.findUnique({
+  const admin = await getPrisma().admin.findUnique({
     where: { id },
     include: {
       locations: {
@@ -140,8 +140,8 @@ export async function DELETE(
   const id = await getParamId(req, ctx);
   if (!id) return json({ error: "missing id" }, { status: 400 });
 
-  await prisma.adminLocation.deleteMany({ where: { adminId: id } });
-  await prisma.admin.delete({ where: { id } });
+  await getPrisma().adminLocation.deleteMany({ where: { adminId: id } });
+  await getPrisma().admin.delete({ where: { id } });
 
   return json({ ok: true });
 }

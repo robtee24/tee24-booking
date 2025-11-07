@@ -1,6 +1,6 @@
 // app/api/admin/locations/[slug]/notifications/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true, name: true, slug: true },
     });
@@ -27,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
-    const rows = await prisma.notification.findMany({
+    const rows = await getPrisma().notification.findMany({
       where: { locationId: location.id },
       orderBy: [
         { kind: 'asc' },
@@ -158,7 +158,7 @@ export async function POST(
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
@@ -176,7 +176,7 @@ export async function POST(
       ? body.notifications.texts
       : [];
 
-    await prisma.$transaction(async (tx) => {
+    await getPrisma().$transaction(async (tx) => {
       await tx.notification.deleteMany({ where: { locationId: location.id } });
 
       const data = [

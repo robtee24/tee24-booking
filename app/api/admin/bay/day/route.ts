@@ -1,6 +1,6 @@
 // app/api/bay/day/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma"; // keep if @ alias works; if not, use ../../../../lib/prisma
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     const end = new Date(`${dateISO}T23:59:59-05:00`);
 
     // --- bay lookup ---
-    const bay = await prisma.bay.findUnique({
+    const bay = await getPrisma().bay.findUnique({
       where: { id },
       select: { id: true, number: true, name: true, locationId: true },
     });
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
     }
 
     // --- bookings for that bay on that day ---
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId: bay.locationId,
         bayNumber: bay.number,

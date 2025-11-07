@@ -1,6 +1,6 @@
 // app/schedule-data/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "../../lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     const start = new Date(`${dateISO}T00:00:00-05:00`);
     const end   = new Date(`${dateISO}T23:59:59-05:00`);
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: {
         id: true, name: true, slug: true,
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
 
     const bays = [...location.bays].sort((a, b) => a.number - b.number);
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId: location.id,
         canceledAt: null,

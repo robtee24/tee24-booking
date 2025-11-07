@@ -1,6 +1,6 @@
 // app/api/notify/confirmation/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Load booking + location
-    const booking = await prisma.booking.findUnique({
+    const booking = await getPrisma().booking.findUnique({
       where: { id: bookingId },
       select: {
         id: true,
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     };
 
     // Pull ONLY confirmation rows (hoursBefore = 0), dedupe by channel
-    const rows = await prisma.notification.findMany({
+    const rows = await getPrisma().notification.findMany({
       where: {
         locationId: booking.locationId,
         kind: "CONFIRMATION",

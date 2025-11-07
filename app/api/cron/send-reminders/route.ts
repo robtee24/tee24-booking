@@ -1,6 +1,6 @@
 // app/api/cron/send-reminders/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
@@ -66,7 +66,7 @@ async function findDueNotifications(
   onlyBookingId?: string | null,
   onlyChannel?: "EMAIL" | "TEXT" | null
 ): Promise<DueItem[]> {
-  const notifications = await prisma.notification.findMany({
+  const notifications = await getPrisma().notification.findMany({
     where: { kind: "NOTIFICATION", enabled: true, hoursBefore: { gt: 0 } },
     select: {
       id: true,
@@ -113,7 +113,7 @@ async function findDueNotifications(
     const broadEnd = new Date(latestTarget);
     broadEnd.setMinutes(broadEnd.getMinutes() + windowMinutes);
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId,
         ...(onlyBookingId ? { id: onlyBookingId } : {}),
@@ -209,7 +209,7 @@ export async function GET(req: NextRequest) {
     let sent = 0;
 
     for (const item of due) {
-      const already = await prisma.notificationLog.findUnique({
+      const already = await getPrisma().notificationLog.findUnique({
         where: {
           bookingId_notificationId_channel: {
             bookingId: item.bookingId,
@@ -278,7 +278,7 @@ export async function GET(req: NextRequest) {
 
           const res = await sendEmail(item.guestEmail, subject, html);
           if (res.ok) {
-            await prisma.notificationLog.create({
+            await getPrisma().notificationLog.create({
               data: {
                 bookingId: item.bookingId,
                 notificationId: item.notificationId,
@@ -297,7 +297,7 @@ export async function GET(req: NextRequest) {
             });
             sent += 1;
           } else {
-            await prisma.notificationLog.create({
+            await getPrisma().notificationLog.create({
               data: {
                 bookingId: item.bookingId,
                 notificationId: item.notificationId,
@@ -317,7 +317,7 @@ export async function GET(req: NextRequest) {
             });
           }
         } catch (err: any) {
-          await prisma.notificationLog.create({
+          await getPrisma().notificationLog.create({
             data: {
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -358,7 +358,7 @@ export async function GET(req: NextRequest) {
             content: text,
           });
 
-          await prisma.notificationLog.create({
+          await getPrisma().notificationLog.create({
             data: {
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -377,7 +377,7 @@ export async function GET(req: NextRequest) {
           });
           sent += 1;
         } catch (err: any) {
-          await prisma.notificationLog.create({
+          await getPrisma().notificationLog.create({
             data: {
               bookingId: item.bookingId,
               notificationId: item.notificationId,

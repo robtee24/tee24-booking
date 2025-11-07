@@ -1,6 +1,6 @@
 // app/page.tsx
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic"; // always SSR
 
@@ -15,7 +15,7 @@ export default async function Home() {
     | null = null;
 
   try {
-    locations = await prisma.location.findMany({
+    locations = await getPrisma().location.findMany({
       select: { id: true, name: true, slug: true },
       orderBy: { name: "asc" },
     });

@@ -1,6 +1,6 @@
 // app/api/bookings/[bookingId]/route.ts
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export async function GET(
 ) {
   const { bookingId } = await context.params;
 
-  const booking = await prisma.booking.findUnique({
+  const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     include: { Location: { select: { name: true, slug: true } } }, // 👈 only change
   });
@@ -40,7 +40,7 @@ export async function DELETE(
   const token = req.nextUrl.searchParams.get("token") || undefined;
 
   // Enforce per-booking management token if present
-  const b = await prisma.booking.findUnique({
+  const b = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     select: { id: true, managementToken: true },
   });
@@ -50,9 +50,9 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
   // Optional: clean up any queued notifications
-  // await prisma.notification.deleteMany({ where: { bookingId } });
+  // await getPrisma().notification.deleteMany({ where: { bookingId } });
 
-  await prisma.booking.delete({ where: { id: bookingId } });
+  await getPrisma().booking.delete({ where: { id: bookingId } });
   return NextResponse.json({ ok: true });
 }
 

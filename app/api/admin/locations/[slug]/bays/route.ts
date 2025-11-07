@@ -1,6 +1,6 @@
 // app/api/admin/locations/[slug]/bays/route.ts
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,7 +34,7 @@ export async function GET(
   try {
     const { slug } = await context.params;
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true, name: true, slug: true },
     });
@@ -42,7 +42,7 @@ export async function GET(
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    const bays = await prisma.bay.findMany({
+    const bays = await getPrisma().bay.findMany({
       where: { locationId: location.id },
       orderBy: { number: "asc" },
       select: {
@@ -82,7 +82,7 @@ export async function POST(
   try {
     const { slug } = await context.params;
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
@@ -134,7 +134,7 @@ export async function POST(
       handedness = null; // ignore
     }
 
-    const bay = await prisma.bay.create({
+    const bay = await getPrisma().bay.create({
       data: {
         locationId: location.id,
         number,

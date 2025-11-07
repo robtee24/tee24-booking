@@ -1,6 +1,6 @@
 // app/api/debug/create-test-booking/route.ts
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const email = url.searchParams.get('email') ?? 'test@example.com';
     const phone = url.searchParams.get('phone') ?? '+15555550123'; // <-- can override via ?phone=%2B1...
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug: locationSlug },
       select: { id: true, slug: true, name: true },
     });
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     start.setSeconds(0, 0);
     const end = new Date(start.getTime() + 60 * 60_000); // 60 min default
 
-    const created = await prisma.booking.create({
+    const created = await getPrisma().booking.create({
       data: {
         locationId: location.id,
         start,

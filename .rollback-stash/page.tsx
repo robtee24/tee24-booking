@@ -1,7 +1,7 @@
 // app/manage/[...slug]/page.tsx
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { prisma } from "../../lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +56,7 @@ export default async function ManageBookingPage({ params, searchParams = {} }: P
   }
 
   // Look up by id when present; otherwise by unique managementToken
-  const booking = await prisma.booking.findUnique({
+  const booking = await getPrisma().booking.findUnique({
     where: bookingId ? { id: bookingId } : { managementToken: manageToken! },
     include: { location: { select: { name: true, slug: true } } },
   });

@@ -29,12 +29,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
     }
 
-    // allow if in ALLOWED_ADMIN_PHONES (or if empty, treat as closed-list error)
-    const allowed = Array.isArray(ENV.ALLOWED_PHONES) ? ENV.ALLOWED_PHONES : [];
-    if (!allowed.includes(phone)) {
-      return NextResponse.json({ error: "Phone not allowed" }, { status: 403 });
-    }
-
     // create OTP (default TTL from ENV.OTP_TTL seconds)
     const { code, expiresAt } = await createOtp(phone, ENV.OTP_TTL || 300);
 

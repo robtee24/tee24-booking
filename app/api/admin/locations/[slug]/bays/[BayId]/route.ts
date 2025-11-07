@@ -1,6 +1,6 @@
 // app/api/admin/locations/[slug]/bays/[BayId]/route.ts
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +45,7 @@ export async function PATCH(
     const body = await request.json().catch(() => ({} as any));
 
     // Find location & bay (ensure bay belongs to this location)
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
@@ -53,7 +53,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    const existing = await prisma.bay.findFirst({
+    const existing = await getPrisma().bay.findFirst({
       where: { id: BayId, locationId: location.id },
       select: {
         id: true,
@@ -133,7 +133,7 @@ export async function PATCH(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    const updated = await prisma.bay.update({
+    const updated = await getPrisma().bay.update({
       where: { id: existing.id },
       data,
       select: {
@@ -170,13 +170,13 @@ export async function DELETE(
   try {
     const { slug, BayId } = await context.params;
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
     if (!location) return NextResponse.json({ error: "Location not found" }, { status: 404 });
 
-    const bay = await prisma.bay.findFirst({
+    const bay = await getPrisma().bay.findFirst({
       where: { id: BayId, locationId: location.id },
       select: { id: true, number: true },
     });
@@ -184,7 +184,7 @@ export async function DELETE(
 
     // Block delete if there are any future bookings for this bay
     const now = new Date();
-    const futureCount = await prisma.booking.count({
+    const futureCount = await getPrisma().booking.count({
       where: {
         locationId: location.id,
         bayNumber: bay.number,
@@ -198,7 +198,7 @@ export async function DELETE(
       );
     }
 
-    await prisma.bay.delete({ where: { id: bay.id } });
+    await getPrisma().bay.delete({ where: { id: bay.id } });
     return NextResponse.json({ ok: true, deletedId: bay.id });
   } catch (e: any) {
     console.error("DELETE /admin bay error", e);

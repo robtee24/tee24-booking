@@ -1,7 +1,7 @@
 // app/api/bookings/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
     let bayNumber: number | null = null;
 
     if (bayId) {
-      const bayRow = await prisma.bay.findUnique({
+      const bayRow = await getPrisma().bay.findUnique({
         where: { id: String(bayId) },
         select: { id: true, number: true, locationId: true },
       });
@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
       if (locationIdBody) {
         locId = locationIdBody;
       } else if (locationSlug) {
-        const loc = await prisma.location.findUnique({
+        const loc = await getPrisma().location.findUnique({
           where: { slug: locationSlug },
           select: { id: true },
         });
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
         return badRequest("locationSlug or locationId is required when using bayNumber");
       }
 
-      const bayRow = await prisma.bay.findUnique({
+      const bayRow = await getPrisma().bay.findUnique({
         where: { locationId_number: { locationId: locId!, number: bayNumberParsed! } },
         select: { number: true, locationId: true },
       });
@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
       if (locationIdBody) {
         locId = locationIdBody;
       } else if (locationSlug) {
-        const loc = await prisma.location.findUnique({
+        const loc = await getPrisma().location.findUnique({
           where: { slug: locationSlug },
           select: { id: true },
         });
@@ -195,14 +195,14 @@ export async function POST(req: NextRequest) {
         return badRequest("Provide locationSlug or locationId when bay is not specified");
       }
 
-      const bays = await prisma.bay.findMany({
+      const bays = await getPrisma().bay.findMany({
         where: { locationId: locId },
         select: { number: true },
         orderBy: [{ number: "asc" }],
       });
       if (!bays.length) return badRequest("No bays exist for this location");
 
-      const conflicts = await prisma.booking.findMany({
+      const conflicts = await getPrisma().booking.findMany({
         where: {
           locationId: locId,
           canceledAt: null,
@@ -229,7 +229,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure selected bay/time is available
-    const clash = await prisma.booking.findFirst({
+    const clash = await getPrisma().booking.findFirst({
       where: {
         locationId,
         bayNumber,
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
     // -------- create booking --------
     const managementToken = crypto.randomBytes(16).toString("hex");
 
-    const created = await prisma.booking.create({
+    const created = await getPrisma().booking.create({
       data: {
         locationId,
         bayNumber,
@@ -271,13 +271,13 @@ export async function POST(req: NextRequest) {
     });
 
     // -------- confirmations --------
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { id: created.locationId },
       select: { name: true, emailTemplate: true, smsTemplate: true },
     });
 
     const [confirmEmailRow, confirmTextRow] = await Promise.all([
-      prisma.notification.findFirst({
+      getPrisma().notification.findFirst({
         where: {
           locationId: created.locationId,
           kind: "CONFIRMATION",
@@ -286,7 +286,7 @@ export async function POST(req: NextRequest) {
         },
         select: { template: true },
       }),
-      prisma.notification.findFirst({
+      getPrisma().notification.findFirst({
         where: {
           locationId: created.locationId,
           kind: "CONFIRMATION",

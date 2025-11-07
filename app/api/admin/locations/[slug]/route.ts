@@ -1,6 +1,6 @@
 // app/api/admin/locations/[slug]/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -40,7 +40,7 @@ export async function GET(
     if (!slug)
       return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
 
-    const loc = await prisma.location.findUnique({
+    const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true, slug: true, name: true, disabled: true },
     });
@@ -74,7 +74,7 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.location.update({
+    const updated = await getPrisma().location.update({
       where: { slug },
       data: { disabled: body.disabled },
       select: { id: true, slug: true, name: true, disabled: true },
@@ -104,7 +104,7 @@ export async function DELETE(
     if (!slug)
       return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
 
-    const loc = await prisma.location.findUnique({
+    const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
@@ -112,7 +112,7 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "location not found" }, { status: 404 });
 
     // Transaction: delete all dependent data before location
-    await prisma.$transaction(async (tx) => {
+    await getPrisma().$transaction(async (tx) => {
       try {
         await tx.booking.deleteMany({ where: { locationId: loc.id } });
       } catch {}

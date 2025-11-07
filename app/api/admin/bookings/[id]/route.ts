@@ -1,6 +1,6 @@
 // app/api/admin/bookings/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 /**
  * Overlap rule:
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       return new NextResponse("Missing required fields", { status: 400 });
     }
 
-    const bay = await prisma.bay.findUnique({ where: { id: bayId } });
+    const bay = await getPrisma().bay.findUnique({ where: { id: bayId } });
     if (!bay) return new NextResponse("Invalid bay", { status: 400 });
 
     const start = new Date(startISO);
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     if (end <= start) return new NextResponse("End must be after start", { status: 400 });
 
     // --- collision check ---
-    const conflict = await prisma.booking.findFirst({
+    const conflict = await getPrisma().booking.findFirst({
       where: {
         locationId,
         bayNumber: bay.number,
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const created = await prisma.booking.create({
+    const created = await getPrisma().booking.create({
       data: {
         locationId,
         bayNumber: bay.number,

@@ -1,6 +1,6 @@
 // app/api/admin/notifications/route.ts
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -14,10 +14,10 @@ export async function GET(req: Request) {
     const slug = (searchParams.get('locationSlug') || '').trim();
     if (!slug) return NextResponse.json({ error: 'Missing locationSlug' }, { status: 400 });
 
-    const loc = await prisma.location.findUnique({ where: { slug }, select: { id: true } });
+    const loc = await getPrisma().location.findUnique({ where: { slug }, select: { id: true } });
     if (!loc) return NextResponse.json({ error: 'Location not found' }, { status: 404 });
 
-    const notifications = await prisma.notification.findMany({
+    const notifications = await getPrisma().notification.findMany({
       where: { locationId: loc.id, kind: 'NOTIFICATION' },
       orderBy: [{ hoursBefore: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
     });
@@ -46,16 +46,16 @@ export async function POST(req: Request) {
     if (channel !== 'EMAIL' && channel !== 'TEXT')
       return NextResponse.json({ error: 'Invalid channel' }, { status: 400 });
 
-    const loc = await prisma.location.findUnique({ where: { slug }, select: { id: true } });
+    const loc = await getPrisma().location.findUnique({ where: { slug }, select: { id: true } });
     if (!loc) return NextResponse.json({ error: 'Location not found' }, { status: 404 });
 
     // set default order at the end
-    const maxOrder = await prisma.notification.aggregate({
+    const maxOrder = await getPrisma().notification.aggregate({
       where: { locationId: loc.id, kind, channel },
       _max: { order: true },
     });
 
-    const notification = await prisma.notification.create({
+    const notification = await getPrisma().notification.create({
       data: {
         locationId: loc.id,
         kind,
@@ -91,7 +91,7 @@ export async function PATCH(req: Request) {
     if (body.enabled !== undefined) data.enabled = Boolean(body.enabled);
     if (body.order !== undefined) data.order = Math.max(0, Math.min(99, Math.floor(Number(body.order))));
 
-    const notification = await prisma.notification.update({
+    const notification = await getPrisma().notification.update({
       where: { id },
       data,
     });
@@ -112,7 +112,7 @@ export async function DELETE(req: Request) {
     const id = String(body?.id ?? '').trim();
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
-    await prisma.notification.delete({ where: { id } });
+    await getPrisma().notification.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });

@@ -1,5 +1,5 @@
 // lib/send-confirmations.ts
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
@@ -74,7 +74,7 @@ function ensureManageLinkInText(text: string, manageUrl: string) {
  */
 export async function sendConfirmationForBooking(bookingId: string) {
   // Load booking + required relations with correct field names.
-  const booking = await prisma.booking.findUnique({
+  const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     select: {
       id: true,
@@ -123,7 +123,7 @@ export async function sendConfirmationForBooking(bookingId: string) {
   };
 
   // Pull enabled confirmation templates (hoursBefore=0) for this location.
-  const rows = await prisma.notification.findMany({
+  const rows = await getPrisma().notification.findMany({
     where: {
       locationId: booking.locationId,
       kind: "CONFIRMATION",

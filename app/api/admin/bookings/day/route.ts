@@ -1,6 +1,6 @@
 // app/api/admin/bookings/day/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export async function GET(req: Request) {
   try {
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
       return new NextResponse("Missing date or locationSlug", { status: 400 });
     }
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug: locationSlug },
       include: { bays: true },
     });
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const startOfDay = new Date(`${date}T00:00:00`);
     const endOfDay = new Date(`${date}T23:59:59`);
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId: location.id,
         OR: [

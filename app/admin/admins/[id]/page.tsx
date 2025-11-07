@@ -2,8 +2,8 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { prisma } from "@/lib/db";
-import { getAdminSession, isRoot } from "@/lib/session";
+import { getPrisma } from "@/lib/db";
+import { getAdminSession, isRoot } from "@/lib/session.server";
 import Link from "next/link";
 import EditAdminForm from "./EditAdminForm";
 
@@ -49,7 +49,7 @@ export default async function AdminDetailPage({
     );
   }
 
-  const admin = await prisma.admin.findUnique({
+  const admin = await getPrisma().admin.findUnique({
     where: { id },
     select: {
       id: true,
@@ -78,7 +78,7 @@ export default async function AdminDetailPage({
     );
   }
 
-  const allLocations = await prisma.location.findMany({
+  const allLocations = await getPrisma().location.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });

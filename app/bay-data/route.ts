@@ -1,6 +1,6 @@
 // app/bay-data/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "../../lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     const start = new Date(`${dateISO}T00:00:00-05:00`);
     const end   = new Date(`${dateISO}T23:59:59-05:00`);
 
-    const bay = await prisma.bay.findUnique({
+    const bay = await getPrisma().bay.findUnique({
       where: { id },
       select: {
         id: true,
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
     });
     if (!bay) return NextResponse.json({ error: "Bay not found" }, { status: 404 });
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId: bay.locationId,
         bayNumber: bay.number,

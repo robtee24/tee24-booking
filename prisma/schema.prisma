@@ -185,3 +185,17 @@ model NotificationLog {
   @@index([notificationId])
 }
 
+/**
+ * =========================
+ * One time passcode
+ * =========================
+ */
+model Otp {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}

@@ -1,6 +1,6 @@
 // app/api/debug/add-email-1h/route.ts
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const slug = url.searchParams.get('slug') ?? 'clarksville';
 
   try {
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true, name: true, slug: true },
     });
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
     // Create or update a 1-hour EMAIL NOTIFICATION
     // (hoursBefore > 0 is "scheduled" per your schema/logic)
-    const existing = await prisma.notification.findFirst({
+    const existing = await getPrisma().notification.findFirst({
       where: {
         locationId: location.id,
         kind: 'NOTIFICATION',
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
 
     let record;
     if (existing) {
-      record = await prisma.notification.update({
+      record = await getPrisma().notification.update({
         where: { id: existing.id },
         data: {
           enabled: true,
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
         },
       });
     } else {
-      record = await prisma.notification.create({
+      record = await getPrisma().notification.create({
         data: {
           locationId: location.id,
           kind: 'NOTIFICATION',

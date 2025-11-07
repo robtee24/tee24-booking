@@ -1,6 +1,6 @@
 // app/api/availability/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -97,7 +97,7 @@ export async function GET(req: Request) {
     const dayStart = startOfDay(dateStr);
     const dayOfWeek = dayStart.getDay();
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug: locationSlug },
       select: {
         id: true,
@@ -132,7 +132,7 @@ export async function GET(req: Request) {
     }
 
     // Load bays for location with kind/handedness/capacity
-    const bays = await prisma.bay.findMany({
+    const bays = await getPrisma().bay.findMany({
       where: { locationId: location.id },
       orderBy: { number: "asc" },
       select: { number: true, kind: true, handedness: true, capacity: true },
@@ -154,7 +154,7 @@ export async function GET(req: Request) {
     const bayNumbers = eligibleBays.map((b) => b.number);
 
     // Fetch existing bookings for those bays that overlap *operating window*
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrisma().booking.findMany({
       where: {
         locationId: location.id,
         bayNumber: { in: bayNumbers },

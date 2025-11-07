@@ -1,6 +1,6 @@
 // app/api/admin/bookings/update/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 /**
  * Supports both drag-move and full edits.
@@ -23,13 +23,13 @@ export async function POST(req: Request) {
     if (!id) return new NextResponse("Missing id", { status: 400 });
 
     // Load current booking to know locationId & existing times/bayNumber
-    const current = await prisma.booking.findUnique({ where: { id } });
+    const current = await getPrisma().booking.findUnique({ where: { id } });
     if (!current) return new NextResponse("Not found", { status: 404 });
 
     // Determine target bayNumber
     let bayNumber = current.bayNumber;
     if (bayId) {
-      const bay = await prisma.bay.findUnique({ where: { id: bayId } });
+      const bay = await getPrisma().bay.findUnique({ where: { id: bayId } });
       if (!bay) return new NextResponse("Invalid bay", { status: 400 });
       bayNumber = bay.number;
     }
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     if (end <= start) return new NextResponse("End must be after start", { status: 400 });
 
     // --- collision check (exclude self) ---
-    const conflict = await prisma.booking.findFirst({
+    const conflict = await getPrisma().booking.findFirst({
       where: {
         locationId: current.locationId,
         bayNumber,
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     if (typeof email === "string") data.email = email;
     if (typeof phone === "string") data.phone = phone;
 
-    const updated = await prisma.booking.update({
+    const updated = await getPrisma().booking.update({
       where: { id },
       data,
     });

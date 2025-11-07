@@ -22,12 +22,6 @@ export const ENV = {
   // OTP
   OTP_TTL: Number(process.env.OTP_TTL_SECONDS || 300),
 
-  // Admin allow-list
-  ALLOWED_PHONES: (process.env.ALLOWED_ADMIN_PHONES || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean),
-
   ROOT_ADMIN_PHONE: process.env.ROOT_ADMIN_PHONE || "",
 };
 

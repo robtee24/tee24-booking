@@ -1,6 +1,6 @@
 // lib/access.ts
-import { prisma } from "@/lib/db";
-import { getAdminSession } from "@/lib/session";
+import { getPrisma } from "@/lib/db";
+import { getAdminSession } from "@/lib/session.server";
 import type { AdminRole } from "@prisma/client";
 
 /** Get the current admin row (or null) based on the ADMIN_SESSION cookie */
@@ -8,7 +8,7 @@ export async function getCurrentAdmin() {
   const session = await getAdminSession();
   if (!session?.sub) return null;
 
-  return prisma.admin.findUnique({
+  return getPrisma().admin.findUnique({
     where: { id: session.sub },
     select: {
       id: true,
@@ -47,7 +47,7 @@ export async function getAccessibleLocations() {
 
   if (isFullAccess(admin.role)) {
     // Full access sees everything
-    const all = await prisma.location.findMany({
+    const all = await getPrisma().location.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, slug: true },
     });
@@ -74,7 +74,7 @@ export async function getAccessibleLocationIds(): Promise<string[]> {
   const admin = await getCurrentAdmin();
   if (!admin) return [];
   if (isFullAccess(admin.role)) {
-    const all = await prisma.location.findMany({ select: { id: true } });
+    const all = await getPrisma().location.findMany({ select: { id: true } });
     return all.map((l) => l.id);
   }
   return admin.locations.map((al) => al.locationId);

@@ -1,13 +1,9 @@
 // lib/otp.ts
 import { randomInt } from "crypto";
 import { ENV } from "@/lib/env";
+import { getPrisma } from "@/lib/db";
 
-/**
- * Simple in-memory OTP store for dev.
- * Structure: key = phone, value = { code, expiresAt }
- */
-type OtpRecord = { code: string; expiresAt: number };
-const store = new Map<string, OtpRecord>();
+const TTL = ENV.OTP_TTL || 300;
 
 export function normalizePhone(input: string): string {
   const digits = (input || "").replace(/\D/g, "");
@@ -16,38 +12,43 @@ export function normalizePhone(input: string): string {
 }
 
 export function generateCode(): string {
-  // 6-digit numeric, leading zeros allowed
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
-/**
- * Create and save an OTP for a phone for `ttlSeconds` seconds.
- */
-export async function createOtp(phone: string, ttlSeconds = ENV.OTP_TTL || 300) {
+export async function createOtp(phone: string, ttlSeconds = TTL) {
   const code = generateCode();
-  const expiresAt = Date.now() + ttlSeconds * 1000;
-  store.set(phone, { code, expiresAt });
-  return { code, expiresAt };
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+
+  await getPrisma().otp.upsert({
+    where: { phone },
+    update: { code, expiresAt },
+    create: { phone, code, expiresAt },
+  });
+
+  return { code, expiresAt: expiresAt.getTime() };
 }
 
-/**
- * Verify an OTP. If valid, consume it (delete from store).
- */
 export async function verifyOtp(phone: string, code: string) {
-  const rec = store.get(phone);
-  if (!rec) return { ok: false, reason: "NOT_FOUND" as const };
-  if (Date.now() > rec.expiresAt) {
-    store.delete(phone);
+  const record = await getPrisma().otp.findUnique({ where: { phone } });
+
+  if (!record) return { ok: false, reason: "NOT_FOUND" as const };
+
+  if (new Date() > record.expiresAt) {
+    await getPrisma().otp.delete({ where: { phone } });
     return { ok: false, reason: "EXPIRED" as const };
   }
-  if (rec.code !== code) return { ok: false, reason: "MISMATCH" as const };
-  store.delete(phone);
-  return { ok: true as const };
+
+  if (record.code !== code) return { ok: false, reason: "MISMATCH" as const };
+
+  await getPrisma().otp.delete({ where: { phone } });
+  return { ok: true };
 }
 
-export function ttlRemaining(phone: string) {
-  const rec = store.get(phone);
-  if (!rec) return 0;
-  const left = Math.max(0, rec.expiresAt - Date.now());
-  return Math.ceil(left / 1000);
+export async function ttlRemaining(phone: string): Promise<number> {
+  const record = await getPrisma().otp.findUnique({
+    where: { phone },
+    select: { expiresAt: true },
+  });
+  if (!record) return 0;
+  return Math.max(0, Math.ceil((record.expiresAt.getTime() - Date.now()) / 1000));
 }

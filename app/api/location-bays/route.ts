@@ -1,6 +1,6 @@
 // app/api/location-bays/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -12,13 +12,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "locationSlug is required" }, { status: 400 });
     }
 
-    const loc = await prisma.location.findUnique({
+    const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
     if (!loc) return NextResponse.json({ error: "Location not found" }, { status: 404 });
 
-    const bays = await prisma.bay.findMany({
+    const bays = await getPrisma().bay.findMany({
       where: { locationId: loc.id },
       orderBy: { number: "asc" },
       select: {

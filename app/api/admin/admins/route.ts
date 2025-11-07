@@ -1,7 +1,7 @@
 // app/api/admin/admins/route.ts
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { getAdminSession, isRoot } from "@/lib/session";
+import { getPrisma } from "@/lib/db";
+import { getAdminSession, isRoot } from "@/lib/session.server";
 import type { AdminRole } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const admins = await prisma.admin.findMany({
+    const admins = await getPrisma().admin.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         locations: {
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       : "SCOPED";
 
     // Ensure uniqueness by phone
-    const exists = await prisma.admin.findUnique({ where: { phone: cleanPhone } });
+    const exists = await getPrisma().admin.findUnique({ where: { phone: cleanPhone } });
     if (exists) {
       return NextResponse.json({ ok: false, error: "Admin already exists" }, { status: 400 });
     }
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       data.locations = { create: uniqueLocIds.map((id) => ({ locationId: id })) };
     }
 
-    const admin = await prisma.admin.create({
+    const admin = await getPrisma().admin.create({
       data,
       include: {
         locations: { include: { location: { select: { id: true, name: true, slug: true } } } },

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "locationSlug is required" }, { status: 400 });
     }
 
-    const location = await prisma.location.findUnique({
+    const location = await getPrisma().location.findUnique({
       where: { slug },
       select: {
         id: true,

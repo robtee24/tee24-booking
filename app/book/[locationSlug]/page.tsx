@@ -1,4 +1,4 @@
-// src/app/book/[locationSlug]/page.tsx
+// app/book/[locationSlug]/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";

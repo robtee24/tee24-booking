@@ -1,5 +1,5 @@
 // lib/sendSms/index.ts
-import { sendSms as _sendSms } from "../openphone";
+import { sendSms as _sendSms } from "@/lib/openphone";
 
 // Derive argument type from the actual function
 export type SendSmsArgs = Parameters<typeof _sendSms>[0];

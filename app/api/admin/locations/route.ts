@@ -1,13 +1,13 @@
 // app/api/admin/locations/route.ts
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 // GET: list (works even before adding `disabled` column)
 export async function GET() {
   try {
-    const rows = await prisma.location.findMany({
+    const rows = await getPrisma().location.findMany({
       select: { id: true, name: true, slug: true }, // NOTE: no 'disabled' here
       orderBy: { name: "asc" },
     });
@@ -41,12 +41,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "invalid name or slug" }, { status: 400 });
     }
 
-    const exists = await prisma.location.findUnique({ where: { slug: cleanSlug } });
+    const exists = await getPrisma().location.findUnique({ where: { slug: cleanSlug } });
     if (exists) {
       return NextResponse.json({ ok: false, error: "slug already exists" }, { status: 409 });
     }
 
-    const loc = await prisma.location.create({
+    const loc = await getPrisma().location.create({
       data: {
         name: cleanName,
         slug: cleanSlug,

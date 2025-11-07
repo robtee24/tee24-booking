@@ -1,7 +1,7 @@
 // app/api/bookings/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     let bayNumber: number | null = null;
 
     if (bayId) {
-      const bayRow = await prisma.bay.findUnique({
+      const bayRow = await getPrisma().bay.findUnique({
         where: { id: String(bayId) },
         select: { number: true, locationId: true },
       });
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
       locationId = bayRow.locationId;
       bayNumber = bayRow.number ?? null;
 
-      const clash = await prisma.booking.findFirst({
+      const clash = await getPrisma().booking.findFirst({
         where: {
           locationId,
           bayNumber,
@@ -127,10 +127,10 @@ export async function POST(req: NextRequest) {
       if (clash) return badRequest("Selected bay is not available for the requested time window");
     } else if (hasBayNumber) {
       if (!locationSlug) return badRequest("locationSlug is required when using bayNumber");
-      const loc = await prisma.location.findUnique({ where: { slug: locationSlug }, select: { id: true } });
+      const loc = await getPrisma().location.findUnique({ where: { slug: locationSlug }, select: { id: true } });
       if (!loc) return badRequest("Location not found for given locationSlug");
 
-      const bayRow = await prisma.bay.findUnique({
+      const bayRow = await getPrisma().bay.findUnique({
         where: { locationId_number: { locationId: loc.id, number: bayNumberParsed! } },
         select: { number: true, locationId: true },
       });
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
       locationId = bayRow.locationId;
       bayNumber = bayRow.number;
 
-      const clash = await prisma.booking.findFirst({
+      const clash = await getPrisma().booking.findFirst({
         where: {
           locationId,
           bayNumber,
@@ -154,14 +154,14 @@ export async function POST(req: NextRequest) {
       if (!locationSlug || typeof locationSlug !== "string") {
         return badRequest("locationSlug is required when bay is not specified");
       }
-      const loc = await prisma.location.findUnique({
+      const loc = await getPrisma().location.findUnique({
         where: { slug: locationSlug },
         select: { id: true },
       });
       if (!loc) return badRequest("Location not found for given locationSlug");
       locationId = loc.id;
 
-      const bays = await prisma.bay.findMany({
+      const bays = await getPrisma().bay.findMany({
         where: { locationId: loc.id },
         select: { number: true, kind: true, handedness: true },
         orderBy: [{ number: "asc" }],
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
       });
       if (!eligible.length) return badRequest("No eligible bays for the requested party type");
 
-      const overlaps = await prisma.booking.findMany({
+      const overlaps = await getPrisma().booking.findMany({
         where: {
           locationId: loc.id,
           canceledAt: null,
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
     if (!locationId || bayNumber == null) return badRequest("Resolved location or bay could not be determined");
 
     // Load location settings (incl. name for templates/response)
-    const locSettings = await prisma.location.findUnique({
+    const locSettings = await getPrisma().location.findUnique({
       where: { id: locationId },
       select: {
         id: true,
@@ -218,7 +218,7 @@ export async function POST(req: NextRequest) {
     // Max active bookings / guest
     if (locSettings.maxActiveBookingsPerGuest && locSettings.maxActiveBookingsPerGuest > 0) {
       const now = new Date();
-      const activeCount = await prisma.booking.count({
+      const activeCount = await getPrisma().booking.count({
         where: { locationId, canceledAt: null, end: { gt: now }, ...guestWhere },
       });
       if (activeCount >= locSettings.maxActiveBookingsPerGuest) {
@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
 
     // Max consecutive bookings / guest (same bay, back-to-back)
     if (locSettings.maxConsecutiveBookingsPerGuest && locSettings.maxConsecutiveBookingsPerGuest > 0) {
-      const neighbors = await prisma.booking.findMany({
+      const neighbors = await getPrisma().booking.findMany({
         where: { locationId, bayNumber, canceledAt: null, ...guestWhere },
         select: { id: true, start: true, end: true },
         orderBy: [{ start: "asc" }],
@@ -271,7 +271,7 @@ export async function POST(req: NextRequest) {
 
     // ✅ Create booking (no nulls for required strings)
     const managementToken = crypto.randomBytes(16).toString("hex");
-    const created = await prisma.booking.create({
+    const created = await getPrisma().booking.create({
       data: {
         locationId,
         bayNumber,
@@ -302,11 +302,11 @@ export async function POST(req: NextRequest) {
 
     // Templates
     const [confirmEmailRow, confirmTextRow] = await Promise.all([
-      prisma.notification.findFirst({
+      getPrisma().notification.findFirst({
         where: { locationId: created.locationId, kind: "CONFIRMATION", channel: "EMAIL", enabled: true },
         select: { template: true },
       }),
-      prisma.notification.findFirst({
+      getPrisma().notification.findFirst({
         where: { locationId: created.locationId, kind: "CONFIRMATION", channel: "TEXT", enabled: true },
         select: { template: true },
       }),
