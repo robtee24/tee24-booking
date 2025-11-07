@@ -1,6 +1,6 @@
 // app/api/admin/bookings/delete/route.ts
 import { NextResponse } from "next/server";
-import { getPrisma() } from "@/lib/db";
+import { getPrisma } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
