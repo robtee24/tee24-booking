@@ -57,8 +57,6 @@ model Location {
 
   // Messaging defaults
   bookingNote   String?
-  emailTemplate String?
-  smsTemplate   String?
   passAccessUrl String? // URL to purchase / passes page
 
   // Hours & Booking Rules

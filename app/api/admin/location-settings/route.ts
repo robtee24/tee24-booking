@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
 import { getAdminSession } from '@/lib/session.server';
+
 export const runtime = 'nodejs';
 
 /* ----------------------------- Types & Helpers ----------------------------- */
@@ -73,32 +74,27 @@ export async function GET(req: Request) {
     // LIST MODE
     if (!slug) {
       const session = await getAdminSession();
-
-      // If no session → 403 (middleware should already block, but safe)
       if (!session) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
       let locations;
       if (session.role === 'SCOPED' && session.locationSlugs?.length) {
-        // SCOPED: only show assigned locations
         locations = await getPrisma().location.findMany({
           where: { slug: { in: session.locationSlugs } },
           select: { id: true, name: true, slug: true },
           orderBy: { name: 'asc' },
         });
       } else {
-        // ROOT / FULL: show all
         locations = await getPrisma().location.findMany({
           select: { id: true, name: true, slug: true },
           orderBy: { name: 'asc' },
         });
       }
-
       return NextResponse.json({ locations });
     }
 
-    // SINGLE MODE — unchanged (UI should only call with allowed slug)
+    // SINGLE MODE — fetch location + confirmation notifications
     const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: {
@@ -106,8 +102,6 @@ export async function GET(req: Request) {
         name: true,
         slug: true,
         bookingNote: true,
-        emailTemplate: true,
-        smsTemplate: true,
         passAccessUrl: true,
         open24Hours: true,
         hours: true,
@@ -120,15 +114,33 @@ export async function GET(req: Request) {
         bays: { select: { number: true }, orderBy: { number: 'asc' } },
         createdAt: true,
         updatedAt: true,
+        notifications: {
+          where: {
+            kind: "CONFIRMATION",
+            channel: { in: ["EMAIL", "TEXT"] },
+          },
+          select: {
+            channel: true,
+            template: true,
+            enabled: true,
+          },
+        },
       },
     });
 
     if (!loc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+    const emailConf = loc.notifications.find(n => n.channel === "EMAIL");
+    const smsConf = loc.notifications.find(n => n.channel === "TEXT");
+
     return NextResponse.json({
       settings: {
         ...loc,
-        bays: (loc.bays ?? []).map((b) => b.number),
+        bays: loc.bays.map(b => b.number),
+        emailTemplate: emailConf?.template ?? null,
+        smsTemplate: smsConf?.template ?? null,
+        emailConfirmationEnabled: !!emailConf?.enabled,
+        smsConfirmationEnabled: !!smsConf?.enabled,
       },
     });
   } catch (e: any) {
@@ -161,6 +173,7 @@ export async function PATCH(req: Request) {
       if (!nm) return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 });
       nextName = nm;
     }
+
     let nextSlug: string | undefined = undefined;
     if (body.slug !== undefined) {
       const ns = normalizeSlug(body.slug);
@@ -175,26 +188,19 @@ export async function PATCH(req: Request) {
     }
 
     // ----- Other fields -----
-    const open24Hours =
-      body.open24Hours === undefined ? undefined : Boolean(body.open24Hours);
+    const open24Hours = body.open24Hours === undefined ? undefined : Boolean(body.open24Hours);
     let hours: DayHours[] | undefined = undefined;
     if ('hours' in body) hours = sanitizeHours(body.hours);
     if (open24Hours === true) hours = [];
 
-    const minBookingMinutes =
-      body.minBookingMinutes === undefined ? undefined : clamp(body.minBookingMinutes, 30, 720, 60);
-    const maxBookingMinutes =
-      body.maxBookingMinutes === undefined ? undefined : clamp(body.maxBookingMinutes, 30, 720, 120);
-    const maxActiveBookingsPerGuest =
-      body.maxActiveBookingsPerGuest === undefined ? undefined : clamp(body.maxActiveBookingsPerGuest, 0, 20, 2);
-    const activeBookingIdentifyBy =
-      body.activeBookingIdentifyBy === undefined
-        ? undefined
-        : String(body.activeBookingIdentifyBy).toLowerCase() as 'either' | 'email' | 'phone';
-    const activeBookingWindowHours =
-      body.activeBookingWindowHours === undefined ? undefined : clamp(body.activeBookingWindowHours, 1, 720, 24);
-    const maxConsecutiveBookingsPerGuest =
-      body.maxConsecutiveBookingsPerGuest === undefined ? undefined : clamp(body.maxConsecutiveBookingsPerGuest, 1, 10, 2);
+    const minBookingMinutes = body.minBookingMinutes === undefined ? undefined : clamp(body.minBookingMinutes, 30, 720, 60);
+    const maxBookingMinutes = body.maxBookingMinutes === undefined ? undefined : clamp(body.maxBookingMinutes, 30, 720, 120);
+    const maxActiveBookingsPerGuest = body.maxActiveBookingsPerGuest === undefined ? undefined : clamp(body.maxActiveBookingsPerGuest, 0, 20, 2);
+    const activeBookingIdentifyBy = body.activeBookingIdentifyBy === undefined
+      ? undefined
+      : String(body.activeBookingIdentifyBy).toLowerCase() as 'either' | 'email' | 'phone';
+    const activeBookingWindowHours = body.activeBookingWindowHours === undefined ? undefined : clamp(body.activeBookingWindowHours, 1, 720, 24);
+    const maxConsecutiveBookingsPerGuest = body.maxConsecutiveBookingsPerGuest === undefined ? undefined : clamp(body.maxConsecutiveBookingsPerGuest, 1, 10, 2);
 
     let passAccessUrl: string | null | undefined = undefined;
     if ('passAccessUrl' in body) {
@@ -210,8 +216,6 @@ export async function PATCH(req: Request) {
       name: nextName,
       slug: nextSlug,
       bookingNote: body.bookingNote ?? (body.bookingNote === null ? null : undefined),
-      emailTemplate: body.emailTemplate,
-      smsTemplate: body.smsTemplate,
       passAccessUrl,
       open24Hours,
       hours,
@@ -223,6 +227,7 @@ export async function PATCH(req: Request) {
       maxConsecutiveBookingsPerGuest,
     });
 
+    // Update location (without email/sms templates)
     const updated = await getPrisma().location.update({
       where: { slug: existing.slug },
       data,
@@ -231,8 +236,6 @@ export async function PATCH(req: Request) {
         name: true,
         slug: true,
         bookingNote: true,
-        emailTemplate: true,
-        smsTemplate: true,
         passAccessUrl: true,
         open24Hours: true,
         hours: true,
@@ -247,7 +250,108 @@ export async function PATCH(req: Request) {
       },
     });
 
-    return NextResponse.json({ settings: updated });
+    // === MIGRATE CONFIRMATION TEMPLATES TO NOTIFICATION TABLE ===
+    if (body.emailTemplate !== undefined || body.smsTemplate !== undefined) {
+      await getPrisma().$transaction(async (tx) => {
+        // Upsert EMAIL confirmation
+        if (body.emailTemplate !== undefined) {
+          await tx.notification.upsert({
+            where: {
+              locationId_kind_channel_hoursBefore: {
+                locationId: updated.id,
+                kind: "CONFIRMATION",
+                channel: "EMAIL",
+                hoursBefore: 0,
+              },
+            },
+            create: {
+              locationId: updated.id,
+              kind: "CONFIRMATION",
+              channel: "EMAIL",
+              hoursBefore: 0,
+              enabled: true,
+              template: String(body.emailTemplate ?? ""),
+              order: 0,
+            },
+            update: {
+              template: String(body.emailTemplate ?? ""),
+            },
+          });
+        }
+
+        // Upsert SMS confirmation
+        if (body.smsTemplate !== undefined) {
+          await tx.notification.upsert({
+            where: {
+              locationId_kind_channel_hoursBefore: {
+                locationId: updated.id,
+                kind: "CONFIRMATION",
+                channel: "TEXT",
+                hoursBefore: 0,
+              },
+            },
+            create: {
+              locationId: updated.id,
+              kind: "CONFIRMATION",
+              channel: "TEXT",
+              hoursBefore: 0,
+              enabled: true,
+              template: String(body.smsTemplate ?? ""),
+              order: 0,
+            },
+            update: {
+              template: String(body.smsTemplate ?? ""),
+            },
+          });
+        }
+      });
+    }
+
+    // Re-fetch with notifications to return current values
+    const final = await getPrisma().location.findUnique({
+      where: { id: updated.id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        bookingNote: true,
+        passAccessUrl: true,
+        open24Hours: true,
+        hours: true,
+        minBookingMinutes: true,
+        maxBookingMinutes: true,
+        maxActiveBookingsPerGuest: true,
+        activeBookingIdentifyBy: true,
+        activeBookingWindowHours: true,
+        maxConsecutiveBookingsPerGuest: true,
+        createdAt: true,
+        updatedAt: true,
+        notifications: {
+          where: {
+            kind: "CONFIRMATION",
+            channel: { in: ["EMAIL", "TEXT"] },
+          },
+          select: {
+            channel: true,
+            template: true,
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    const emailConf = final?.notifications.find(n => n.channel === "EMAIL");
+    const smsConf = final?.notifications.find(n => n.channel === "TEXT");
+
+    return NextResponse.json({
+      settings: {
+        ...final,
+        emailTemplate: emailConf?.template ?? null,
+        smsTemplate: smsConf?.template ?? null,
+        emailConfirmationEnabled: !!emailConf?.enabled,
+        smsConfirmationEnabled: !!smsConf?.enabled,
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
   }

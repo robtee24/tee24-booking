@@ -54,8 +54,6 @@ async function seedLocationClarksville() {
       slug: "clarksville",
       hours: defaultHours,             // ✅ REQUIRED JSON FIELD
       bookingNote: "",                 // optional but useful default
-      emailTemplate: defaultEmailTpl,  // sensible default
-      smsTemplate: defaultSmsTpl,      // sensible default
       bays: { create: [{ number: 1 }, { number: 2 }, { number: 3 }] },
     },
     include: { bays: true },
