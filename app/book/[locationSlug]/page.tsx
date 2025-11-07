@@ -16,13 +16,15 @@ const DURATIONS = [30, 60, 90, 120];
 // ---------- helpers ----------
 function pad(n: number) { return String(n).padStart(2, "0"); }
 function addMinutes(d: Date, mins: number) { return new Date(d.getTime() + mins * 60000); }
-function ymd(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function hhmm(d: Date) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-function toDisplayTime(d: Date) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+function ymd(d: Date) { return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; }
+function hhmm(d: Date) { return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; }
+function toDisplayTime(d: Date) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: "UTC", }); }
 function sameYMD(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function ceilToStep(date: Date, stepMin = STEP_MINUTES) {
   const aligned = new Date(date);
-  aligned.setMinutes(Math.ceil(aligned.getMinutes() / stepMin) * stepMin, 0, 0);
+  const minutes = aligned.getUTCMinutes();
+  const ceiled = Math.ceil(minutes / stepMin) * stepMin;
+  aligned.setUTCMinutes(ceiled, 0, 0);
   return aligned;
 }
 
@@ -48,16 +50,19 @@ function generateTimesForSlot(
   const startISO = new Date(slot.start);
   const endISO = new Date(slot.end);
   const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
-
   const windowStart = new Date(Math.max(dayStart.getTime(), startISO.getTime()));
   const firstStart = ceilToStep(windowStart, STEP_MINUTES);
 
   const out: string[] = [];
-  for (let t = firstStart; t.getTime() <= endISO.getTime() - durationMin * 60000; t = addMinutes(t, STEP_MINUTES)) {
-    if (t < windowStart) continue;
-    out.push(hhmm(t));
+  for (
+    let t = firstStart;
+    t.getTime() <= endISO.getTime() - durationMin * 60000;
+    t = addMinutes(t, STEP_MINUTES)
+  ) {
+    if (t >= windowStart) {
+      out.push(hhmm(t));
+    }
   }
-
   return out;
 }
 
@@ -261,15 +266,18 @@ export default function BookPage() {
   const startOptions = useMemo(() => {
     if (!availability.length) return [];
     let times: string[] = [];
-    for (const slot of availability) times = times.concat(generateTimesForSlot(slot, duration, date, bay));
+    for (const slot of availability) {
+        const slotTimes = generateTimesForSlot(slot, duration, date, bay);
+        times = times.concat(slotTimes);
+    }
     let arr = uniqSortedTimes(times);
 
-    // Hide past times for same-day bookings
+    // Hide past times...
     const selectedDate = new Date(`${date}T00:00:00`);
     if (sameYMD(selectedDate, today)) {
-      const now = new Date();
-      const cutoff = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      arr = arr.filter((t) => t >= cutoff);
+        const now = new Date();
+        const cutoff = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        arr = arr.filter((t) => t >= cutoff);
     }
     return arr;
   }, [availability, duration, bay, date, today]);
@@ -277,8 +285,8 @@ export default function BookPage() {
   // Display "3:00 PM"
   const startOptionsDisplay = useMemo(() => {
     return startOptions.map((t) => {
-      const d = new Date(`${date}T${t}:00`);
-      return { value: t, label: toDisplayTime(d) };
+        const d = new Date(`${date}T${t}:00.000Z`);
+        return { value: t, label: toDisplayTime(d) };
     });
   }, [startOptions, date]);
 
