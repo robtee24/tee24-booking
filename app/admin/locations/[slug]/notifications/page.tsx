@@ -1,15 +1,14 @@
 'use client';
-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { MERGE_FIELDS } from "@/lib/template-vars";
 
 /* ----------------------------- Types ----------------------------- */
-
 type ScheduledItem = {
   id?: string;
   offsetHours: number;
   enabled: boolean;
-  template: string; // HTML for emails; plaintext for SMS
+  template: string;
   orderIndex: number;
 };
 
@@ -26,19 +25,7 @@ type LoadedData = {
 };
 
 /* ------------------------- Merge Fields UI ------------------------ */
-
-const MERGE_FIELDS = [
-  'firstName',
-  'lastName',
-  'email',
-  'phone',
-  'date',
-  'startTime',
-  'endTime',
-  'bayNumber',
-  'locationName',
-  'manageUrl',
-];
+const mergeFieldKeys = MERGE_FIELDS.recommended;
 
 function insertAtCaret_contentEditable(el: HTMLElement, html: string) {
   el.focus();
@@ -78,7 +65,6 @@ function insertAtCaret_textarea(textarea: HTMLTextAreaElement, text: string) {
 }
 
 /* ------------------------- Rich Email Editor ------------------------- */
-
 function EmailToolbar({
   onCmd,
   onLink,
@@ -103,11 +89,10 @@ function EmailToolbar({
       </div>
       <button type="button" onClick={onLink} className="rounded border px-2 py-1 hover:bg-gray-50">Link</button>
       <button type="button" onClick={onClear} className="rounded border px-2 py-1 hover:bg-gray-50">Clear formatting</button>
-
       <div className="ml-auto inline-flex items-center gap-1">
         <span className="text-gray-500">Merge:</span>
         <div className="flex flex-wrap gap-1">
-          {MERGE_FIELDS.map((f) => (
+          {mergeFieldKeys.map((f) => (
             <button
               key={f}
               type="button"
@@ -151,23 +136,20 @@ function RichEmailEditor({
       ol: 'insertOrderedList',
       ul: 'insertUnorderedList',
     };
-    // eslint-disable-next-line deprecation/deprecation
     document.execCommand(map[cmd]);
     const el = ref.current;
     if (el) onChange(el.innerHTML);
   };
 
   const doLink = () => {
-    const url = prompt('Enter URL (https://…):');
+    const url = prompt('Enter URL[](https://…):');
     if (!url) return;
-    // eslint-disable-next-line deprecation/deprecation
     document.execCommand('createLink', false, url);
     const el = ref.current;
     if (el) onChange(el.innerHTML);
   };
 
   const clearFmt = () => {
-    // eslint-disable-next-line deprecation/deprecation
     document.execCommand('removeFormat');
     const el = ref.current;
     if (el) onChange(el.innerHTML);
@@ -198,12 +180,14 @@ function RichEmailEditor({
       <p className="mt-1 text-xs text-gray-500">
         This editor stores <strong>HTML</strong>. Merge fields are inserted like <code>{'{{firstName}}'}</code>.
       </p>
+      <p className="mt-1 text-xs text-gray-400">
+        Aliases: <code>{'{{startTime}}'}</code> → <code>{'{{start}}'}</code>, <code>{'{{endTime}}'}</code> → <code>{'{{end}}'}</code>
+      </p>
     </div>
   );
 }
 
 /* --------------------------- SMS Helper UI --------------------------- */
-
 function SmsToolbar({
   textareaRef,
 }: {
@@ -225,7 +209,7 @@ function SmsToolbar({
       <div className="ml-auto inline-flex items-center gap-1">
         <span className="text-gray-500">Merge:</span>
         <div className="flex flex-wrap gap-1">
-          {MERGE_FIELDS.map((f) => (
+          {mergeFieldKeys.map((f) => (
             <button
               key={f}
               type="button"
@@ -247,9 +231,7 @@ function SmsToolbar({
 }
 
 /* ----------------------------- Page ----------------------------- */
-
 export default function NotificationsPage() {
-  // ✅ Null-safe params pattern for Next 16
   const rawParams = useParams() as { slug?: string } | null;
   const slug = (rawParams?.slug ?? '').toString();
 
@@ -257,13 +239,11 @@ export default function NotificationsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
-
   const [locationName, setLocationName] = useState('');
   const [confirmEmailEnabled, setConfirmEmailEnabled] = useState(false);
   const [confirmEmailTpl, setConfirmEmailTpl] = useState('');
   const [confirmSmsEnabled, setConfirmSmsEnabled] = useState(false);
   const [confirmSmsTpl, setConfirmSmsTpl] = useState('');
-
   const [emailNotifs, setEmailNotifs] = useState<ScheduledItem[]>([]);
   const [textNotifs, setTextNotifs] = useState<ScheduledItem[]>([]);
 
@@ -283,7 +263,6 @@ export default function NotificationsPage() {
         setLoading(true);
         setError(null);
         setOkMsg(null);
-
         const res = await fetch(`/api/admin/locations/${slug}/notifications`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`Load failed: ${res.status}`);
         const data: LoadedData = await res.json();
@@ -319,10 +298,8 @@ export default function NotificationsPage() {
       setSaving(true);
       setError(null);
       setOkMsg(null);
-
       const emails = emailNotifs.map((n, idx) => ({ ...n, orderIndex: idx }));
       const texts = textNotifs.map((n, idx) => ({ ...n, orderIndex: idx }));
-
       const body = {
         confirmations: {
           email: { enabled: confirmEmailEnabled, template: confirmEmailTpl },
@@ -333,7 +310,6 @@ export default function NotificationsPage() {
           texts: texts.map(stripClientOnlyFields),
         },
       };
-
       const res = await fetch(`/api/admin/locations/${slug}/notifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -368,6 +344,7 @@ export default function NotificationsPage() {
       { offsetHours: 24, enabled: true, template: '<p>Your reminder template…</p>', orderIndex: prev.length },
     ]);
   }
+
   function addText() {
     setTextNotifs((prev) => [
       ...prev,
@@ -410,7 +387,6 @@ export default function NotificationsPage() {
         <p className="text-sm text-gray-600">Location: {locationName}</p>
       </div>
 
-      {/* Alerts */}
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
@@ -429,7 +405,6 @@ export default function NotificationsPage() {
           <p className="text-sm text-gray-600">One email + one text per booking.</p>
         </div>
         <div className="grid gap-6 p-4 md:grid-cols-2">
-          {/* Email */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="font-medium">Email confirmation</label>
@@ -450,7 +425,6 @@ export default function NotificationsPage() {
             />
           </div>
 
-          {/* SMS */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="font-medium">Text confirmation</label>
@@ -478,9 +452,7 @@ export default function NotificationsPage() {
             Add any number of reminders. <code>offsetHours</code> is how many hours <em>before</em> the booking to send.
           </p>
         </div>
-
         <div className="grid gap-8 p-4 md:grid-cols-2">
-          {/* Email reminders */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="font-medium">Email reminders</h3>
@@ -513,7 +485,6 @@ export default function NotificationsPage() {
             </div>
           </div>
 
-          {/* Text reminders */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="font-medium">Text reminders</h3>
@@ -563,7 +534,6 @@ export default function NotificationsPage() {
 }
 
 /* ------------------------- Notif Card ------------------------- */
-
 function NotifCard({
   item,
   rich,
@@ -573,7 +543,7 @@ function NotifCard({
   onMoveDown,
 }: {
   item: ScheduledItem;
-  rich: boolean; // true = email (HTML), false = SMS (plaintext)
+  rich: boolean;
   onChange: (n: ScheduledItem) => void;
   onRemove: () => void;
   onMoveUp: () => void;
@@ -605,7 +575,6 @@ function NotifCard({
             />
           </div>
         </div>
-
         <div className="flex items-center gap-2">
           <button
             onClick={onMoveUp}
@@ -613,7 +582,7 @@ function NotifCard({
             title="Move up"
             type="button"
           >
-            ↑
+            Up
           </button>
           <button
             onClick={onMoveDown}
@@ -621,7 +590,7 @@ function NotifCard({
             title="Move down"
             type="button"
           >
-            ↓
+            Down
           </button>
           <button
             onClick={onRemove}
@@ -664,7 +633,6 @@ function NotifCard({
 }
 
 /* ---------------------------- Helpers ---------------------------- */
-
 function SmsTextArea({
   value,
   onChange,

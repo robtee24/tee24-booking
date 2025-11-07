@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
-import { renderTemplate, formatDate, formatTime } from "@/lib/template";
+import { renderTemplate } from "@/lib/template";
+import { buildTemplateVars, BookingContext } from "@/lib/template-vars";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +26,12 @@ type DueItem = {
   template?: string | null;
 };
 
-function roundToMinute(d: Date) {
+function roundToMinute(d: Date): Date {
   d.setSeconds(0, 0);
   return d;
 }
 
-function manageUrlFor(bookingId: string, token?: string | null) {
+function manageUrlFor(bookingId: string, token?: string | null): string {
   const base =
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.APP_BASE_URL ||
@@ -52,11 +53,9 @@ function normalizePhoneE164(raw: string | null | undefined): string | null {
 }
 
 function htmlifyPreservingTags(tpl: string): string {
-  // If it looks like HTML already, just convert newlines to <br> and return.
   if (/<[a-z][\s\S]*>/i.test(tpl)) {
     return tpl.replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
   }
-  // Otherwise treat as plain text → paragraphs via <br>.
   return tpl.replace(/\r\n/g, "\n").replace(/\n\n+/g, "<br><br>").replace(/\n/g, "<br>");
 }
 
@@ -138,7 +137,6 @@ async function findDueNotifications(
 
       const target = new Date(nowRounded);
       target.setHours(target.getHours() + n.hoursBefore);
-
       const windowStart = new Date(target);
       windowStart.setMinutes(windowStart.getMinutes() - windowMinutes);
       const windowEnd = new Date(target);
@@ -193,7 +191,6 @@ export async function GET(req: NextRequest) {
 
     const now = nowParam ? new Date(nowParam) : new Date();
     const windowMinutes = windowParam ? Math.max(1, Number(windowParam)) : 5;
-
     const due = await findDueNotifications(now, windowMinutes, onlyBookingId, onlyChannel);
 
     const attempts: Array<{
@@ -205,7 +202,6 @@ export async function GET(req: NextRequest) {
       error?: string;
       simulatedNow?: string;
     }> = [];
-
     let sent = 0;
 
     for (const item of due) {
@@ -243,20 +239,23 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Vars for templates (match confirmations)
-      const manageUrl = manageUrlFor(item.bookingId, item.managementToken);
-      const vars = {
-        firstName: item.guestFirst ?? "",
-        lastName: item.guestLast ?? "",
-        email: item.guestEmail ?? "",
-        phone: item.guestPhone ?? "",
-        date: formatDate(item.startISO),
-        startTime: formatTime(item.startISO),
-        endTime: formatTime(item.endISO),
-        bayNumber: item.bayNumber ?? "—",
+      // Build context for centralized template vars
+      const ctx: BookingContext = {
+        bookingId: item.bookingId,
+        managementToken: item.managementToken,
+        startISO: item.startISO,
+        endISO: item.endISO,
+        firstName: item.guestFirst ?? null,
+        lastName: item.guestLast ?? null,
+        email: item.guestEmail ?? null,
+        phone: item.guestPhone ?? null,
+        bayNumber: item.bayNumber,
         locationName: item.locationName,
-        manageUrl,
+        locationSlug: item.locationSlug,
+        manageUrl: manageUrlFor(item.bookingId, item.managementToken),
       };
+
+      const vars = buildTemplateVars(ctx);
 
       if (item.channel === "EMAIL") {
         if (!item.guestEmail) {
@@ -275,8 +274,8 @@ export async function GET(req: NextRequest) {
           const body = renderTemplate(item.template || "", vars);
           const html = htmlifyPreservingTags(body);
           const subject = `Reminder: ${vars.locationName} — Bay ${vars.bayNumber} at ${vars.startTime}`;
-
           const res = await sendEmail(item.guestEmail, subject, html);
+
           if (res.ok) {
             await getPrisma().notificationLog.create({
               data: {
@@ -350,6 +349,7 @@ export async function GET(req: NextRequest) {
           });
           continue;
         }
+
         try {
           const text = renderTemplate(item.template || "", vars);
           await sendSms({
@@ -415,4 +415,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

@@ -1,6 +1,7 @@
 // app/api/admin/locations/[slug]/notifications/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
+import { MERGE_FIELDS } from "@/lib/template-vars";
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +12,10 @@ const KIND = { CONFIRMATION: 'CONFIRMATION', NOTIFICATION: 'NOTIFICATION' } as c
 // GET: load current config
 export async function GET(
   _req: NextRequest,
-  ctx: { params: Promise<{ slug: string }> } // 👈 In Next.js 16, params is a Promise
+  ctx: { params: Promise<{ slug: string }> } // In Next.js 16, params is a Promise
 ) {
   try {
-    const { slug } = await ctx.params; // 👈 Await it
+    const { slug } = await ctx.params; // Await it
     if (!slug) {
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }
@@ -91,37 +92,6 @@ export async function GET(
         orderIndex: order,
       }));
 
-    // 🔹 Helper text payload for the admin UI (so it shows {{start}}/{{end}} as primary)
-    const mergeFields = {
-      recommended: [
-        'firstName',
-        'lastName',
-        'email',
-        'phone',
-        'locationName',
-        'bayNumber',
-        'date',
-        'start', // primary
-        'end',   // primary
-        'bookingNote',
-        'manageUrl',
-      ],
-      aliases: {
-        startTime: 'start',
-        endTime: 'end',
-      },
-      notes: {
-        email: 'Email templates are HTML. Use <br> for line breaks or proper <p> tags.',
-        sms: 'SMS is plain text. Use \\n for line breaks.',
-      },
-      example: {
-        email:
-          'Hi {{firstName}},<br>Your booking is confirmed for {{date}} {{start}}–{{end}} at {{locationName}} (Bay {{bayNumber}}).',
-        sms:
-          'Hi {{firstName}}\\nYour booking is confirmed\\n{{locationName}} Bay {{bayNumber}}\\n{{date}} {{start}}–{{end}}',
-      },
-    };
-
     return NextResponse.json({
       location,
       confirmations: {
@@ -139,7 +109,7 @@ export async function GET(
         emails: scheduledEmails,
         texts: scheduledTexts, // stored as TEXT in DB
       },
-      mergeFields, // 👈 UI can read this to render accurate helper text
+      mergeFields: MERGE_FIELDS, // Centralized & always in sync
     });
   } catch (e) {
     console.error('GET notifications error', e);
@@ -150,10 +120,10 @@ export async function GET(
 // POST: replace all notifications for a location
 export async function POST(
   req: NextRequest,
-  ctx: { params: Promise<{ slug: string }> } // 👈 In Next.js 16, params is a Promise
+  ctx: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { slug } = await ctx.params; // 👈 Await it
+    const { slug } = await ctx.params;
     if (!slug) {
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }
@@ -193,7 +163,7 @@ export async function POST(
         {
           locationId: location.id,
           kind: KIND.CONFIRMATION,
-          channel: CHANNEL.TEXT, // stored as TEXT
+          channel: CHANNEL.TEXT,
           hoursBefore: 0,
           enabled: !!cSms.enabled,
           template: String(cSms.template ?? ''),
