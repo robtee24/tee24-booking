@@ -1,6 +1,7 @@
 // app/api/admin/locations/[slug]/route.ts
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { getAdminSession, hasFullAccess } from "@/lib/session.server";
 
 export const runtime = "nodejs";
 
@@ -10,15 +11,11 @@ async function getSlug(
   ctx?: { params?: Promise<{ slug?: string; id?: string }> }
 ): Promise<string | undefined> {
   let key: string | undefined;
-
   if (ctx?.params) {
     const p = await ctx.params;
     key = p?.slug ?? p?.id;
   }
-
   if (key) return key;
-
-  // Fallback: parse from /api/admin/locations/:slug
   try {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
@@ -30,22 +27,37 @@ async function getSlug(
   return undefined;
 }
 
-/** GET */
+/** GET — scoped */
 export async function GET(
   req: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await getAdminSession();
+    if (!session) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const slug = await getSlug(req, ctx);
-    if (!slug)
+    if (!slug) {
       return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    }
+
+    // SCOPED: only allow if in their locationSlugs
+    if (session.role === "SCOPED") {
+      if (!session.locationSlugs?.includes(slug)) {
+        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+      }
+    }
 
     const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true, slug: true, name: true, disabled: true },
     });
-    if (!loc)
+
+    if (!loc) {
       return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ ok: true, location: loc });
   } catch (e: any) {
@@ -56,15 +68,21 @@ export async function GET(
   }
 }
 
-/** PATCH */
+/** PATCH — disable/enable: ROOT/FULL only */
 export async function PATCH(
   req: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await getAdminSession();
+    if (!session || !hasFullAccess(session)) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const slug = await getSlug(req, ctx);
-    if (!slug)
+    if (!slug) {
       return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    }
 
     const body = await req.json().catch(() => ({} as any));
     if (typeof body?.disabled !== "boolean") {
@@ -94,34 +112,49 @@ export async function PATCH(
   }
 }
 
-/** DELETE — forcibly remove location and all dependencies */
+/** DELETE — full removal: ROOT/FULL only */
 export async function DELETE(
   req: Request,
   ctx: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await getAdminSession();
+    if (!session || !hasFullAccess(session)) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const slug = await getSlug(req, ctx);
-    if (!slug)
+    if (!slug) {
       return NextResponse.json({ ok: false, error: "missing slug" }, { status: 400 });
+    }
 
     const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: { id: true },
     });
-    if (!loc)
-      return NextResponse.json({ ok: false, error: "location not found" }, { status: 404 });
 
-    // Transaction: delete all dependent data before location
+    if (!loc) {
+      return NextResponse.json({ ok: false, error: "location not found" }, { status: 404 });
+    }
+
+    // Optional: prevent delete if bays/bookings exist
+    const hasData = await getPrisma().$transaction(async (tx) => {
+      const bays = await tx.bay.count({ where: { locationId: loc.id } });
+      const bookings = await tx.booking.count({ where: { locationId: loc.id } });
+      return { bays, bookings };
+    });
+
+    if (hasData.bays > 0 || hasData.bookings > 0) {
+      return NextResponse.json(
+        { ok: false, error: "Cannot delete location with bays or bookings" },
+        { status: 400 }
+      );
+    }
+
     await getPrisma().$transaction(async (tx) => {
-      try {
-        await tx.booking.deleteMany({ where: { locationId: loc.id } });
-      } catch {}
-      try {
-        await tx.adminLocation.deleteMany({ where: { locationId: loc.id } });
-      } catch {}
-      try {
-        await tx.bay.deleteMany({ where: { locationId: loc.id } });
-      } catch {}
+      await tx.booking.deleteMany({ where: { locationId: loc.id } });
+      await tx.adminLocation.deleteMany({ where: { locationId: loc.id } });
+      await tx.bay.deleteMany({ where: { locationId: loc.id } });
       await tx.location.delete({ where: { id: loc.id } });
     });
 

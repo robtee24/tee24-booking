@@ -6,13 +6,14 @@ import { getPrisma } from "@/lib/db";
 
 export type AdminSession = {
   sub: string;
+  id: string;
   role: "ROOT" | "FULL" | "SCOPED";
+  locationSlugs?: string[];
 };
 
 const COOKIE_PRIMARY = "admin_jwt";
 const COOKIE_LEGACY = "ADMIN_SESSION";
 const COOKIE_MAX_AGE = Number(ENV.SESSION_MAX_AGE) || 60 * 60 * 24 * 7;
-
 const JWT_ISSUER = "tee24-admin";
 const JWT_AUDIENCE = "tee24-admin";
 
@@ -42,16 +43,13 @@ export async function setAdminSession(adminId: string, role: AdminSession["role"
     path: "/",
     maxAge: COOKIE_MAX_AGE,
   };
-
   jar.set(COOKIE_PRIMARY, token, opts);
   jar.set(COOKIE_LEGACY, token, opts);
 }
 
 export async function clearAdminSession() {
   console.log("clearAdminSession: clearing cookies via Set-Cookie");
-
-  const jar = await cookies(); // response cookies
-
+  const jar = await cookies();
   const deleteCookie = (name: string, path: string) => {
     jar.set({
       name,
@@ -64,7 +62,6 @@ export async function clearAdminSession() {
       expires: new Date(0),
     });
   };
-
   const paths = ["/", "/admin"];
   for (const path of paths) {
     deleteCookie(COOKIE_PRIMARY, path);
@@ -72,15 +69,11 @@ export async function clearAdminSession() {
   }
 }
 
-export async function getAdminSession(): Promise<(AdminSession & { id: string }) | null> {
+export async function getAdminSession(): Promise<AdminSession | null> {
   const jar = await cookies();
   const primary = jar.get(COOKIE_PRIMARY)?.value;
   const legacy = jar.get(COOKIE_LEGACY)?.value;
   const token = primary || legacy;
-
-  console.log("[getAdminSession] primary:", !!primary);
-  console.log("[getAdminSession] legacy:", !!legacy);
-  console.log("[getAdminSession] token exists:", !!token);
 
   if (!token) return null;
 
@@ -90,32 +83,32 @@ export async function getAdminSession(): Promise<(AdminSession & { id: string })
       audience: JWT_AUDIENCE,
     });
 
-    console.log("[getAdminSession] JWT payload:", payload);
-
     const id = payload.sub as string;
-    if (!id) {
-      console.log("[getAdminSession] no sub in JWT");
-      return null;
-    }
+    if (!id) return null;
 
+    // Fetch admin role from DB
     const admin = await getPrisma().admin.findUnique({
       where: { id },
       select: { id: true, role: true },
     });
 
-    console.log("[getAdminSession] DB admin:", admin);
+    if (!admin) return null;
+    if (payload.role && payload.role !== admin.role) return null;
 
-    if (!admin) {
-      console.log("[getAdminSession] admin not found in DB");
-      return null;
+    const session: AdminSession = { sub: id, id, role: admin.role };
+
+    // Only fetch location slugs for SCOPED admins
+    if (admin.role === "SCOPED") {
+      const links = await getPrisma().adminLocation.findMany({
+        where: { adminId: id },
+        select: {
+          location: { select: { slug: true } },
+        },
+      });
+      session.locationSlugs = links.map((l) => l.location.slug);
     }
 
-    if (payload.role && payload.role !== admin.role) {
-      console.log("[getAdminSession] role mismatch:", payload.role, admin.role);
-      return null;
-    }
-
-    return { sub: id, id, role: admin.role };
+    return session;
   } catch (err: any) {
     console.error("[getAdminSession] JWT verify failed:", err.message);
     return null;

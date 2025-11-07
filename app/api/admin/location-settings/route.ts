@@ -1,7 +1,7 @@
 // app/api/admin/location-settings/route.ts
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
-
+import { getAdminSession } from '@/lib/session.server';
 export const runtime = 'nodejs';
 
 /* ----------------------------- Types & Helpers ----------------------------- */
@@ -12,9 +12,11 @@ function clamp(n: unknown, min: number, max: number, def: number) {
   if (!Number.isFinite(v)) return def;
   return Math.min(max, Math.max(min, v));
 }
+
 function isHHMM(s: unknown): s is string {
   return typeof s === 'string' && /^\d{2}:\d{2}$/.test(s);
 }
+
 function sanitizeHours(input: unknown): DayHours[] {
   if (!Array.isArray(input)) return [];
   const rows: DayHours[] = [];
@@ -40,11 +42,13 @@ function sanitizeHours(input: unknown): DayHours[] {
   const byDay = new Map<number, DayHours>(rows.map((r) => [r.day, r]));
   return defaults.map((d) => byDay.get(d.day) ?? d);
 }
+
 function pickDefined<T extends Record<string, any>>(src: T) {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(src)) if (v !== undefined) out[k] = v;
   return out;
 }
+
 function normalizeSlug(s: unknown) {
   return String(s ?? '')
     .toLowerCase()
@@ -58,8 +62,8 @@ function normalizeSlug(s: unknown) {
 /* ---------------------------------- GET ----------------------------------- */
 /**
  * GET /api/admin/location-settings
- *  - List mode (no ?locationSlug): { locations: [{id,name,slug}] }
- *  - Single mode (?locationSlug=slug): { settings: {...} }
+ * - List mode (no ?locationSlug): { locations: [{id,name,slug}] }
+ * - Single mode (?locationSlug=slug): { settings: {...} }
  */
 export async function GET(req: Request) {
   try {
@@ -68,38 +72,52 @@ export async function GET(req: Request) {
 
     // LIST MODE
     if (!slug) {
-      const locations = await getPrisma().location.findMany({
-        select: { id: true, name: true, slug: true },
-        orderBy: { name: 'asc' },
-      });
+      const session = await getAdminSession();
+
+      // If no session → 403 (middleware should already block, but safe)
+      if (!session) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+
+      let locations;
+      if (session.role === 'SCOPED' && session.locationSlugs?.length) {
+        // SCOPED: only show assigned locations
+        locations = await getPrisma().location.findMany({
+          where: { slug: { in: session.locationSlugs } },
+          select: { id: true, name: true, slug: true },
+          orderBy: { name: 'asc' },
+        });
+      } else {
+        // ROOT / FULL: show all
+        locations = await getPrisma().location.findMany({
+          select: { id: true, name: true, slug: true },
+          orderBy: { name: 'asc' },
+        });
+      }
+
       return NextResponse.json({ locations });
     }
 
-    // SINGLE MODE
+    // SINGLE MODE — unchanged (UI should only call with allowed slug)
     const loc = await getPrisma().location.findUnique({
       where: { slug },
       select: {
         id: true,
         name: true,
         slug: true,
-
         bookingNote: true,
         emailTemplate: true,
         smsTemplate: true,
-        passAccessUrl: true, // <-- NEW (read-only exposure)
-
+        passAccessUrl: true,
         open24Hours: true,
         hours: true,
-
         minBookingMinutes: true,
         maxBookingMinutes: true,
         maxActiveBookingsPerGuest: true,
         activeBookingIdentifyBy: true,
         activeBookingWindowHours: true,
         maxConsecutiveBookingsPerGuest: true,
-
         bays: { select: { number: true }, orderBy: { number: 'asc' } },
-
         createdAt: true,
         updatedAt: true,
       },
@@ -119,29 +137,9 @@ export async function GET(req: Request) {
 }
 
 /* --------------------------------- PATCH ---------------------------------- */
-/**
- * PATCH /api/admin/location-settings
- * Body (partial allowed):
- *   locationSlug: string (required, current slug)
- *   name?: string
- *   slug?: string (new slug)
- *   bookingNote?: string | null
- *   emailTemplate?: string
- *   smsTemplate?: string
- *   passAccessUrl?: string | null           // NEW (optional)
- *   open24Hours?: boolean
- *   hours?: {day,closed,open?,close?}[]
- *   minBookingMinutes?: number (30–720)
- *   maxBookingMinutes?: number (30–720)
- *   maxActiveBookingsPerGuest?: number
- *   activeBookingIdentifyBy?: 'either'|'email'|'phone'
- *   activeBookingWindowHours?: number (1–720)
- *   maxConsecutiveBookingsPerGuest?: number (1–10)
- */
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-
     const currentSlug: string = String(body?.locationSlug ?? '').trim();
     if (!currentSlug) {
       return NextResponse.json({ error: 'Missing locationSlug' }, { status: 400 });
@@ -163,12 +161,10 @@ export async function PATCH(req: Request) {
       if (!nm) return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 });
       nextName = nm;
     }
-
     let nextSlug: string | undefined = undefined;
     if (body.slug !== undefined) {
       const ns = normalizeSlug(body.slug);
       if (!ns) return NextResponse.json({ error: 'Slug cannot be empty' }, { status: 400 });
-      // If slug changes, enforce uniqueness
       if (ns !== existing.slug) {
         const taken = await getPrisma().location.findUnique({ where: { slug: ns }, select: { id: true } });
         if (taken) {
@@ -181,10 +177,9 @@ export async function PATCH(req: Request) {
     // ----- Other fields -----
     const open24Hours =
       body.open24Hours === undefined ? undefined : Boolean(body.open24Hours);
-
     let hours: DayHours[] | undefined = undefined;
     if ('hours' in body) hours = sanitizeHours(body.hours);
-    if (open24Hours === true) hours = []; // 24/7 -> empty array
+    if (open24Hours === true) hours = [];
 
     const minBookingMinutes =
       body.minBookingMinutes === undefined ? undefined : clamp(body.minBookingMinutes, 30, 720, 60);
@@ -201,7 +196,6 @@ export async function PATCH(req: Request) {
     const maxConsecutiveBookingsPerGuest =
       body.maxConsecutiveBookingsPerGuest === undefined ? undefined : clamp(body.maxConsecutiveBookingsPerGuest, 1, 10, 2);
 
-    // NEW passAccessUrl (string or null; empty string -> null)
     let passAccessUrl: string | null | undefined = undefined;
     if ('passAccessUrl' in body) {
       if (body.passAccessUrl === null) {
@@ -215,15 +209,12 @@ export async function PATCH(req: Request) {
     const data = pickDefined({
       name: nextName,
       slug: nextSlug,
-
       bookingNote: body.bookingNote ?? (body.bookingNote === null ? null : undefined),
       emailTemplate: body.emailTemplate,
       smsTemplate: body.smsTemplate,
-      passAccessUrl, // <-- NEW
-
+      passAccessUrl,
       open24Hours,
       hours,
-
       minBookingMinutes,
       maxBookingMinutes,
       maxActiveBookingsPerGuest,
@@ -233,28 +224,24 @@ export async function PATCH(req: Request) {
     });
 
     const updated = await getPrisma().location.update({
-      where: { slug: existing.slug }, // use current slug to find the row
+      where: { slug: existing.slug },
       data,
       select: {
         id: true,
         name: true,
         slug: true,
-
         bookingNote: true,
         emailTemplate: true,
         smsTemplate: true,
-        passAccessUrl: true, // <-- NEW (return in response)
-
+        passAccessUrl: true,
         open24Hours: true,
         hours: true,
-
         minBookingMinutes: true,
         maxBookingMinutes: true,
         maxActiveBookingsPerGuest: true,
         activeBookingIdentifyBy: true,
         activeBookingWindowHours: true,
         maxConsecutiveBookingsPerGuest: true,
-
         createdAt: true,
         updatedAt: true,
       },

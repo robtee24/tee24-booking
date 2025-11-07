@@ -23,14 +23,40 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const admins = await getPrisma().admin.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        locations: {
-          include: { location: { select: { id: true, name: true, slug: true } } },
+    let admins;
+
+    if (session.role === "SCOPED" && session.locationSlugs?.length) {
+      // SCOPED: only admins who share at least one location
+      const adminIdsInScope = await getPrisma().adminLocation.findMany({
+        where: {
+          location: { slug: { in: session.locationSlugs } },
         },
-      },
-    });
+        select: { adminId: true },
+        distinct: ["adminId"],
+      });
+
+      const ids = adminIdsInScope.map((a) => a.adminId);
+
+      admins = await getPrisma().admin.findMany({
+        where: { id: { in: ids } },
+        orderBy: { createdAt: "desc" },
+        include: {
+          locations: {
+            include: { location: { select: { id: true, name: true, slug: true } } },
+          },
+        },
+      });
+    } else {
+      // ROOT / FULL: see all
+      admins = await getPrisma().admin.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          locations: {
+            include: { location: { select: { id: true, name: true, slug: true } } },
+          },
+        },
+      });
+    }
 
     return NextResponse.json({ ok: true, admins });
   } catch (err: any) {
@@ -71,16 +97,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Admin already exists" }, { status: 400 });
     }
 
-    // If SCOPED and locationIds provided, ensure they are unique/defined
-    const uniqueLocIds =
-      Array.isArray(locationIds) && locationIds.length
-        ? Array.from(new Set(locationIds.map(String)))
-        : [];
+    // Validate locationIds if SCOPED
+    let uniqueLocIds: string[] = [];
+    if (cleanRole === "SCOPED" && Array.isArray(locationIds) && locationIds.length) {
+      uniqueLocIds = Array.from(new Set(locationIds.map(String).filter(Boolean)));
+
+      // ROOT can assign any location — no restriction
+      // But we still validate that location IDs exist
+      const validLocations = await getPrisma().location.findMany({
+        where: { id: { in: uniqueLocIds } },
+        select: { id: true },
+      });
+      const validIds = validLocations.map((l) => l.id);
+      const invalid = uniqueLocIds.filter((id) => !validIds.includes(id));
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { ok: false, error: `Invalid location IDs: ${invalid.join(", ")}` },
+          { status: 400 }
+        );
+      }
+    }
 
     const data: any = {
       phone: cleanPhone,
       role: cleanRole,
-      name: cleanName, // nullable allowed
+      name: cleanName,
     };
 
     if (cleanRole === "SCOPED" && uniqueLocIds.length > 0) {
@@ -90,7 +131,9 @@ export async function POST(request: NextRequest) {
     const admin = await getPrisma().admin.create({
       data,
       include: {
-        locations: { include: { location: { select: { id: true, name: true, slug: true } } } },
+        locations: {
+          include: { location: { select: { id: true, name: true, slug: true } } },
+        },
       },
     });
 
@@ -100,5 +143,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
   }
 }
-
-
