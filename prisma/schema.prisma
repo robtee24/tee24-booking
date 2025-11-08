@@ -178,7 +178,6 @@ model NotificationLog {
   error           String?  // error text if failed
   sentAt          DateTime @default(now())
 
-  @@unique([bookingId, notificationId, channel]) // idempotency
   @@index([bookingId])
   @@index([notificationId])
 }
