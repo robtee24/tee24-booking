@@ -1,25 +1,21 @@
 -- prisma/migrations/20251108124500_remove_notificationlog_composite_unique/migration.sql
--- Safe for SQLite + PostgreSQL: Remove composite unique + convert channel to TEXT
+-- Combined: Remove composite unique + Convert channel to TEXT + Preserve EMAIL/TEXT + Deduplicate Notification
 BEGIN;
 
 -- ==============================================================
--- 0. CLEANUP: Drop any leftover NotificationLog_new from failed runs
+-- 0. CLEANUP: Drop any leftover temp tables
 -- ==============================================================
 DROP TABLE IF EXISTS "NotificationLog_new" CASCADE;
+DROP TABLE IF EXISTS "Notification_new" CASCADE;
 
 -- ==============================================================
--- 1. Drop foreign-key constraints (none directly reference NotificationLog)
--- ==============================================================
--- No FKs point to NotificationLog → safe to skip
-
--- ==============================================================
--- 2. Create new table with channel as TEXT
+-- 1. NOTIFICATION LOG: Remove composite unique + Convert channel to TEXT + Preserve values
 -- ==============================================================
 CREATE TABLE "NotificationLog_new" (
   "id" TEXT NOT NULL,
   "bookingId" TEXT NOT NULL,
   "notificationId" TEXT NOT NULL,
-  "channel" TEXT NOT NULL CHECK ("channel" IN ('EMAIL', 'TEXT')), -- Enforce valid values
+  "channel" TEXT NOT NULL CHECK ("channel" IN ('EMAIL', 'TEXT')),
   "status" TEXT NOT NULL,
   "providerId" TEXT,
   "error" TEXT,
@@ -27,59 +23,117 @@ CREATE TABLE "NotificationLog_new" (
   CONSTRAINT "NotificationLog_new_pkey" PRIMARY KEY ("id")
 );
 
--- ==============================================================
--- 3. Copy data from old table (convert enum to text)
--- ==============================================================
+-- Copy all data, convert enum → TEXT safely
+WITH safe_channel AS (
+  SELECT
+    "id",
+    "bookingId",
+    "notificationId",
+    "status",
+    "providerId",
+    "error",
+    "sentAt",
+    "channel"::TEXT AS safe_channel
+  FROM "NotificationLog"
+)
 INSERT INTO "NotificationLog_new" (
-  "id", "bookingId", "notificationId", "channel",
-  "status", "providerId", "error", "sentAt"
+  "id", "bookingId", "notificationId", "channel", "status", "providerId", "error", "sentAt"
 )
 SELECT
-  "id",
-  "bookingId",
-  "notificationId",
-  "channel"::TEXT,  -- Force enum → text
-  "status",
-  "providerId",
-  "error",
-  "sentAt"
-FROM "NotificationLog";
+  "id", "bookingId", "notificationId", safe_channel, "status", "providerId", "error", "sentAt"
+FROM safe_channel;
 
--- ==============================================================
--- 4. Swap tables
--- ==============================================================
 DROP TABLE "NotificationLog";
 ALTER TABLE "NotificationLog_new" RENAME TO "NotificationLog";
 
--- ==============================================================
--- 5. FIX: Rename primary key constraint (PostgreSQL-safe)
--- ==============================================================
+-- Rename PK
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1
-    FROM pg_constraint c
+    SELECT 1 FROM pg_constraint c
     JOIN pg_class t ON c.conrelid = t.oid
-    WHERE c.conname = 'NotificationLog_new_pkey'
-      AND t.relname = 'NotificationLog'
+    WHERE c.conname = 'NotificationLog_new_pkey' AND t.relname = 'NotificationLog'
   ) THEN
     ALTER TABLE "NotificationLog" RENAME CONSTRAINT "NotificationLog_new_pkey" TO "NotificationLog_pkey";
   END IF;
 END $$;
 
--- ==============================================================
--- 6. Re-create indexes (preserve performance)
--- ==============================================================
+-- Recreate indexes
 CREATE INDEX IF NOT EXISTS "NotificationLog_bookingId_idx" ON "NotificationLog"("bookingId");
 CREATE INDEX IF NOT EXISTS "NotificationLog_notificationId_idx" ON "NotificationLog"("notificationId");
 CREATE INDEX IF NOT EXISTS "NotificationLog_channel_idx" ON "NotificationLog"("channel");
-
--- Fast lookup for idempotency (non-unique)
 CREATE INDEX IF NOT EXISTS "NotificationLog_bookingId_notificationId_channel_idx"
   ON "NotificationLog"("bookingId", "notificationId", "channel");
 
 -- ==============================================================
--- 7. Drop the old enum (PostgreSQL only, safe in SQLite)
+-- 2. NOTIFICATION: Convert channel to TEXT + Deduplicate + Preserve EMAIL/TEXT
+-- ==============================================================
+CREATE TABLE "Notification_new" (
+  "id" TEXT NOT NULL,
+  "locationId" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "channel" TEXT NOT NULL DEFAULT 'EMAIL' CHECK ("channel" IN ('EMAIL', 'TEXT')),
+  "hoursBefore" INTEGER NOT NULL DEFAULT 0,
+  "template" TEXT NOT NULL,
+  "enabled" BOOLEAN NOT NULL DEFAULT true,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "Notification_new_pkey" PRIMARY KEY ("id")
+);
+
+-- Deduplicate by full unique key (including channel), preserve latest
+WITH ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY "locationId", "kind", "channel"::TEXT, "hoursBefore"
+      ORDER BY "updatedAt" DESC
+    ) AS rn,
+    "channel"::TEXT AS safe_channel
+  FROM "Notification"
+)
+INSERT INTO "Notification_new" (
+  "id", "locationId", "kind", "channel", "hoursBefore", "template", "enabled", "order", "createdAt", "updatedAt"
+)
+SELECT
+  "id",
+  "locationId",
+  "kind",
+  safe_channel,
+  COALESCE("hoursBefore", 0),
+  COALESCE("template", ''),
+  COALESCE("enabled", true),
+  COALESCE("order", 0),
+  "createdAt",
+  "updatedAt"
+FROM ranked
+WHERE rn = 1;
+
+DROP TABLE "Notification";
+ALTER TABLE "Notification_new" RENAME TO "Notification";
+
+-- Rename PK
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON c.conrelid = t.oid
+    WHERE c.conname = 'Notification_new_pkey' AND t.relname = 'Notification'
+  ) THEN
+    ALTER TABLE "Notification" RENAME CONSTRAINT "Notification_new_pkey" TO "Notification_pkey";
+  END IF;
+END $$;
+
+-- Create unique index
+CREATE UNIQUE INDEX IF NOT EXISTS "Notification_locationId_kind_channel_hoursBefore_key"
+  ON "Notification"("locationId", "kind", "channel", "hoursBefore");
+
+CREATE INDEX IF NOT EXISTS "Notification_locationId_kind_channel_idx"
+  ON "Notification"("locationId", "kind", "channel");
+
+-- ==============================================================
+-- 3. Drop enum
 -- ==============================================================
 DROP TYPE IF EXISTS "NotificationChannel" CASCADE;
 
