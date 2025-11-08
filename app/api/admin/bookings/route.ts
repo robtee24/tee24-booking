@@ -9,7 +9,6 @@ import { renderTemplate, formatDate, formatTime } from "@/lib/template";
 export const dynamic = "force-dynamic";
 
 /* ---------------- helpers ---------------- */
-
 function badRequest(msg: string, extra?: any) {
   return NextResponse.json({ ok: false, error: msg, ...extra }, { status: 400 });
 }
@@ -53,10 +52,8 @@ function normalizePhoneE164One(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const only = raw.replace(/[^\d+]+/g, "");
   if (only.startsWith("+") && isE164(only)) return only;
-
   const digits = only.replace(/\+/g, "").replace(/[^\d]/g, "");
   if (!digits) return null;
-
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length > 10 && digits[0] === "1") return `+${digits}`;
   if (digits.length >= 8 && digits.length <= 15) {
@@ -74,7 +71,6 @@ function extractPhones(raw: string | null | undefined): string[] {
     .split(/[\s,]+/)
     .map((p) => p.trim())
     .filter(Boolean);
-
   const out: string[] = [];
   for (const p of parts) {
     const norm = normalizePhoneE164One(p);
@@ -91,30 +87,24 @@ function maskPhoneList(list: string[]): string {
 }
 
 /* ---------------- POST: public booking create + confirmations ---------------- */
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-
     // Inputs accepted from public form
     const locationSlug: string | undefined = body.locationSlug ?? body.slug;
     const locationIdBody: string | undefined = body.locationId;
-
     const bayId: string | null = body.bayId ?? body.bayID ?? null;
     const bayNumberRaw: any = body.bayNumber ?? body.bay_no ?? body.bay;
     const bayNumberParsed =
       bayNumberRaw === undefined || bayNumberRaw === null ? null : Number(bayNumberRaw);
     const hasBayNumber = bayNumberParsed !== null && !Number.isNaN(bayNumberParsed);
-
     const startISO: string | undefined =
       body.startISO ?? body.start ?? body.start_time ?? body.startTime;
     const endISO: string | undefined =
       body.endISO ?? body.end ?? body.end_time ?? body.endTime;
-
     const firstName: string | undefined = body.firstName;
     const lastName: string | undefined = body.lastName;
     const rawEmail: string | undefined = body.email;
-
     const rawPhoneAny: string | undefined =
       body.phone ??
       body.phoneNumber ??
@@ -133,7 +123,6 @@ export async function POST(req: NextRequest) {
     if (Number.isNaN(start.getTime())) return badRequest("Invalid startISO");
     if (Number.isNaN(end.getTime())) return badRequest("Invalid endISO");
     if (end <= start) return badRequest("end must be after start");
-
     if (!firstName || typeof firstName !== "string") {
       return badRequest("firstName is required");
     }
@@ -172,7 +161,6 @@ export async function POST(req: NextRequest) {
       } else {
         return badRequest("locationSlug or locationId is required when using bayNumber");
       }
-
       const bayRow = await getPrisma().bay.findUnique({
         where: { locationId_number: { locationId: locId!, number: bayNumberParsed! } },
         select: { number: true, locationId: true },
@@ -194,7 +182,6 @@ export async function POST(req: NextRequest) {
       } else {
         return badRequest("Provide locationSlug or locationId when bay is not specified");
       }
-
       const bays = await getPrisma().bay.findMany({
         where: { locationId: locId },
         select: { number: true },
@@ -210,6 +197,7 @@ export async function POST(req: NextRequest) {
         },
         select: { bayNumber: true, start: true, end: true },
       });
+
       const occupied = new Set<number>();
       for (const e of conflicts) {
         if (e.bayNumber == null) continue;
@@ -219,7 +207,6 @@ export async function POST(req: NextRequest) {
       }
       const available = bays.find((b) => !occupied.has(b.number));
       if (!available) return badRequest("No available bays for the selected time window");
-
       locationId = locId;
       bayNumber = available.number ?? null;
     }
@@ -242,7 +229,6 @@ export async function POST(req: NextRequest) {
 
     // -------- create booking --------
     const managementToken = crypto.randomBytes(16).toString("hex");
-
     const created = await getPrisma().booking.create({
       data: {
         locationId,
@@ -250,7 +236,6 @@ export async function POST(req: NextRequest) {
         start,
         end,
         firstName: String(firstName),
-        // ✅ Coerce to required strings to satisfy Prisma schema
         lastName: lastName ? String(lastName) : "",
         email: emailLower ?? "",
         phone: (phoneNorm ?? body.phone ?? "") as string,
@@ -271,34 +256,34 @@ export async function POST(req: NextRequest) {
     });
 
     // -------- confirmations --------
-    const location = await getPrisma().location.findUnique({
+    // Fetch location name + enabled confirmation templates in ONE query
+    const locationData = await getPrisma().location.findUnique({
       where: { id: created.locationId },
-      select: { name: true, emailTemplate: true, smsTemplate: true },
+      select: {
+        name: true,
+        notifications: {
+          where: {
+            kind: "CONFIRMATION",
+            channel: { in: ["EMAIL", "TEXT"] },
+            enabled: true,
+          },
+          select: {
+            channel: true,
+            template: true,
+          },
+        },
+      },
     });
 
-    const [confirmEmailRow, confirmTextRow] = await Promise.all([
-      getPrisma().notification.findFirst({
-        where: {
-          locationId: created.locationId,
-          kind: "CONFIRMATION",
-          channel: "EMAIL",
-          enabled: true,
-        },
-        select: { template: true },
-      }),
-      getPrisma().notification.findFirst({
-        where: {
-          locationId: created.locationId,
-          kind: "CONFIRMATION",
-          channel: "TEXT",
-          enabled: true,
-        },
-        select: { template: true },
-      }),
-    ]);
+    if (!locationData) {
+      throw new Error("Location not found after booking creation");
+    }
 
-    const emailTemplate = confirmEmailRow?.template ?? location?.emailTemplate ?? null;
-    const smsTemplate = confirmTextRow?.template ?? location?.smsTemplate ?? null;
+    const emailTemplate =
+      locationData.notifications.find((n) => n.channel === "EMAIL")?.template ?? null;
+    const smsTemplate =
+      locationData.notifications.find((n) => n.channel === "TEXT")?.template ?? null;
+    const locationName = locationData.name;
 
     const manageUrl = manageUrlFor(created.id, created.managementToken);
     const vars = {
@@ -310,7 +295,7 @@ export async function POST(req: NextRequest) {
       startTime: formatTime(created.start.toISOString()),
       endTime: formatTime(created.end.toISOString()),
       bayNumber: created.bayNumber ?? "—",
-      locationName: location?.name ?? "",
+      locationName: locationName ?? "",
       manageUrl,
     };
 
@@ -369,4 +354,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
