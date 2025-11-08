@@ -174,8 +174,8 @@ async function sendAllUnsent(): Promise<Array<{
 
   const [bookings, notifications] = await Promise.all([
     getPrisma().booking.findMany({
-      where: { id: { in: bookingIds } },
-      select: {
+        where: { id: { in: bookingIds } },
+        select: {
         id: true,
         start: true,
         end: true,
@@ -185,18 +185,18 @@ async function sendAllUnsent(): Promise<Array<{
         email: true,
         phone: true,
         managementToken: true,
-        location: {
-          select: { slug: true, name: true },
+        Location: {                 // ← Fixed
+            select: { slug: true, name: true },
         },
-      },
+        },
     }),
     getPrisma().notification.findMany({
-      where: { id: { in: notificationIds } },
-      select: {
+        where: { id: { in: notificationIds } },
+        select: {
         id: true,
         template: true,
         channel: true,
-      },
+        },
     }),
   ]);
 
@@ -235,8 +235,8 @@ async function sendAllUnsent(): Promise<Array<{
       email: b.email ?? null,
       phone: b.phone ?? null,
       bayNumber: b.bayNumber ?? null,
-      locationName: b.location.name,
-      locationSlug: b.location.slug,
+      locationName: b.Location.name,
+      locationSlug: b.Location.slug,
       manageUrl: manageUrlFor(b.id, b.managementToken ?? undefined),
     };
     const vars = buildTemplateVars(ctx);
