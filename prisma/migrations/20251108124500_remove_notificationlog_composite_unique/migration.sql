@@ -1,5 +1,10 @@
 -- prisma/migrations/20251108124500_remove_notificationlog_composite_unique/migration.sql
--- Combined: Remove composite unique + Convert channel to TEXT + Preserve EMAIL/TEXT + Deduplicate Notification
+-- Combined: 
+-- 1. Remove composite unique on NotificationLog
+-- 2. Convert Notification.channel → TEXT (preserve EMAIL/TEXT)
+-- 3. Convert Notification.kind → TEXT (preserve CONFIRMATION/NOTIFICATION)
+-- 4. Deduplicate Notification by full unique key
+-- 5. Drop both enums
 BEGIN;
 
 -- ==============================================================
@@ -9,7 +14,7 @@ DROP TABLE IF EXISTS "NotificationLog_new" CASCADE;
 DROP TABLE IF EXISTS "Notification_new" CASCADE;
 
 -- ==============================================================
--- 1. NOTIFICATION LOG: Remove composite unique + Convert channel to TEXT + Preserve values
+-- 1. NOTIFICATION LOG: Convert channel → TEXT + Preserve values
 -- ==============================================================
 CREATE TABLE "NotificationLog_new" (
   "id" TEXT NOT NULL,
@@ -23,7 +28,7 @@ CREATE TABLE "NotificationLog_new" (
   CONSTRAINT "NotificationLog_new_pkey" PRIMARY KEY ("id")
 );
 
--- Copy all data, convert enum → TEXT safely
+-- Safely convert enum → TEXT
 WITH safe_channel AS (
   SELECT
     "id",
@@ -66,12 +71,12 @@ CREATE INDEX IF NOT EXISTS "NotificationLog_bookingId_notificationId_channel_idx
   ON "NotificationLog"("bookingId", "notificationId", "channel");
 
 -- ==============================================================
--- 2. NOTIFICATION: Convert channel to TEXT + Deduplicate + Preserve EMAIL/TEXT
+-- 2. NOTIFICATION: Convert kind + channel → TEXT + Deduplicate + Preserve values
 -- ==============================================================
 CREATE TABLE "Notification_new" (
   "id" TEXT NOT NULL,
   "locationId" TEXT NOT NULL,
-  "kind" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'NOTIFICATION' CHECK ("kind" IN ('CONFIRMATION', 'NOTIFICATION')),
   "channel" TEXT NOT NULL DEFAULT 'EMAIL' CHECK ("channel" IN ('EMAIL', 'TEXT')),
   "hoursBefore" INTEGER NOT NULL DEFAULT 0,
   "template" TEXT NOT NULL,
@@ -82,14 +87,15 @@ CREATE TABLE "Notification_new" (
   CONSTRAINT "Notification_new_pkey" PRIMARY KEY ("id")
 );
 
--- Deduplicate by full unique key (including channel), preserve latest
+-- Deduplicate by full unique key (locationId, kind, channel, hoursBefore)
 WITH ranked AS (
   SELECT
     *,
     ROW_NUMBER() OVER (
-      PARTITION BY "locationId", "kind", "channel"::TEXT, "hoursBefore"
+      PARTITION BY "locationId", "kind"::TEXT, "channel"::TEXT, "hoursBefore"
       ORDER BY "updatedAt" DESC
     ) AS rn,
+    "kind"::TEXT AS safe_kind,
     "channel"::TEXT AS safe_channel
   FROM "Notification"
 )
@@ -99,7 +105,7 @@ INSERT INTO "Notification_new" (
 SELECT
   "id",
   "locationId",
-  "kind",
+  safe_kind,
   safe_channel,
   COALESCE("hoursBefore", 0),
   COALESCE("template", ''),
@@ -133,8 +139,9 @@ CREATE INDEX IF NOT EXISTS "Notification_locationId_kind_channel_idx"
   ON "Notification"("locationId", "kind", "channel");
 
 -- ==============================================================
--- 3. Drop enum
+-- 3. Drop both enums
 -- ==============================================================
 DROP TYPE IF EXISTS "NotificationChannel" CASCADE;
+DROP TYPE IF EXISTS "NotificationKind" CASCADE;
 
 COMMIT;

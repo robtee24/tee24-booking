@@ -9,7 +9,7 @@ datasource db {
 
 /**
  * =========================
- * Enums
+ * Enums (Only Safe Ones)
  * =========================
  */
 enum AdminRole {
@@ -17,14 +17,6 @@ enum AdminRole {
   FULL
   SCOPED
 }
-
-enum NotificationKind {
-  CONFIRMATION // use hoursBefore = 0
-  NOTIFICATION // hoursBefore > 0
-}
-
-// REMOVED: NotificationChannel enum
-// → channel is now String with CHECK constraint in DB
 
 enum BayKind {
   SINGLE // one golfer, handedness-specific
@@ -42,61 +34,61 @@ enum Handedness {
  * =========================
  */
 model Location {
-  id         String   @id @default(uuid())
-  name       String
-  slug       String   @unique
-  disabled   Boolean  @default(false)
-  bookingNote String?
-  passAccessUrl String?
+  id                               String   @id @default(uuid())
+  name                             String
+  slug                             String   @unique
+  disabled                         Boolean  @default(false)
+  bookingNote                      String?
+  passAccessUrl                    String?
 
-  open24Hours              Boolean  @default(false)
-  hours                    Json     // init to [] in app if null
-  minBookingMinutes        Int      @default(60)
-  maxBookingMinutes        Int      @default(120)
-  maxActiveBookingsPerGuest Int     @default(2)
-  activeBookingIdentifyBy  String   @default("either")
-  activeBookingWindowHours Int      @default(24)
-  maxConsecutiveBookingsPerGuest Int @default(2)
+  open24Hours                      Boolean  @default(false)
+  hours                            Json     // init to [] in app if null
+  minBookingMinutes                Int      @default(60)
+  maxBookingMinutes                Int      @default(120)
+  maxActiveBookingsPerGuest        Int      @default(2)
+  activeBookingIdentifyBy          String   @default("either")
+  activeBookingWindowHours         Int      @default(24)
+  maxConsecutiveBookingsPerGuest   Int      @default(2)
 
-  bays        Bay[]
-  bookings    Booking[]
-  adminLinks  AdminLocation[]
-  notifications Notification[]
+  bays                             Bay[]
+  bookings                         Booking[]
+  adminLinks                       AdminLocation[]
+  notifications                    Notification[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @updatedAt
 }
 
 model Bay {
-  id         String   @id @default(uuid())
-  number     Int
-  name       String?
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  id          String   @id @default(uuid())
+  number      Int
+  name        String?
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
 
-  kind       BayKind     @default(GROUP)
-  handedness Handedness? // only set when kind = SINGLE
-  capacity   Int         @default(4)
+  kind        BayKind     @default(GROUP)
+  handedness  Handedness? // only set when kind = SINGLE
+  capacity    Int         @default(4)
 
   @@unique([locationId, number])
   @@index([locationId])
 }
 
 model Booking {
-  id             String    @id @default(uuid())
-  locationId     String
-  bayNumber      Int
-  start          DateTime
-  end            DateTime
-  firstName      String
-  lastName       String
-  phone          String
-  email          String
-  managementToken String   @unique @default(uuid())
-  canceledAt     DateTime?
+  id              String    @id @default(uuid())
+  locationId      String
+  bayNumber       Int
+  start           DateTime
+  end             DateTime
+  firstName       String
+  lastName        String
+  phone           String
+  email           String
+  managementToken String    @unique @default(uuid())
+  canceledAt      DateTime?
 
-  createdAt      DateTime @default(now())
-  Location       Location @relation(fields: [locationId], references: [id])
+  createdAt       DateTime  @default(now())
+  Location        Location  @relation(fields: [locationId], references: [id])
 
   @@index([locationId, bayNumber, start])
   @@index([locationId, start, end])
@@ -129,15 +121,15 @@ model AdminLocation {
 
 /**
  * =========================
- * Notifications
+ * Notifications — kind & channel are TEXT in DB
  * =========================
  */
 model Notification {
   id          String   @id @default(cuid())
   locationId  String
   location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  kind        NotificationKind
-  channel     String   @default("EMAIL") // TEXT in DB, enforced by CHECK
+  kind        String   @default("NOTIFICATION")  // TEXT + CHECK('CONFIRMATION', 'NOTIFICATION')
+  channel     String   @default("EMAIL")        // TEXT + CHECK('EMAIL', 'TEXT')
   hoursBefore Int      @default(0)
   template    String
   enabled     Boolean  @default(true)
@@ -153,7 +145,7 @@ model NotificationLog {
   id             String   @id @default(cuid())
   bookingId      String
   notificationId String
-  channel        String   // TEXT in DB, enforced by CHECK
+  channel        String   // TEXT + CHECK('EMAIL', 'TEXT')
   status         String   // "SENT" | "FAILED"
   providerId     String?
   error          String?
