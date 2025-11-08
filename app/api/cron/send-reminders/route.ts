@@ -27,11 +27,6 @@ type DueItem = {
   template?: string | null;
 };
 
-// === HELPER: Safely convert enum to string ===
-const channelToString = (channel: NotificationChannel): string => {
-  return channel; // enum values are their string labels
-};
-
 // === HELPER: Add hours correctly (no mutation) ===
 function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
@@ -100,7 +95,7 @@ async function queueDueNotifications(
         bookingId_notificationId_channel: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: channelToString(item.channel), // ← Type-safe
+          channel: item.channel.toString(),
         },
       },
     });
@@ -117,7 +112,7 @@ async function queueDueNotifications(
         data: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: channelToString(item.channel), // ← Type-safe
+          channel: item.channel.toString(),
           status: "DRY-RUN",
           providerId: null,
           error: null,
@@ -131,7 +126,7 @@ async function queueDueNotifications(
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: channelToString(item.channel), // ← Type-safe
+        channel: item.channel.toString(),
         status: "UNSENT",
         providerId: null,
         error: null,
