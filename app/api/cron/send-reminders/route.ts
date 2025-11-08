@@ -137,6 +137,7 @@ async function findDueNotifications(
 
       const target = new Date(nowRounded);
       target.setHours(target.getHours() + n.hoursBefore);
+
       const windowStart = new Date(target);
       windowStart.setMinutes(windowStart.getMinutes() - windowMinutes);
       const windowEnd = new Date(target);
@@ -172,12 +173,18 @@ async function findDueNotifications(
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const secret = searchParams.get("secret");
-    const dryRun = searchParams.get("dryRun") === "true";
-    const nowParam = searchParams.get("now");
-    const windowParam = searchParams.get("window");
-    const onlyBookingId = searchParams.get("bookingId");
-    const onlyChannel = (searchParams.get("channel") as "EMAIL" | "TEXT" | null) ?? null;
+
+    // === AUTHENTICATION: Support both Bearer token (Vercel) and ?secret= (manual test) ===
+    const authHeader = req.headers.get("authorization");
+    const querySecret = searchParams.get("secret");
+
+    let secret: string | null = null;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      secret = authHeader.split(" ")[1];
+    } else if (querySecret) {
+      secret = querySecret;
+    }
 
     if (!process.env.CRON_SECRET) {
       return NextResponse.json(
@@ -185,12 +192,21 @@ export async function GET(req: NextRequest) {
         { status: 500 }
       );
     }
-    if (secret !== process.env.CRON_SECRET) {
+
+    if (!secret || secret !== process.env.CRON_SECRET) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // === Parameters ===
+    const dryRun = searchParams.get("dryRun") === "true";
+    const nowParam = searchParams.get("now");
+    const windowParam = searchParams.get("window");
+    const onlyBookingId = searchParams.get("bookingId") || undefined;
+    const onlyChannel = (searchParams.get("channel") as "EMAIL" | "TEXT" | null) ?? null;
+
     const now = nowParam ? new Date(nowParam) : new Date();
     const windowMinutes = windowParam ? Math.max(1, Number(windowParam)) : 5;
+
     const due = await findDueNotifications(now, windowMinutes, onlyBookingId, onlyChannel);
 
     const attempts: Array<{
@@ -202,6 +218,7 @@ export async function GET(req: NextRequest) {
       error?: string;
       simulatedNow?: string;
     }> = [];
+
     let sent = 0;
 
     for (const item of due) {
@@ -239,7 +256,7 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Build context for centralized template vars
+      // Build context for template
       const ctx: BookingContext = {
         bookingId: item.bookingId,
         managementToken: item.managementToken,
@@ -274,6 +291,7 @@ export async function GET(req: NextRequest) {
           const body = renderTemplate(item.template || "", vars);
           const html = htmlifyPreservingTags(body);
           const subject = `Reminder: ${vars.locationName} — Bay ${vars.bayNumber} at ${vars.startTime}`;
+
           const res = await sendEmail(item.guestEmail, subject, html);
 
           if (res.ok) {
@@ -287,6 +305,7 @@ export async function GET(req: NextRequest) {
                 error: null,
               },
             });
+
             attempts.push({
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -306,6 +325,7 @@ export async function GET(req: NextRequest) {
                 error: res.error || "email send failed",
               },
             });
+
             attempts.push({
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -326,6 +346,7 @@ export async function GET(req: NextRequest) {
               error: err?.message || "email threw",
             },
           });
+
           attempts.push({
             bookingId: item.bookingId,
             notificationId: item.notificationId,
@@ -352,6 +373,7 @@ export async function GET(req: NextRequest) {
 
         try {
           const text = renderTemplate(item.template || "", vars);
+
           await sendSms({
             from: process.env.OPENPHONE_FROM || "system",
             to: [normalized],
@@ -368,6 +390,7 @@ export async function GET(req: NextRequest) {
               error: null,
             },
           });
+
           attempts.push({
             bookingId: item.bookingId,
             notificationId: item.notificationId,
@@ -387,6 +410,7 @@ export async function GET(req: NextRequest) {
               error: err?.message || "sms threw",
             },
           });
+
           attempts.push({
             bookingId: item.bookingId,
             notificationId: item.notificationId,
