@@ -1,6 +1,6 @@
 // app/api/cron/send-reminders/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getPrisma } from "@/lib/db";
+import { getPrisma, NotificationChannel } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate } from "@/lib/template";
@@ -14,7 +14,7 @@ type DueItem = {
   notificationId: string;
   locationSlug: string;
   locationName: string;
-  channel: "EMAIL" | "TEXT";
+  channel: NotificationChannel; // ← use real enum
   offsetHours: number;
   startISO: string;
   endISO: string;
@@ -81,7 +81,7 @@ async function queueDueNotifications(
   now: Date,
   windowMinutes: number,
   onlyBookingId?: string | null,
-  onlyChannel?: "EMAIL" | "TEXT" | null,
+  onlyChannel?: NotificationChannel | null, // ← enum
   dryRun = false
 ): Promise<{ queued: number; skipped: number; due: DueItem[] }> {
   const due = await findDueNotifications(now, windowMinutes, onlyBookingId, onlyChannel);
@@ -94,7 +94,7 @@ async function queueDueNotifications(
         bookingId_notificationId_channel: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: item.channel,
+          channel: item.channel, // ← enum
         },
       },
     });
@@ -172,7 +172,7 @@ async function sendAllUnsent(): Promise<Array<{
         select: { template: true, channel: true },
       },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: { sentAt: "asc" }, // ← use sentAt (exists in schema)
   });
 
   DEBUG(`Found ${unsent.length} UNSENT logs to send`);
@@ -208,7 +208,7 @@ async function sendAllUnsent(): Promise<Array<{
     const vars = buildTemplateVars(ctx);
 
     // === SEND EMAIL ===
-    if (n.channel === "EMAIL") {
+    if (n.channel === NotificationChannel.EMAIL) {
       if (!b.email) {
         await getPrisma().notificationLog.update({
           where: { id: log.id },
@@ -332,12 +332,12 @@ async function sendAllUnsent(): Promise<Array<{
   return attempts;
 }
 
-// === ORIGINAL findDueNotifications (100% unchanged) ===
+// === ORIGINAL findDueNotifications (with enum fix) ===
 async function findDueNotifications(
   now: Date,
   windowMinutes: number,
   onlyBookingId?: string | null,
-  onlyChannel?: "EMAIL" | "TEXT" | null
+  onlyChannel?: NotificationChannel | null
 ): Promise<DueItem[]> {
   const notifications = await getPrisma().notification.findMany({
     where: { kind: "NOTIFICATION", enabled: true, hoursBefore: { gt: 0 } },
@@ -419,7 +419,7 @@ async function findDueNotifications(
             notificationId: n.id,
             locationSlug: loc.slug,
             locationName: loc.name,
-            channel: n.channel as "EMAIL" | "TEXT",
+            channel: n.channel, // ← no cast
             offsetHours: n.hoursBefore,
             startISO: b.start.toISOString(),
             endISO: b.end.toISOString(),
@@ -468,7 +468,10 @@ export async function GET(req: NextRequest) {
     const nowParam = searchParams.get("now");
     const windowParam = searchParams.get("window");
     const onlyBookingId = searchParams.get("bookingId") || undefined;
-    const onlyChannel = (searchParams.get("channel") as "EMAIL" | "TEXT" | null) ?? null;
+    const rawChannel = searchParams.get("channel");
+    const onlyChannel: NotificationChannel | null = rawChannel
+      ? (rawChannel.toUpperCase() as NotificationChannel)
+      : null;
     const debug = searchParams.get("debug") === "true";
 
     if (debug) process.env.DEBUG_CRON = "true";
@@ -497,8 +500,8 @@ export async function GET(req: NextRequest) {
       skipped,
       sent,
       unsentAttempted: sendAttempts.length,
-      dueEmailCount: due.filter((d) => d.channel === "EMAIL").length,
-      dueTextCount: due.filter((d) => d.channel === "TEXT").length,
+      dueEmailCount: due.filter((d) => d.channel === NotificationChannel.EMAIL).length,
+      dueTextCount: due.filter((d) => d.channel === NotificationChannel.TEXT).length,
       windowMinutes,
       simulatedNow: now.toISOString(),
       attempts: sendAttempts,
