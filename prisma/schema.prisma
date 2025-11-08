@@ -154,7 +154,7 @@ model Notification {
   location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   kind    NotificationKind
-  channel NotificationChannel
+  channel        String   @default("EMAIL")
 
   hoursBefore Int     @default(0) // 0 = confirmation; >0 = hours before booking
   template    String
@@ -172,7 +172,7 @@ model NotificationLog {
   id              String   @id @default(cuid())
   bookingId       String
   notificationId  String
-  channel         NotificationChannel
+  channel         String
   status          String   // "SENT" | "FAILED"
   providerId      String?  // message id from provider (email/sms)
   error           String?  // error text if failed

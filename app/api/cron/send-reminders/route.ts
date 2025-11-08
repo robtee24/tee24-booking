@@ -1,7 +1,6 @@
 // app/api/cron/send-reminders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { NotificationChannel } from "@prisma/client";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate } from "@/lib/template";
@@ -9,13 +8,17 @@ import { buildTemplateVars, BookingContext } from "@/lib/template-vars";
 
 export const dynamic = "force-dynamic";
 
+// === CHANNEL TYPE ===
+type Channel = "EMAIL" | "TEXT";
+
+// === DUE ITEM ===
 type DueItem = {
   bookingId: string;
   managementToken: string | null;
   notificationId: string;
   locationSlug: string;
   locationName: string;
-  channel: NotificationChannel;
+  channel: Channel;
   offsetHours: number;
   startISO: string;
   endISO: string;
@@ -82,7 +85,7 @@ async function queueDueNotifications(
   now: Date,
   windowMinutes: number,
   onlyBookingId?: string | null,
-  onlyChannel?: NotificationChannel | null,
+  onlyChannel?: Channel | null,
   dryRun = false
 ): Promise<{ queued: number; skipped: number; due: DueItem[] }> {
   const due = await findDueNotifications(now, windowMinutes, onlyBookingId, onlyChannel);
@@ -90,12 +93,11 @@ async function queueDueNotifications(
   let skipped = 0;
 
   for (const item of due) {
-    // Use findFirst instead of findUnique (no composite unique key)
     const already = await getPrisma().notificationLog.findFirst({
       where: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: item.channel, // ← CLEAN: Prisma sends "EMAIL" or "TEXT"
+        channel: item.channel, // "EMAIL" or "TEXT"
       },
     });
 
@@ -111,7 +113,7 @@ async function queueDueNotifications(
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: item.channel, // ← CLEAN
+        channel: item.channel,
         status,
         providerId: null,
         error: null,
@@ -222,7 +224,7 @@ async function sendAllUnsent(): Promise<Array<{
     const vars = buildTemplateVars(ctx);
 
     // === EMAIL ===
-    if (n.channel === NotificationChannel.EMAIL) {
+    if (n.channel === "EMAIL") {
       if (!b.email) {
         await getPrisma().notificationLog.update({
           where: { id: log.id },
@@ -349,7 +351,7 @@ async function findDueNotifications(
   now: Date,
   windowMinutes: number,
   onlyBookingId?: string | null,
-  onlyChannel?: NotificationChannel | null
+  onlyChannel?: Channel | null
 ): Promise<DueItem[]> {
   const notifications = await getPrisma().notification.findMany({
     where: { kind: "NOTIFICATION", enabled: true, hoursBefore: { gt: 0 } },
@@ -433,7 +435,7 @@ async function findDueNotifications(
             notificationId: n.id,
             locationSlug: loc.slug,
             locationName: loc.name,
-            channel: n.channel, // ← CLEAN
+            channel: n.channel as Channel, // string from DB → typed
             offsetHours: n.hoursBefore,
             startISO: b.start.toISOString(),
             endISO: b.end.toISOString(),
@@ -485,8 +487,8 @@ export async function GET(req: NextRequest) {
     const windowParam = searchParams.get("window");
     const onlyBookingId = searchParams.get("bookingId") || undefined;
     const rawChannel = searchParams.get("channel");
-    const onlyChannel: NotificationChannel | null = rawChannel
-      ? (rawChannel.toUpperCase() as NotificationChannel)
+    const onlyChannel: Channel | null = rawChannel
+      ? (rawChannel.toUpperCase() as Channel)
       : null;
     const debug = searchParams.get("debug") === "true";
     if (debug) process.env.DEBUG_CRON = "true";
@@ -515,8 +517,8 @@ export async function GET(req: NextRequest) {
       skipped,
       sent,
       unsentAttempted: sendAttempts.length,
-      dueEmailCount: due.filter((d) => d.channel === NotificationChannel.EMAIL).length,
-      dueTextCount: due.filter((d) => d.channel === NotificationChannel.TEXT).length,
+      dueEmailCount: due.filter((d) => d.channel === "EMAIL").length,
+      dueTextCount: due.filter((d) => d.channel === "TEXT").length,
       windowMinutes,
       simulatedNow: now.toISOString(),
       attempts: sendAttempts,
