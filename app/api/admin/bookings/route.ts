@@ -1,4 +1,4 @@
-// app/api/bookings/route.ts
+// app/api/admin/bookings/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getPrisma } from "@/lib/db";
@@ -261,6 +261,8 @@ export async function POST(req: NextRequest) {
       where: { id: created.locationId },
       select: {
         name: true,
+        maxActiveBookingsPerGuest: true,
+        activeBookingIdentifyBy: true,
         notifications: {
           where: {
             kind: "CONFIRMATION",

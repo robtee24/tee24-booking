@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 function badRequest(msg: string, extra?: any) {
   return NextResponse.json({ ok: false, error: msg, ...extra }, { status: 400 });
 }
+
 function manageUrlFor(bookingId: string, token?: string | null) {
   const base =
     process.env.NEXT_PUBLIC_BASE_URL ||
@@ -23,6 +24,7 @@ function manageUrlFor(bookingId: string, token?: string | null) {
   const q = token ? `?token=${encodeURIComponent(token)}` : "";
   return `${root}/manage/${id}${q}`;
 }
+
 function normalizePhoneE164(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const digits = raw.replace(/\D/g, "");
@@ -31,6 +33,7 @@ function normalizePhoneE164(raw: string | null | undefined): string | null {
   if (digits.length >= 11 && digits[0] === "1") return `+${digits}`;
   return null;
 }
+
 function isAdjacent(aEnd: Date, bStart: Date, toleranceMinutes = 5) {
   const diff = Math.abs(bStart.getTime() - aEnd.getTime());
   return diff <= toleranceMinutes * 60_000;
@@ -38,16 +41,23 @@ function isAdjacent(aEnd: Date, bStart: Date, toleranceMinutes = 5) {
 
 type IdentifyBy = "EMAIL" | "PHONE" | "EMAIL_OR_PHONE";
 
-function buildGuestWhere(identifyBy: IdentifyBy, rawEmail?: string | null, rawPhone?: string | null) {
+function buildGuestWhere(
+  identifyBy: IdentifyBy,
+  rawEmail?: string | null,
+  rawPhone?: string | null
+) {
   const email = (rawEmail ?? "").trim();
   const emailLower = email ? email.toLowerCase() : "";
   const phone = normalizePhoneE164(rawPhone ?? null);
 
   if (identifyBy === "EMAIL") {
     if (!email) return { id: "__no_match__" } as any;
-    return emailLower && emailLower !== email ? { OR: [{ email }, { email: emailLower }] } : { email };
+    return emailLower && emailLower !== email
+      ? { OR: [{ email }, { email: emailLower }] }
+      : { email };
   }
-  if (identifyBy === "PHONE") return phone ? { phone } : ({ id: "__no_match__" } as any);
+  if (identifyBy === "PHONE")
+    return phone ? { phone } : ({ id: "__no_match__" } as any);
 
   const ors: any[] = [];
   if (email) {
@@ -65,18 +75,17 @@ function nl2brPreserveHtml(s: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-
     // Inputs + aliases
     const bayId: string | null = body.bayId ?? body.bayID ?? null;
     const bayNumberRaw: any = body.bayNumber ?? body.bay_no ?? body.bay;
     const bayNumberParsed =
       bayNumberRaw === undefined || bayNumberRaw === null ? null : Number(bayNumberRaw);
     const hasBayNumber = bayNumberParsed !== null && !Number.isNaN(bayNumberParsed);
-
     const locationSlug: string | undefined = body.locationSlug ?? body.slug;
-    const startISO: string | undefined = body.startISO ?? body.start ?? body.start_time ?? body.startTime;
-    const endISO: string | undefined = body.endISO ?? body.end ?? body.end_time ?? body.endTime;
-
+    const startISO: string | undefined =
+      body.startISO ?? body.start ?? body.start_time ?? body.startTime;
+    const endISO: string | undefined =
+      body.endISO ?? body.end ?? body.end_time ?? body.endTime;
     const firstName: string | undefined = body.firstName;
     const lastName: string | undefined = body.lastName;
     const rawEmail: string | undefined = body.email;
@@ -86,16 +95,19 @@ export async function POST(req: NextRequest) {
     const partyKindRaw = String(body.partyKind ?? body.kind ?? "").toUpperCase();
     const partyKind: "SINGLE" | "GROUP" = partyKindRaw === "SINGLE" ? "SINGLE" : "GROUP";
     const handednessRaw = String(body.handedness ?? body.hand ?? "").toUpperCase();
-    const handedness: "RH" | "LH" | undefined = partyKind === "SINGLE" ? (handednessRaw === "LH" ? "LH" : "RH") : undefined;
+    const handedness: "RH" | "LH" | undefined =
+      partyKind === "SINGLE" ? (handednessRaw === "LH" ? "LH" : "RH") : undefined;
 
-    if (!startISO || !endISO) return badRequest("startISO and endISO are required (aliases supported)");
+    if (!startISO || !endISO)
+      return badRequest("startISO and endISO are required (aliases supported)");
+
     const start = new Date(startISO);
     const end = new Date(endISO);
     if (Number.isNaN(start.getTime())) return badRequest("Invalid startISO");
     if (Number.isNaN(end.getTime())) return badRequest("Invalid endISO");
     if (end <= start) return badRequest("end must be after start");
-
-    if (!firstName || typeof firstName !== "string") return badRequest("firstName is required");
+    if (!firstName || typeof firstName !== "string")
+      return badRequest("firstName is required");
 
     const email = rawEmail ? String(rawEmail).trim() : null;
     const emailLower = email ? email.toLowerCase() : null;
@@ -127,7 +139,10 @@ export async function POST(req: NextRequest) {
       if (clash) return badRequest("Selected bay is not available for the requested time window");
     } else if (hasBayNumber) {
       if (!locationSlug) return badRequest("locationSlug is required when using bayNumber");
-      const loc = await getPrisma().location.findUnique({ where: { slug: locationSlug }, select: { id: true } });
+      const loc = await getPrisma().location.findUnique({
+        where: { slug: locationSlug },
+        select: { id: true },
+      });
       if (!loc) return badRequest("Location not found for given locationSlug");
 
       const bayRow = await getPrisma().bay.findUnique({
@@ -186,29 +201,41 @@ export async function POST(req: NextRequest) {
         },
         select: { bayNumber: true },
       });
-      const occupied = new Set(overlaps.map((o) => o.bayNumber).filter((n): n is number => n != null));
+      const occupied = new Set(
+        overlaps.map((o) => o.bayNumber).filter((n): n is number => n != null)
+      );
       const free = eligible.find((b) => !occupied.has(b.number));
       if (!free) return badRequest("No bay free for the selected time window");
-
       bayNumber = free.number ?? null;
     }
 
-    if (!locationId || bayNumber == null) return badRequest("Resolved location or bay could not be determined");
+    if (!locationId || bayNumber == null)
+      return badRequest("Resolved location or bay could not be determined");
 
-    // Load location settings (incl. name for templates/response)
+    // Load location settings + confirmation templates in ONE query
     const locSettings = await getPrisma().location.findUnique({
       where: { id: locationId },
       select: {
         id: true,
         name: true,
-        emailTemplate: true,
-        smsTemplate: true,
         maxActiveBookingsPerGuest: true,
         activeBookingIdentifyBy: true,
         maxConsecutiveBookingsPerGuest: true,
         minBookingMinutes: true,
+        notifications: {
+          where: {
+            kind: "CONFIRMATION",
+            channel: { in: ["EMAIL", "TEXT"] },
+            enabled: true,
+          },
+          select: {
+            channel: true,
+            template: true,
+          },
+        },
       },
     });
+
     if (!locSettings) return badRequest("Location settings not found");
 
     const identifyBy: IdentifyBy =
@@ -231,7 +258,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Max consecutive bookings / guest (same bay, back-to-back)
-    if (locSettings.maxConsecutiveBookingsPerGuest && locSettings.maxConsecutiveBookingsPerGuest > 0) {
+    if (
+      locSettings.maxConsecutiveBookingsPerGuest &&
+      locSettings.maxConsecutiveBookingsPerGuest > 0
+    ) {
       const neighbors = await getPrisma().booking.findMany({
         where: { locationId, bayNumber, canceledAt: null, ...guestWhere },
         select: { id: true, start: true, end: true },
@@ -240,7 +270,6 @@ export async function POST(req: NextRequest) {
 
       let leftChain = 0;
       let rightChain = 0;
-
       let leftCursor = new Date(start);
       while (true) {
         const prev = neighbors.find((b) => isAdjacent(new Date(b.end), leftCursor));
@@ -269,7 +298,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ✅ Create booking (no nulls for required strings)
+    // Create booking
     const managementToken = crypto.randomBytes(16).toString("hex");
     const created = await getPrisma().booking.create({
       data: {
@@ -300,20 +329,11 @@ export async function POST(req: NextRequest) {
     const manageUrl = manageUrlFor(created.id, created.managementToken);
     const locationName = locSettings.name ?? "";
 
-    // Templates
-    const [confirmEmailRow, confirmTextRow] = await Promise.all([
-      getPrisma().notification.findFirst({
-        where: { locationId: created.locationId, kind: "CONFIRMATION", channel: "EMAIL", enabled: true },
-        select: { template: true },
-      }),
-      getPrisma().notification.findFirst({
-        where: { locationId: created.locationId, kind: "CONFIRMATION", channel: "TEXT", enabled: true },
-        select: { template: true },
-      }),
-    ]);
-
-    const emailTemplate = confirmEmailRow?.template ?? locSettings.emailTemplate ?? null;
-    const smsTemplate = confirmTextRow?.template ?? locSettings.smsTemplate ?? null;
+    // Get templates from Notification (single source of truth)
+    const emailTemplate =
+      locSettings.notifications.find((n) => n.channel === "EMAIL")?.template ?? null;
+    const smsTemplate =
+      locSettings.notifications.find((n) => n.channel === "TEXT")?.template ?? null;
 
     const vars = {
       firstName: created.firstName ?? "",
@@ -328,6 +348,7 @@ export async function POST(req: NextRequest) {
       manageUrl,
     };
 
+    // Send email
     if (emailTemplate && created.email) {
       try {
         const rendered = renderTemplate(emailTemplate, vars);
@@ -340,12 +361,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Send SMS
     if (smsTemplate && created.phone) {
       const to = normalizePhoneE164(created.phone);
       if (to) {
         try {
           const text = renderTemplate(smsTemplate, vars);
-          await sendSms({ from: process.env.OPENPHONE_FROM || "system", to: [to], content: text });
+          await sendSms({
+            from: process.env.OPENPHONE_FROM || "system",
+            to: [to],
+            content: text,
+          });
         } catch (e) {
           console.error("SMS confirmation error:", e);
         }
@@ -371,8 +397,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("Booking create error:", err);
-    return NextResponse.json({ ok: false, error: err?.message || "Internal error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err?.message || "Internal error" },
+      { status: 500 }
+    );
   }
 }
-
-
