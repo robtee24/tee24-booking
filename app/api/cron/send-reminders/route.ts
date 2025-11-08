@@ -26,9 +26,16 @@ type DueItem = {
   template?: string | null;
 };
 
+// === HELPER: Add hours correctly (no mutation) ===
+function addHours(date: Date, hours: number): Date {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+// === HELPER: Round to minute (no mutation) ===
 function roundToMinute(d: Date): Date {
-  d.setSeconds(0, 0);
-  return d;
+  const copy = new Date(d);
+  copy.setSeconds(0, 0);
+  return copy;
 }
 
 function manageUrlFor(bookingId: string, token?: string | null): string {
@@ -59,6 +66,7 @@ function htmlifyPreservingTags(tpl: string): string {
   return tpl.replace(/\r\n/g, "\n").replace(/\n\n+/g, "<br><br>").replace(/\n/g, "<br>");
 }
 
+// === FIXED: findDueNotifications with correct time math ===
 async function findDueNotifications(
   now: Date,
   windowMinutes: number,
@@ -94,7 +102,7 @@ async function findDueNotifications(
     byLocation.set(n.location.id, arr);
   }
 
-  const nowRounded = roundToMinute(new Date(now));
+  const nowRounded = roundToMinute(now);
   const results: DueItem[] = [];
 
   for (const [locationId, list] of byLocation.entries()) {
@@ -102,10 +110,9 @@ async function findDueNotifications(
     const minHours = Math.min(...list.map((n) => n.hoursBefore));
     const maxHours = Math.max(...list.map((n) => n.hoursBefore));
 
-    const earliestTarget = new Date(nowRounded);
-    earliestTarget.setHours(earliestTarget.getHours() + minHours);
-    const latestTarget = new Date(nowRounded);
-    latestTarget.setHours(latestTarget.getHours() + maxHours);
+    // Use addHours instead of setHours
+    const earliestTarget = addHours(nowRounded, minHours);
+    const latestTarget = addHours(nowRounded, maxHours);
 
     const broadStart = new Date(earliestTarget);
     broadStart.setMinutes(broadStart.getMinutes() - windowMinutes);
@@ -135,8 +142,7 @@ async function findDueNotifications(
     for (const n of list) {
       if (onlyChannel && n.channel !== onlyChannel) continue;
 
-      const target = new Date(nowRounded);
-      target.setHours(target.getHours() + n.hoursBefore);
+      const target = addHours(nowRounded, n.hoursBefore);
 
       const windowStart = new Date(target);
       windowStart.setMinutes(windowStart.getMinutes() - windowMinutes);
@@ -174,10 +180,9 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
 
-    // === AUTHENTICATION: Support both Bearer token (Vercel) and ?secret= (manual test) ===
+    // === AUTHENTICATION: Bearer (Vercel) or ?secret= (manual) ===
     const authHeader = req.headers.get("authorization");
     const querySecret = searchParams.get("secret");
-
     let secret: string | null = null;
 
     if (authHeader?.startsWith("Bearer ")) {
@@ -197,7 +202,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // === Parameters ===
+    // === PARAMETERS ===
     const dryRun = searchParams.get("dryRun") === "true";
     const nowParam = searchParams.get("now");
     const windowParam = searchParams.get("window");
@@ -222,6 +227,7 @@ export async function GET(req: NextRequest) {
     let sent = 0;
 
     for (const item of due) {
+      // === PREVENT DUPLICATES ===
       const already = await getPrisma().notificationLog.findUnique({
         where: {
           bookingId_notificationId_channel: {
@@ -256,7 +262,7 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Build context for template
+      // === BUILD TEMPLATE CONTEXT ===
       const ctx: BookingContext = {
         bookingId: item.bookingId,
         managementToken: item.managementToken,
@@ -274,6 +280,7 @@ export async function GET(req: NextRequest) {
 
       const vars = buildTemplateVars(ctx);
 
+      // === SEND EMAIL ===
       if (item.channel === "EMAIL") {
         if (!item.guestEmail) {
           attempts.push({
@@ -305,7 +312,6 @@ export async function GET(req: NextRequest) {
                 error: null,
               },
             });
-
             attempts.push({
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -325,7 +331,6 @@ export async function GET(req: NextRequest) {
                 error: res.error || "email send failed",
               },
             });
-
             attempts.push({
               bookingId: item.bookingId,
               notificationId: item.notificationId,
@@ -346,7 +351,6 @@ export async function GET(req: NextRequest) {
               error: err?.message || "email threw",
             },
           });
-
           attempts.push({
             bookingId: item.bookingId,
             notificationId: item.notificationId,
@@ -356,8 +360,9 @@ export async function GET(req: NextRequest) {
             simulatedNow: new Date(now).toISOString(),
           });
         }
-      } else {
-        // TEXT
+      }
+      // === SEND SMS ===
+      else {
         const normalized = normalizePhoneE164(item.guestPhone);
         if (!normalized) {
           attempts.push({
@@ -410,7 +415,6 @@ export async function GET(req: NextRequest) {
               error: err?.message || "sms threw",
             },
           });
-
           attempts.push({
             bookingId: item.bookingId,
             notificationId: item.notificationId,
