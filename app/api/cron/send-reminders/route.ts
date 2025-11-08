@@ -152,54 +152,78 @@ async function sendAllUnsent(): Promise<Array<{
 }>> {
   const now = new Date();
 
-  const unsent = await getPrisma().notificationLog.findMany({
+  // 1. Get all UNSENT logs with their IDs
+  const unsentLogs = await getPrisma().notificationLog.findMany({
     where: { status: "UNSENT" },
     select: {
       id: true,
-      booking: {
-        select: {
-          id: true,
-          start: true,
-          end: true,
-          bayNumber: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          managementToken: true,
-          location: {
-            select: {
-              slug: true,
-              name: true,
-            },
-          },
-        },
-      },
-      notification: {
-        select: {
-          template: true,
-          channel: true,
-        },
-      },
+      bookingId: true,
+      notificationId: true,
+      channel: true,
     },
     orderBy: { sentAt: "asc" },
   });
 
-  DEBUG(`Found ${unsent.length} UNSENT logs to send`);
+  DEBUG(`Found ${unsentLogs.length} UNSENT logs to send`);
 
-  const attempts: Array<{
-    bookingId: string;
-    notificationId: string;
-    channel: string;
-    ok: boolean;
-    skipped?: string;
-    error?: string;
-    simulatedNow?: string;
-  }> = [];
+  const attempts: Array<any> = [];
 
-  for (const log of unsent) {
-    const b = log.booking;
-    const n = log.notification;
+  // 2. Fetch all related bookings and notifications in bulk
+  const bookingIds = unsentLogs.map(l => l.bookingId);
+  const notificationIds = unsentLogs.map(l => l.notificationId);
+
+  const [bookings, notifications] = await Promise.all([
+    getPrisma().booking.findMany({
+      where: { id: { in: bookingIds } },
+      select: {
+        id: true,
+        start: true,
+        end: true,
+        bayNumber: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        managementToken: true,
+        location: {
+          select: { slug: true, name: true },
+        },
+      },
+    }),
+    getPrisma().notification.findMany({
+      where: { id: { in: notificationIds } },
+      select: {
+        id: true,
+        template: true,
+        channel: true,
+      },
+    }),
+  ]);
+
+  // 3. Map IDs → objects
+  const bookingMap = Object.fromEntries(bookings.map(b => [b.id, b]));
+  const notificationMap = Object.fromEntries(notifications.map(n => [n.id, n]));
+
+  // 4. Process each log
+  for (const log of unsentLogs) {
+    const b = bookingMap[log.bookingId];
+    const n = notificationMap[log.notificationId];
+
+    if (!b || !n) {
+      await getPrisma().notificationLog.update({
+        where: { id: log.id },
+        data: { status: "FAILED", error: "Missing booking or notification" },
+      });
+      attempts.push({
+        bookingId: log.bookingId,
+        notificationId: log.notificationId,
+        channel: log.channel,
+        ok: false,
+        error: "Missing related data",
+        simulatedNow: now.toISOString(),
+      });
+      continue;
+    }
 
     const ctx: BookingContext = {
       bookingId: b.id,
@@ -226,7 +250,7 @@ async function sendAllUnsent(): Promise<Array<{
         });
         attempts.push({
           bookingId: b.id,
-          notificationId: log.notificationId,
+          notificationId: n.id,
           channel: "EMAIL",
           ok: false,
           error: "Missing guestEmail",
@@ -248,7 +272,7 @@ async function sendAllUnsent(): Promise<Array<{
           });
           attempts.push({
             bookingId: b.id,
-            notificationId: log.notificationId,
+            notificationId: n.id,
             channel: "EMAIL",
             ok: true,
             simulatedNow: now.toISOString(),
@@ -260,7 +284,7 @@ async function sendAllUnsent(): Promise<Array<{
           });
           attempts.push({
             bookingId: b.id,
-            notificationId: log.notificationId,
+            notificationId: n.id,
             channel: "EMAIL",
             ok: false,
             error: res.error || "email send failed",
@@ -274,7 +298,7 @@ async function sendAllUnsent(): Promise<Array<{
         });
         attempts.push({
           bookingId: b.id,
-          notificationId: log.notificationId,
+          notificationId: n.id,
           channel: "EMAIL",
           ok: false,
           error: err?.message || "email threw",
@@ -293,7 +317,7 @@ async function sendAllUnsent(): Promise<Array<{
         });
         attempts.push({
           bookingId: b.id,
-          notificationId: log.notificationId,
+          notificationId: n.id,
           channel: "TEXT",
           ok: false,
           error: "Invalid recipient number",
@@ -317,7 +341,7 @@ async function sendAllUnsent(): Promise<Array<{
 
         attempts.push({
           bookingId: b.id,
-          notificationId: log.notificationId,
+          notificationId: n.id,
           channel: "TEXT",
           ok: true,
           simulatedNow: now.toISOString(),
@@ -329,7 +353,7 @@ async function sendAllUnsent(): Promise<Array<{
         });
         attempts.push({
           bookingId: b.id,
-          notificationId: log.notificationId,
+          notificationId: n.id,
           channel: "TEXT",
           ok: false,
           error: err?.message || "sms threw",
