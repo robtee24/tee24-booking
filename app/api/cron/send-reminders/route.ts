@@ -82,7 +82,7 @@ async function queueDueNotifications(
   now: Date,
   windowMinutes: number,
   onlyBookingId?: string | null,
-  onlyChannel?: NotificationChannel | null, // ← enum
+  onlyChannel?: NotificationChannel | null,
   dryRun = false
 ): Promise<{ queued: number; skipped: number; due: DueItem[] }> {
   const due = await findDueNotifications(now, windowMinutes, onlyBookingId, onlyChannel);
@@ -95,7 +95,7 @@ async function queueDueNotifications(
         bookingId_notificationId_channel: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: item.channel, // ← enum
+          channel: String(item.channel),
         },
       },
     });
@@ -112,7 +112,7 @@ async function queueDueNotifications(
         data: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: item.channel,
+          channel: String(item.channel),
           status: "DRY-RUN",
           providerId: null,
           error: null,
@@ -126,13 +126,12 @@ async function queueDueNotifications(
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: item.channel,
+        channel: String(item.channel),
         status: "UNSENT",
         providerId: null,
         error: null,
       },
     });
-
     DEBUG(`QUEUED: ${item.bookingId}/${item.notificationId}/${item.channel}`);
     queued++;
   }
@@ -151,8 +150,6 @@ async function sendAllUnsent(): Promise<Array<{
   simulatedNow?: string;
 }>> {
   const now = new Date();
-
-  // 1. Get all UNSENT logs with their IDs
   const unsentLogs = await getPrisma().notificationLog.findMany({
     where: { status: "UNSENT" },
     select: {
@@ -165,17 +162,15 @@ async function sendAllUnsent(): Promise<Array<{
   });
 
   DEBUG(`Found ${unsentLogs.length} UNSENT logs to send`);
-
   const attempts: Array<any> = [];
 
-  // 2. Fetch all related bookings and notifications in bulk
   const bookingIds = unsentLogs.map(l => l.bookingId);
   const notificationIds = unsentLogs.map(l => l.notificationId);
 
   const [bookings, notifications] = await Promise.all([
     getPrisma().booking.findMany({
-        where: { id: { in: bookingIds } },
-        select: {
+      where: { id: { in: bookingIds } },
+      select: {
         id: true,
         start: true,
         end: true,
@@ -185,26 +180,24 @@ async function sendAllUnsent(): Promise<Array<{
         email: true,
         phone: true,
         managementToken: true,
-        Location: {                 // ← Fixed
-            select: { slug: true, name: true },
+        Location: {
+          select: { slug: true, name: true },
         },
-        },
+      },
     }),
     getPrisma().notification.findMany({
-        where: { id: { in: notificationIds } },
-        select: {
+      where: { id: { in: notificationIds } },
+      select: {
         id: true,
         template: true,
         channel: true,
-        },
+      },
     }),
   ]);
 
-  // 3. Map IDs → objects
   const bookingMap = Object.fromEntries(bookings.map(b => [b.id, b]));
   const notificationMap = Object.fromEntries(notifications.map(n => [n.id, n]));
 
-  // 4. Process each log
   for (const log of unsentLogs) {
     const b = bookingMap[log.bookingId];
     const n = notificationMap[log.notificationId];
@@ -239,6 +232,7 @@ async function sendAllUnsent(): Promise<Array<{
       locationSlug: b.Location.slug,
       manageUrl: manageUrlFor(b.id, b.managementToken ?? undefined),
     };
+
     const vars = buildTemplateVars(ctx);
 
     // === EMAIL ===
@@ -306,7 +300,6 @@ async function sendAllUnsent(): Promise<Array<{
         });
       }
     }
-
     // === SMS ===
     else {
       const normalized = normalizePhoneE164(b.phone);
@@ -338,7 +331,6 @@ async function sendAllUnsent(): Promise<Array<{
           where: { id: log.id },
           data: { status: "SENT", providerId: null, error: null },
         });
-
         attempts.push({
           bookingId: b.id,
           notificationId: n.id,
@@ -412,6 +404,7 @@ async function findDueNotifications(
 
     const earliestTarget = addHours(nowRounded, minHours);
     const latestTarget = addHours(nowRounded, maxHours);
+
     const broadStart = new Date(earliestTarget);
     broadStart.setMinutes(broadStart.getMinutes() - windowMinutes);
     const broadEnd = new Date(latestTarget);
@@ -439,6 +432,7 @@ async function findDueNotifications(
 
     for (const n of list) {
       if (onlyChannel && n.channel !== onlyChannel) continue;
+
       const target = addHours(nowRounded, n.hoursBefore);
       const windowStart = new Date(target);
       windowStart.setMinutes(windowStart.getMinutes() - windowMinutes);
@@ -453,7 +447,7 @@ async function findDueNotifications(
             notificationId: n.id,
             locationSlug: loc.slug,
             locationName: loc.name,
-            channel: n.channel, // ← no cast
+            channel: n.channel,
             offsetHours: n.hoursBefore,
             startISO: b.start.toISOString(),
             endISO: b.end.toISOString(),
@@ -481,6 +475,7 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     const querySecret = searchParams.get("secret");
     let secret: string | null = null;
+
     if (authHeader?.startsWith("Bearer ")) {
       secret = authHeader.split(" ")[1];
     } else if (querySecret) {
@@ -493,6 +488,7 @@ export async function GET(req: NextRequest) {
         { status: 500 }
       );
     }
+
     if (!secret || secret !== process.env.CRON_SECRET) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -507,7 +503,6 @@ export async function GET(req: NextRequest) {
       ? (rawChannel.toUpperCase() as NotificationChannel)
       : null;
     const debug = searchParams.get("debug") === "true";
-
     if (debug) process.env.DEBUG_CRON = "true";
 
     const now = nowParam ? new Date(nowParam) : new Date();
