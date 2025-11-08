@@ -90,13 +90,12 @@ async function queueDueNotifications(
   let skipped = 0;
 
   for (const item of due) {
-    const already = await getPrisma().notificationLog.findUnique({
+    // Use findFirst instead of findUnique (no composite unique key)
+    const already = await getPrisma().notificationLog.findFirst({
       where: {
-        bookingId_notificationId_channel: {
-          bookingId: item.bookingId,
-          notificationId: item.notificationId,
-          channel: item.channel as unknown as string,
-        },
+        bookingId: item.bookingId,
+        notificationId: item.notificationId,
+        channel: item.channel, // ← CLEAN: Prisma sends "EMAIL" or "TEXT"
       },
     });
 
@@ -106,32 +105,19 @@ async function queueDueNotifications(
       continue;
     }
 
-    if (dryRun) {
-      DEBUG(`DRY-RUN: queue ${item.bookingId}/${item.notificationId}/${item.channel}`);
-      await getPrisma().notificationLog.create({
-        data: {
-          bookingId: item.bookingId,
-          notificationId: item.notificationId,
-          channel: item.channel as unknown as string,
-          status: "DRY-RUN",
-          providerId: null,
-          error: null,
-        },
-      });
-      queued++;
-      continue;
-    }
+    const status = dryRun ? "DRY-RUN" : "UNSENT";
 
     await getPrisma().notificationLog.create({
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: item.channel as unknown as string,
-        status: "UNSENT",
+        channel: item.channel, // ← CLEAN
+        status,
         providerId: null,
         error: null,
       },
     });
+
     DEBUG(`QUEUED: ${item.bookingId}/${item.notificationId}/${item.channel}`);
     queued++;
   }
@@ -447,7 +433,7 @@ async function findDueNotifications(
             notificationId: n.id,
             locationSlug: loc.slug,
             locationName: loc.name,
-            channel: n.channel,
+            channel: n.channel, // ← CLEAN
             offsetHours: n.hoursBefore,
             startISO: b.start.toISOString(),
             endISO: b.end.toISOString(),
