@@ -27,6 +27,11 @@ type DueItem = {
   template?: string | null;
 };
 
+// === HELPER: Safely convert enum to string ===
+const channelToString = (channel: NotificationChannel): string => {
+  return channel; // enum values are their string labels
+};
+
 // === HELPER: Add hours correctly (no mutation) ===
 function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
@@ -95,7 +100,7 @@ async function queueDueNotifications(
         bookingId_notificationId_channel: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: String(item.channel),
+          channel: channelToString(item.channel), // ← Type-safe
         },
       },
     });
@@ -112,7 +117,7 @@ async function queueDueNotifications(
         data: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: String(item.channel),
+          channel: channelToString(item.channel), // ← Type-safe
           status: "DRY-RUN",
           providerId: null,
           error: null,
@@ -126,7 +131,7 @@ async function queueDueNotifications(
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: String(item.channel),
+        channel: channelToString(item.channel), // ← Type-safe
         status: "UNSENT",
         providerId: null,
         error: null,
@@ -358,7 +363,7 @@ async function sendAllUnsent(): Promise<Array<{
   return attempts;
 }
 
-// === ORIGINAL findDueNotifications (with enum fix) ===
+// === ORIGINAL findDueNotifications ===
 async function findDueNotifications(
   now: Date,
   windowMinutes: number,
@@ -519,7 +524,7 @@ export async function GET(req: NextRequest) {
       dryRun
     );
 
-    // === PHASE 2: SEND ALL UNSENT (NO WINDOW) ===
+    // === PHASE 2: SEND ALL UNSENT ===
     const sendAttempts = dryRun ? [] : await sendAllUnsent();
     const sent = sendAttempts.filter((a) => a.ok).length;
 
