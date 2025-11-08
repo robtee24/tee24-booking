@@ -1,6 +1,7 @@
 // app/api/cron/send-reminders/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getPrisma, NotificationChannel } from "@/lib/db";
+import { getPrisma } from "@/lib/db";
+import { NotificationChannel } from "@prisma/client";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate } from "@/lib/template";
@@ -14,7 +15,7 @@ type DueItem = {
   notificationId: string;
   locationSlug: string;
   locationName: string;
-  channel: NotificationChannel; // ← use real enum
+  channel: NotificationChannel;
   offsetHours: number;
   startISO: string;
   endISO: string;
