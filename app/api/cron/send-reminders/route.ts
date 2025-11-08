@@ -95,7 +95,7 @@ async function queueDueNotifications(
         bookingId_notificationId_channel: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: item.channel.toString(),
+          channel: item.channel as unknown as string,
         },
       },
     });
@@ -112,7 +112,7 @@ async function queueDueNotifications(
         data: {
           bookingId: item.bookingId,
           notificationId: item.notificationId,
-          channel: item.channel.toString(),
+          channel: item.channel as unknown as string,
           status: "DRY-RUN",
           providerId: null,
           error: null,
@@ -126,7 +126,7 @@ async function queueDueNotifications(
       data: {
         bookingId: item.bookingId,
         notificationId: item.notificationId,
-        channel: item.channel.toString(),
+        channel: item.channel as unknown as string,
         status: "UNSENT",
         providerId: null,
         error: null,
@@ -291,255 +291,4 @@ async function sendAllUnsent(): Promise<Array<{
           data: { status: "FAILED", error: err?.message || "email threw" },
         });
         attempts.push({
-          bookingId: b.id,
-          notificationId: n.id,
-          channel: "EMAIL",
-          ok: false,
-          error: err?.message || "email threw",
-          simulatedNow: now.toISOString(),
-        });
-      }
-    }
-    // === SMS ===
-    else {
-      const normalized = normalizePhoneE164(b.phone);
-      if (!normalized) {
-        await getPrisma().notificationLog.update({
-          where: { id: log.id },
-          data: { status: "FAILED", error: "Invalid recipient number" },
-        });
-        attempts.push({
-          bookingId: b.id,
-          notificationId: n.id,
-          channel: "TEXT",
-          ok: false,
-          error: "Invalid recipient number",
-          simulatedNow: now.toISOString(),
-        });
-        continue;
-      }
-
-      try {
-        const text = renderTemplate(n.template ?? "", vars);
-        await sendSms({
-          from: process.env.OPENPHONE_FROM || "system",
-          to: [normalized],
-          content: text,
-        });
-
-        await getPrisma().notificationLog.update({
-          where: { id: log.id },
-          data: { status: "SENT", providerId: null, error: null },
-        });
-        attempts.push({
-          bookingId: b.id,
-          notificationId: n.id,
-          channel: "TEXT",
-          ok: true,
-          simulatedNow: now.toISOString(),
-        });
-      } catch (err: any) {
-        await getPrisma().notificationLog.update({
-          where: { id: log.id },
-          data: { status: "FAILED", error: err?.message || "sms threw" },
-        });
-        attempts.push({
-          bookingId: b.id,
-          notificationId: n.id,
-          channel: "TEXT",
-          ok: false,
-          error: err?.message || "sms threw",
-          simulatedNow: now.toISOString(),
-        });
-      }
-    }
-  }
-
-  return attempts;
-}
-
-// === ORIGINAL findDueNotifications ===
-async function findDueNotifications(
-  now: Date,
-  windowMinutes: number,
-  onlyBookingId?: string | null,
-  onlyChannel?: NotificationChannel | null
-): Promise<DueItem[]> {
-  const notifications = await getPrisma().notification.findMany({
-    where: { kind: "NOTIFICATION", enabled: true, hoursBefore: { gt: 0 } },
-    select: {
-      id: true,
-      locationId: true,
-      channel: true,
-      hoursBefore: true,
-      template: true,
-      order: true,
-      location: { select: { id: true, slug: true, name: true } },
-    },
-    orderBy: [
-      { hoursBefore: "asc" },
-      { channel: "asc" },
-      { order: "asc" },
-      { id: "asc" },
-    ],
-  });
-
-  if (notifications.length === 0) return [];
-
-  const byLocation = new Map<string, typeof notifications>();
-  for (const n of notifications) {
-    if (!n.location) continue;
-    const arr = byLocation.get(n.location.id) ?? [];
-    arr.push(n);
-    byLocation.set(n.location.id, arr);
-  }
-
-  const nowRounded = roundToMinute(now);
-  const results: DueItem[] = [];
-
-  for (const [locationId, list] of byLocation.entries()) {
-    const loc = list[0].location!;
-    const minHours = Math.min(...list.map((n) => n.hoursBefore));
-    const maxHours = Math.max(...list.map((n) => n.hoursBefore));
-
-    const earliestTarget = addHours(nowRounded, minHours);
-    const latestTarget = addHours(nowRounded, maxHours);
-
-    const broadStart = new Date(earliestTarget);
-    broadStart.setMinutes(broadStart.getMinutes() - windowMinutes);
-    const broadEnd = new Date(latestTarget);
-    broadEnd.setMinutes(broadEnd.getMinutes() + windowMinutes);
-
-    const bookings = await getPrisma().booking.findMany({
-      where: {
-        locationId,
-        ...(onlyBookingId ? { id: onlyBookingId } : {}),
-        start: { gte: broadStart, lte: broadEnd },
-      },
-      select: {
-        id: true,
-        start: true,
-        end: true,
-        bayNumber: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        managementToken: true,
-      },
-      orderBy: [{ start: "asc" }],
-    });
-
-    for (const n of list) {
-      if (onlyChannel && n.channel !== onlyChannel) continue;
-
-      const target = addHours(nowRounded, n.hoursBefore);
-      const windowStart = new Date(target);
-      windowStart.setMinutes(windowStart.getMinutes() - windowMinutes);
-      const windowEnd = new Date(target);
-      windowEnd.setMinutes(windowEnd.getMinutes() + windowMinutes);
-
-      for (const b of bookings) {
-        if (b.start >= windowStart && b.start <= windowEnd) {
-          results.push({
-            bookingId: b.id,
-            managementToken: b.managementToken ?? null,
-            notificationId: n.id,
-            locationSlug: loc.slug,
-            locationName: loc.name,
-            channel: n.channel,
-            offsetHours: n.hoursBefore,
-            startISO: b.start.toISOString(),
-            endISO: b.end.toISOString(),
-            bayNumber: b.bayNumber ?? null,
-            guestFirst: b.firstName ?? "",
-            guestLast: b.lastName ?? "",
-            guestEmail: b.email ?? null,
-            guestPhone: b.phone ?? null,
-            template: n.template ?? "",
-          });
-        }
-      }
-    }
-  }
-
-  return results;
-}
-
-// === MAIN HANDLER ===
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-
-    // === AUTHENTICATION ===
-    const authHeader = req.headers.get("authorization");
-    const querySecret = searchParams.get("secret");
-    let secret: string | null = null;
-
-    if (authHeader?.startsWith("Bearer ")) {
-      secret = authHeader.split(" ")[1];
-    } else if (querySecret) {
-      secret = querySecret;
-    }
-
-    if (!process.env.CRON_SECRET) {
-      return NextResponse.json(
-        { ok: false, error: "Missing CRON_SECRET in env" },
-        { status: 500 }
-      );
-    }
-
-    if (!secret || secret !== process.env.CRON_SECRET) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    // === PARAMETERS ===
-    const dryRun = searchParams.get("dryRun") === "true";
-    const nowParam = searchParams.get("now");
-    const windowParam = searchParams.get("window");
-    const onlyBookingId = searchParams.get("bookingId") || undefined;
-    const rawChannel = searchParams.get("channel");
-    const onlyChannel: NotificationChannel | null = rawChannel
-      ? (rawChannel.toUpperCase() as NotificationChannel)
-      : null;
-    const debug = searchParams.get("debug") === "true";
-    if (debug) process.env.DEBUG_CRON = "true";
-
-    const now = nowParam ? new Date(nowParam) : new Date();
-    const windowMinutes = windowParam ? Math.max(1, Number(windowParam)) : 5;
-
-    DEBUG(`START: now=${now.toISOString()}, window=${windowMinutes}min, dryRun=${dryRun}`);
-
-    // === PHASE 1: QUEUE DUE NOTIFICATIONS ===
-    const { queued, skipped, due } = await queueDueNotifications(
-      now,
-      windowMinutes,
-      onlyBookingId,
-      onlyChannel,
-      dryRun
-    );
-
-    // === PHASE 2: SEND ALL UNSENT ===
-    const sendAttempts = dryRun ? [] : await sendAllUnsent();
-    const sent = sendAttempts.filter((a) => a.ok).length;
-
-    return NextResponse.json({
-      ok: true,
-      queued,
-      skipped,
-      sent,
-      unsentAttempted: sendAttempts.length,
-      dueEmailCount: due.filter((d) => d.channel === NotificationChannel.EMAIL).length,
-      dueTextCount: due.filter((d) => d.channel === NotificationChannel.TEXT).length,
-      windowMinutes,
-      simulatedNow: now.toISOString(),
-      attempts: sendAttempts,
-    });
-  } catch (err: any) {
-    console.error("[SEND-REMINDERS] FATAL:", err);
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Unknown error" },
-      { status: 500 }
-    );
-  }
-}
+          bookingId
