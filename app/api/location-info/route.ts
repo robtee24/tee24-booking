@@ -1,51 +1,22 @@
-import { NextResponse } from "next/server";
-import { getPrisma } from "@/lib/db";
+// app/api/location-info/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { getPublicLocationInfo } from "@/services/location.service";
 
-export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const slug = (searchParams.get("locationSlug") || "").trim();
+    const slug = req.nextUrl.searchParams.get("locationSlug")?.trim();
 
     if (!slug) {
-      return NextResponse.json({ error: "locationSlug is required" }, { status: 400 });
+      return new NextResponse("locationSlug is required", { status: 400 });
     }
 
-    const location = await getPrisma().location.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        bookingNote: true,
-        minBookingMinutes: true,
-        maxBookingMinutes: true,
-        passAccessUrl: true, // <-- NEW
-        bays: { select: { number: true } },
-      },
-    });
+    const location = await getPublicLocationInfo(slug);
 
-    if (!location) {
-      return NextResponse.json({ error: "Location not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      id: location.id,
-      name: location.name,
-      slug: location.slug,
-      bookingNote: location.bookingNote ?? "",
-      // powers duration buttons on user booking page
-      minBookingMinutes: location.minBookingMinutes,
-      maxBookingMinutes: location.maxBookingMinutes,
-      // constrains bay choices to configured bays
-      bayNumbers: location.bays.map((b) => b.number).sort((a, b) => a - b),
-      // NEW: used to show the “Buy Access (For Non-Members)” button
-      passAccessUrl: location.passAccessUrl ?? null,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json(location);
+  } catch (err: any) {
+    const status = err.message.includes("not found") ? 404 : 500;
+    return new NextResponse(err.message || "Server error", { status });
   }
 }
-
-

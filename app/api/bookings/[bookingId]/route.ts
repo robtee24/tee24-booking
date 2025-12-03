@@ -1,14 +1,13 @@
 // app/api/bookings/[bookingId]/route.ts
-import { NextResponse, type NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { cancelBooking } from "@/services/booking.service";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
 /**
  * GET /api/bookings/[bookingId]
- * Returns the booking (with location) or 404 if not found.
- * Next 16: context.params is a Promise<{ bookingId: string }>
+ * Public endpoint — returns booking + location name/slug
  */
 export async function GET(
   _req: NextRequest,
@@ -18,41 +17,60 @@ export async function GET(
 
   const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
-    include: { Location: { select: { name: true, slug: true } } }, // 👈 only change
+    include: {
+      location: {
+        select: { name: true, slug: true, timezone: true },
+      },
+    },
   });
 
   if (!booking) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
-  return NextResponse.json(booking, { status: 200 });
+
+  return NextResponse.json(booking);
 }
 
 /**
  * DELETE /api/bookings/[bookingId]?token=...
- * Hard-deletes the booking (preserves your current behavior).
- * If a per-booking management token exists, it must match ?token.
+ * Guest self-service cancellation (soft delete)
+ * Requires managementToken if set
  */
 export async function DELETE(
   req: NextRequest,
   context: { params: Promise<{ bookingId: string }> }
 ) {
-  const { bookingId } = await context.params;
-  const token = req.nextUrl.searchParams.get("token") || undefined;
+  try {
+    const { bookingId } = await context.params;
+    const token = req.nextUrl.searchParams.get("token") ?? undefined;
 
-  // Enforce per-booking management token if present
-  const b = await getPrisma().booking.findUnique({
-    where: { id: bookingId },
-    select: { id: true, managementToken: true },
-  });
+    const booking = await getPrisma().booking.findUnique({
+      where: { id: bookingId },
+      select: { id: true, managementToken: true, canceledAt: true },
+    });
 
-  if (!b) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (b.managementToken && b.managementToken !== token)
-    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    if (!booking) {
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
 
-  // Optional: clean up any queued notifications
-  // await getPrisma().notification.deleteMany({ where: { bookingId } });
+    if (booking.canceledAt) {
+      return NextResponse.json({ error: "Booking already canceled" }, { status: 410 });
+    }
 
-  await getPrisma().booking.delete({ where: { id: bookingId } });
-  return NextResponse.json({ ok: true });
+    // Enforce token if one was generated
+    if (booking.managementToken && booking.managementToken !== token) {
+      return NextResponse.json({ error: "Invalid or missing token" }, { status: 401 });
+    }
+
+    // Use shared service → soft delete + future hooks
+    await cancelBooking(bookingId);
+
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error("Guest cancel booking error:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to cancel booking" },
+      { status: 500 }
+    );
+  }
 }
-

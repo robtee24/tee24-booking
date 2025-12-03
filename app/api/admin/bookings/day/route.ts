@@ -1,10 +1,12 @@
 // app/api/admin/bookings/day/route.ts
-import { NextResponse } from "next/server";
-import { getPrisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { getBookingsForAdminDay } from "@/services/booking.service";
 
-export async function GET(req: Request) {
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = req.nextUrl;
     const date = searchParams.get("date");
     const locationSlug = searchParams.get("locationSlug");
 
@@ -12,58 +14,12 @@ export async function GET(req: Request) {
       return new NextResponse("Missing date or locationSlug", { status: 400 });
     }
 
-    const location = await getPrisma().location.findUnique({
-      where: { slug: locationSlug },
-      include: { bays: true },
-    });
+    const result = await getBookingsForAdminDay(locationSlug, date);
 
-    if (!location) {
-      return new NextResponse("Location not found", { status: 404 });
-    }
-
-    const startOfDay = new Date(`${date}T00:00:00`);
-    const endOfDay = new Date(`${date}T23:59:59`);
-
-    const bookings = await getPrisma().booking.findMany({
-      where: {
-        locationId: location.id,
-        OR: [
-          { start: { gte: startOfDay, lte: endOfDay } },
-          { end:   { gte: startOfDay, lte: endOfDay } },
-        ],
-      },
-      orderBy: { start: "asc" },
-    });
-
-    const formattedBookings = bookings.map((b) => {
-      const bay = location.bays.find((bay) => bay.number === b.bayNumber);
-      return {
-        id: b.id,
-        bayId: bay ? bay.id : location.bays[0]?.id || "",
-        locationId: b.locationId,
-        firstName: b.firstName,
-        lastName: b.lastName,
-        email: b.email,
-        phone: b.phone,
-        start: b.start,
-        end: b.end,
-      };
-    });
-
-    return NextResponse.json({
-      date,
-      locationId: location.id,
-      locationName: location.name,
-      minBookingMinutes: location.minBookingMinutes ?? 60, // NEW
-      bays: location.bays.map((b) => ({ id: b.id, number: b.number })),
-      bookings: formattedBookings,
-    });
+    return NextResponse.json(result);
   } catch (err: any) {
-    console.error("Error in /bookings/day route:", err);
-    return new NextResponse(err.message || "Internal Server Error", {
-      status: 500,
-    });
+    console.error("Admin day view error:", err);
+    const status = err.message.includes("not found") ? 404 : 400;
+    return new NextResponse(err.message || "Server error", { status });
   }
 }
-
-

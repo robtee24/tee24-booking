@@ -1,19 +1,28 @@
 // app/api/admin/bookings/delete/route.ts
-import { NextResponse } from "next/server";
-import { getPrisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { cancelBooking } from "@/services/booking.service";
 
-export async function POST(req: Request) {
+export const dynamic = "force-dynamic";
+
+export async function POST(req: NextRequest) {
   try {
-    const { id } = await req.json();
-    if (!id) return new NextResponse("Missing id", { status: 400 });
+    const body = await req.json();
+    const { id } = body;
 
-    await getPrisma().booking.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    if (error?.code === "P2025") {
-      return new NextResponse("Not found", { status: 404 });
+    if (!id || typeof id !== "string") {
+      return new NextResponse("Missing or invalid booking ID", { status: 400 });
     }
-    console.error("Delete booking error:", error);
-    return new NextResponse(error?.message || "Failed to delete booking", { status: 500 });
+
+    await cancelBooking(id);
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("Cancel booking error:", err);
+
+    if (err.message.includes("not found") || err.message.includes("already canceled")) {
+      return new NextResponse(err.message, { status: 404 });
+    }
+
+    return new NextResponse(err.message || "Failed to cancel booking", { status: 500 });
   }
 }

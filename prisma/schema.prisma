@@ -43,6 +43,7 @@ model Location {
 
   open24Hours                      Boolean  @default(false)
   hours                            Json     // init to [] in app if null
+  timezone                         String   @default("America/New_York")
   minBookingMinutes                Int      @default(60)
   maxBookingMinutes                Int      @default(120)
   maxActiveBookingsPerGuest        Int      @default(2)

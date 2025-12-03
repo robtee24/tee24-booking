@@ -1,217 +1,100 @@
 // app/book/[locationSlug]/page.tsx
 "use client";
-
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
-type Slot = {
-  start: string;           // ISO
-  end: string;             // ISO
-  availableBays: number[]; // e.g., [1,2,3]
+const DURATIONS = [30, 60, 90, 120] as const;
+
+type AvailabilityResponse = {
+  slots: { start: string; end: string; availableCount: number }[];
+  startTimes: Record<number, string[]>; // e.g. { 60: ["09:00", "14:30"] }
 };
 
-const STEP_MINUTES = 30;
-const DURATIONS = [30, 60, 90, 120];
-
-// ---------- helpers ----------
-function pad(n: number) { return String(n).padStart(2, "0"); }
-function addMinutes(d: Date, mins: number) { return new Date(d.getTime() + mins * 60000); }
-function ymd(d: Date) { return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; }
-function hhmm(d: Date) { return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; }
-function toDisplayTime(d: Date) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: "UTC", }); }
-function sameYMD(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function ceilToStep(date: Date, stepMin = STEP_MINUTES) {
-  const aligned = new Date(date);
-  const minutes = aligned.getUTCMinutes();
-  const ceiled = Math.ceil(minutes / stepMin) * stepMin;
-  aligned.setUTCMinutes(ceiled, 0, 0);
-  return aligned;
-}
-
-// phone formatting: (###) ###-#### as user types
-function formatPhone(value: string) {
+function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
-  const len = digits.length;
-  if (len < 4) return digits;
-  if (len < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  if (digits.length < 4) return digits;
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
-// Generate start times that fit entirely inside a slot (respecting duration & bay)
-function generateTimesForSlot(
-  slot: Slot,
-  durationMin: number,
-  dateStr: string,
-  bay: "any" | number
-) {
-  if (bay !== "any" && !slot.availableBays.includes(bay)) return [];
-  if (bay === "any" && slot.availableBays.length === 0) return [];
-
-  const startISO = new Date(slot.start);
-  const endISO = new Date(slot.end);
-  const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
-  const windowStart = new Date(Math.max(dayStart.getTime(), startISO.getTime()));
-  const firstStart = ceilToStep(windowStart, STEP_MINUTES);
-
-  const out: string[] = [];
-  for (
-    let t = firstStart;
-    t.getTime() <= endISO.getTime() - durationMin * 60000;
-    t = addMinutes(t, STEP_MINUTES)
-  ) {
-    if (t >= windowStart) {
-      out.push(hhmm(t));
-    }
-  }
-  return out;
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-function uniqSortedTimes(times: string[]) { return Array.from(new Set(times)).sort(); }
+function isValidPhone(phone: string): boolean {
+  return phone.replace(/\D/g, "").length === 10;
+}
 
-// Validators
-function isValidEmail(email: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()); }
-function isValidPhone(phone: string) { return phone.replace(/\D/g, "").length === 10; }
-
-// ---------- API helpers ----------
 async function fetchAvailability(
   locationSlug: string,
   date: string,
   partyKind: "SINGLE" | "GROUP",
   handedness: "RH" | "LH" | ""
-): Promise<Slot[]> {
-  const params = new URLSearchParams({
-    locationSlug,
-    date,
-    kind: partyKind,
-  });
+): Promise<AvailabilityResponse> {
+  const params = new URLSearchParams({ locationSlug, date, kind: partyKind });
   if (partyKind === "SINGLE" && handedness) params.set("hand", handedness);
-
   const res = await fetch(`/api/availability?${params.toString()}`, { cache: "no-store" });
   if (!res.ok) {
-    let message = `Availability request failed (${res.status})`;
-    try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
-    throw new Error(message);
-  }
-  const data = await res.json();
-  return (data?.slots ?? []) as Slot[];
-}
-
-async function fetchLocationInfo(locationSlug: string): Promise<{
-  id: string; name: string; slug: string; bookingNote: string;
-  minBookingMinutes?: number; maxBookingMinutes?: number; bayNumbers?: number[];
-  passAccessUrl?: string | null;
-}> {
-  const res = await fetch(`/api/location-info?locationSlug=${encodeURIComponent(locationSlug)}`, { cache: "no-store" });
-  if (!res.ok) {
-    let message = `Location info request failed (${res.status})`;
-    try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
-    throw new Error(message);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to load availability (${res.status})`);
   }
   return res.json();
 }
 
-async function createBooking({
-  locationSlug,
-  startISO,
-  endISO,
-  bayValue,
-  firstName,
-  lastName,
-  phone,
-  email,
-  partyKind,
-  handedness,
-}: {
-  locationSlug: string;
-  startISO: string;
-  endISO: string;
-  bayValue: "any" | number;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  email: string;
-  partyKind: "SINGLE" | "GROUP";
-  handedness?: "RH" | "LH";
-}) {
-  const res = await fetch(`/api/bookings`, {
+async function fetchLocationInfo(locationSlug: string) {
+  const res = await fetch(`/api/location-info?locationSlug=${encodeURIComponent(locationSlug)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to load location");
+  return res.json();
+}
+
+async function createBooking(data: any) {
+  const res = await fetch("/api/bookings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      locationSlug,
-      start: startISO,
-      end: endISO,
-      bay: bayValue,
-      firstName,
-      lastName,
-      phone,
-      email,
-      partyKind,
-      handedness,
-    }),
+    body: JSON.stringify(data),
   });
   if (!res.ok) {
-    let message = `Booking failed (${res.status})`;
-    try { const err = await res.json(); if (err?.error) message = err.error; } catch {}
-    throw new Error(message);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Booking failed");
   }
   return res.json();
 }
 
-// ---------- component ----------
 export default function BookPage() {
   const params = useParams<{ locationSlug: string }>();
   const locationSlug = String(params?.locationSlug ?? "");
 
   const today = useMemo(() => new Date(), []);
-  const [locationName, setLocationName] = useState<string>("");
-  const [adminNote, setAdminNote] = useState<string>("");
-  const [passUrl, setPassUrl] = useState<string | null>(null);
+  const todayYMD = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-  const [date, setDate] = useState<string>(ymd(today));
+  const [date, setDate] = useState(todayYMD);
   const [partyKind, setPartyKind] = useState<"SINGLE" | "GROUP">("GROUP");
   const [handedness, setHandedness] = useState<"RH" | "LH">("RH");
-
-  const [bay, setBay] = useState<"any" | number>("any");
   const [duration, setDuration] = useState<number>(60);
   const [startTime, setStartTime] = useState<string>("");
-
-  const [availability, setAvailability] = useState<Slot[]>([]);
-  const [loadingAvail, setLoadingAvail] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
-
-  // step control (1 = time selection, 2 = contact)
+  const [locationName, setLocationName] = useState("");
+  const [adminNote, setAdminNote] = useState("");
+  const [passUrl, setPassUrl] = useState<string | null>(null);
+  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [step, setStep] = useState<1 | 2>(1);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailErr, setEmailErr] = useState("");
+  const [phoneErr, setPhoneErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmed, setConfirmed] = useState<any>(null);
 
-  // contact info
-  const [firstName, setFirstName] = useState<string>("");
-  const [lastName, setLastName] = useState<string>("");
-  const [phone, setPhone] = useState<string>(""); // formatted
-  const [email, setEmail] = useState<string>("");
-
-  // errors for inputs
-  const [emailErr, setEmailErr] = useState<string>("");
-  const [phoneErr, setPhoneErr] = useState<string>("");
-
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [confirmed, setConfirmed] = useState<null | {
-    id: string;
-    locationName: string;
-    bayNumber: number;
-    start: string;
-    end: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-  }>(null);
-
-  const dateInputRef = useRef<HTMLInputElement>(null);
-
-  // Load location name + note + pass URL
+  // Load location info
   useEffect(() => {
+    if (!locationSlug) return;
     let cancelled = false;
     (async () => {
-      if (!locationSlug) return;
       try {
         const info = await fetchLocationInfo(locationSlug);
         if (!cancelled) {
@@ -220,110 +103,79 @@ export default function BookPage() {
           setPassUrl(info.passAccessUrl ?? null);
         }
       } catch {
-        if (!cancelled) {
-          setLocationName(locationSlug);
-          setPassUrl(null);
-        }
+        if (!cancelled) setLocationName(locationSlug);
       }
     })();
     return () => { cancelled = true; };
   }, [locationSlug]);
 
-  // Load availability for selected date/location with filters
-  async function reloadAvailability() {
-    if (!locationSlug) return;
+  // Load availability
+  const loadAvailability = async () => {
+    if (!locationSlug || !date) return;
+    setLoading(true);
+    setError("");
     try {
-      setLoadingAvail(true);
-      setError("");
-      const slots = await fetchAvailability(
-        locationSlug,
-        date,
-        partyKind,
-        partyKind === "SINGLE" ? handedness : ""
-      );
-      setAvailability(slots);
+      const data = await fetchAvailability(locationSlug, date, partyKind, partyKind === "SINGLE" ? handedness : "");
+      setAvailability(data);
+      setStartTime(""); // reset selection
     } catch (e: any) {
-      setError(e?.message || "Failed to load availability.");
-      setAvailability([]);
+      setError(e.message || "Failed to load times");
+      setAvailability(null);
     } finally {
-      setLoadingAvail(false);
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    reloadAvailability();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadAvailability();
   }, [locationSlug, date, partyKind, handedness]);
 
-  // Compute bay options from availability (numbers found across all slots)
-  const bayOptions = useMemo(() => {
-    const s = new Set<number>();
-    for (const slot of availability) slot.availableBays.forEach((b) => s.add(b));
-    return Array.from(s).sort((a, b) => a - b);
-  }, [availability]);
-
-  // Compute start time options that fit the chosen duration
-  const startOptions = useMemo(() => {
-    if (!availability.length) return [];
-    let times: string[] = [];
-    for (const slot of availability) {
-        const slotTimes = generateTimesForSlot(slot, duration, date, bay);
-        times = times.concat(slotTimes);
+  // Available start times for current duration
+  const availableStartTimes = useMemo(() => {
+    if (!availability?.startTimes[duration]) return [];
+    let times = availability.startTimes[duration];
+    // Hide past times today
+    if (date === todayYMD) {
+      const now = new Date();
+      const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      times = times.filter(t => t >= cutoff);
     }
-    let arr = uniqSortedTimes(times);
+    return times;
+  }, [availability, duration, date, todayYMD]);
 
-    // Hide past times...
-    const selectedDate = new Date(`${date}T00:00:00`);
-    if (sameYMD(selectedDate, today)) {
-        const now = new Date();
-        const cutoff = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-        arr = arr.filter((t) => t >= cutoff);
-    }
-    return arr;
-  }, [availability, duration, bay, date, today]);
+  // Optional: show how many bays are free at selected time
+  const baysAvailableAtTime = useMemo(() => {
+    if (!startTime || !availability) return 0;
+    const selectedISO = `${date}T${startTime}:00.000`;
+    const slot = availability.slots.find(s => s.start <= selectedISO && s.end > selectedISO);
+    return slot?.availableCount || 0;
+  }, [startTime, availability, date]);
 
-  // Display "3:00 PM"
-  const startOptionsDisplay = useMemo(() => {
-    return startOptions.map((t) => {
-        const d = new Date(`${date}T${t}:00.000Z`);
-        return { value: t, label: toDisplayTime(d) };
-    });
-  }, [startOptions, date]);
+  // FIXED: Correctly build local time strings (no Z, no timezone confusion)
+  const onSubmit = async () => {
+    setSubmitting(true);
+    setError("");
+    if (!isValidEmail(email)) return setEmailErr("Valid email required");
+    if (!isValidPhone(phone)) return setPhoneErr("10-digit phone required");
 
-  // Handlers: basic format validation on blur/change
-  function handleEmailBlur() {
-    setEmailErr(isValidEmail(email) ? "" : "Enter a valid email (e.g., name@example.com).");
-  }
-  function handlePhoneBlur() {
-    setPhoneErr(isValidPhone(phone) ? "" : "Enter a valid 10-digit phone (e.g., (555) 123-4567).");
-  }
-
-  // Submit booking
-  async function onSubmit() {
     try {
-      setSubmitting(true);
-      setError("");
+      const [year, month, day] = date.split("-");
+      const [hour, minute] = startTime.split(":");
 
-      if (!date || !startTime) throw new Error("Please select date and start time.");
-      if (!firstName || !lastName || !phone || !email) throw new Error("Please enter your contact information.");
-      if (!isValidEmail(email)) {
-        setEmailErr("Enter a valid email (e.g., name@example.com).");
-        throw new Error("Invalid email.");
-      }
-      if (!isValidPhone(phone)) {
-        setPhoneErr("Enter a valid 10-digit phone (e.g., (555) 123-4567).");
-        throw new Error("Invalid phone.");
-      }
+      // Start time in local format (e.g. 2025-11-25T23:30:00)
+      const startISO = `${year}-${month}-${day}T${hour}:${minute}:00`;
 
-      const start = new Date(`${date}T${startTime}:00`);
-      const end = addMinutes(start, duration);
-      const bayValue = bay === "any" ? "any" : Number(bay);
+      // End time: add duration and format correctly (handles date rollover)
+      const startDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+      const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+
+      const endISO = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${String(endDate.getDate()).padStart(2, "0")}T${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}:00`;
 
       const { booking } = await createBooking({
         locationSlug,
-        startISO: start.toISOString(),
-        endISO: end.toISOString(),
-        bayValue,
+        startISO,
+        endISO,
+        bay: "any",
         firstName,
         lastName,
         phone,
@@ -332,141 +184,95 @@ export default function BookPage() {
         handedness: partyKind === "SINGLE" ? handedness : undefined,
       });
 
-      // Refresh availability behind the scenes
-      void reloadAvailability();
-
-      // Show confirmation
-      setConfirmed({
-        id: booking.id,
-        locationName: booking.locationName,
-        bayNumber: booking.bayNumber,
-        start: booking.start,
-        end: booking.end,
-        firstName,
-        lastName,
-        email,
-        phone,
-      });
-
-      setStartTime("");
+      setConfirmed(booking);
+      void loadAvailability();
     } catch (e: any) {
-      if (!/Invalid (email|phone)/.test(e?.message)) {
-        setError(e?.message || "Booking failed.");
-      }
+      setError(e.message || "Booking failed");
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  // ---------- UI ----------
   return (
     <div className="mx-auto max-w-3xl p-6 text-black">
-      {/* Admin note (dynamic per location) */}
-      {adminNote ? (
-        <div className="mb-4 rounded-md border border-yellow-300 bg-yellow-50 p-3 text-yellow-900 text-sm">
+      {adminNote && (
+        <div className="mb-6 rounded-lg border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
           {adminNote}
         </div>
-      ) : null}
+      )}
 
       {confirmed ? (
-        // ===== Confirmation view =====
-        <div className="space-y-4">
-          <h1 className="text-2xl font-semibold">Booking Confirmed</h1>
-          <p className="text-sm text-gray-700">
-            We’ve sent a confirmation to <span className="font-medium">{confirmed.email}</span>.
-          </p>
-
-          <div className="rounded-xl border border-gray-300 p-4 text-sm">
-            <div className="flex justify-between py-1"><span>Location</span><span className="font-medium">{confirmed.locationName}</span></div>
-            <div className="flex justify-between py-1"><span>Bay</span><span className="font-medium">Bay {confirmed.bayNumber}</span></div>
-            <div className="flex justify-between py-1"><span>Start</span><span className="font-medium">{new Date(confirmed.start).toLocaleString()}</span></div>
-            <div className="flex justify-between py-1"><span>End</span><span className="font-medium">{new Date(confirmed.end).toLocaleString()}</span></div>
-            <div className="flex justify-between py-1"><span>Name</span><span className="font-medium">{confirmed.firstName} {confirmed.lastName}</span></div>
-            <div className="flex justify-between py-1"><span>Email</span><span className="font-medium">{confirmed.email}</span></div>
-            <div className="flex justify-between py-1"><span>Phone</span><span className="font-medium">{confirmed.phone}</span></div>
-            <div className="mt-3 text-xs text-gray-500">Booking ID: {confirmed.id}</div>
+        <div className="space-y-6">
+          <h1 className="text-3xl font-bold">Booking Confirmed!</h1>
+          <p className="text-gray-600">Confirmation sent to {confirmed.email}</p>
+          <div className="rounded-xl border border-gray-300 p-6 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div><strong>Location</strong></div><div>{confirmed.locationName}</div>
+              <div><strong>Bay</strong></div><div>Bay {confirmed.bayNumber}</div>
+              <div><strong>Date & Time</strong></div>
+              <div>
+                {new Date(confirmed.start).toLocaleDateString()} •{" "}
+                {new Date(confirmed.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
+                {new Date(confirmed.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </div>
+              <div><strong>Name</strong></div><div>{confirmed.firstName} {confirmed.lastName}</div>
+            </div>
+            <div className="mt-4 text-xs text-gray-500">ID: {confirmed.id}</div>
           </div>
-
-          <div className="mt-6 flex gap-2">
-            <button
-              className="rounded-lg border border-black px-5 py-3 text-black"
-              onClick={() => { setConfirmed(null); setStep(1); }}
-            >
-              Make another booking
+          <div className="flex gap-4">
+            <button onClick={() => { setConfirmed(null); setStep(1); }} className="rounded-lg border border-black px-6 py-3">
+              Book Another
             </button>
-            <a
-              className="ml-auto rounded-lg border border-black px-5 py-3 text-black"
-              href={passUrl ?? "/passes"}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Buy Access (For Non-Members)
+            <a href={passUrl ?? "/passes"} target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-black px-6 py-3 text-white">
+              Buy Access Pass
             </a>
           </div>
         </div>
       ) : (
         <>
-          <h1 className="text-2xl font-semibold mb-1">
-            Book a Bay <span className="text-gray-700">({locationName || locationSlug})</span>
+          <h1 className="text-3xl font-bold mb-2">
+            Book a Bay <span className="text-gray-600 font-normal">({locationName || locationSlug})</span>
           </h1>
-
-          {error && <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-red-700 text-sm">{error}</div>}
-
-          {/* Step indicator */}
-          <div className="flex items-center gap-2 mb-6 text-sm">
-            {[1, 2].map((i) => (<div key={i} className={`flex-1 h-2 rounded-full ${i <= step ? "bg-black" : "bg-gray-200"}`} />))}
+          {error && <div className="mb-4 p-4 bg-red-50 border border-red-300 rounded-lg text-red-700">{error}</div>}
+          <div className="flex gap-2 mb-8">
+            <div className={`h-2 flex-1 rounded-full ${step >= 1 ? "bg-black" : "bg-gray-300"}`} />
+            <div className={`h-2 flex-1 rounded-full ${step >= 2 ? "bg-black" : "bg-gray-300"}`} />
           </div>
 
-          {step === 1 && (
-            <div className="space-y-4">
+          {step === 1 ? (
+            <div className="space-y-6">
               {/* Date */}
               <div>
-                <label className="block text-sm font-medium mb-1">Date</label>
-                <div
-                  className="relative inline-flex w-full items-center rounded-xl border border-gray-300 px-4 py-3 cursor-pointer hover:bg-gray-50"
-                  onClick={() => (document.getElementById("dateInput") as HTMLInputElement)?.showPicker?.()}
-                >
-                  <input
-                    id="dateInput"
-                    type="date"
-                    className="outline-none bg-transparent cursor-pointer w-full"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    min={ymd(today)}
-                  />
-                </div>
+                <label className="block text-sm font-medium mb-2">Date</label>
+                <input
+                  type="date"
+                  min={todayYMD}
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                />
               </div>
 
-              {/* Party type & (conditional) handedness */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Party Type + Handedness */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Playing as</label>
+                  <label className="block text-sm font-medium mb-2">Playing As</label>
                   <select
-                    className="w-full rounded-xl border border-gray-300 px-3 py-3"
                     value={partyKind}
-                    onChange={(e) => {
-                      const v = e.target.value as "SINGLE" | "GROUP";
-                      setPartyKind(v);
-                      setStartTime("");
-                      setBay("any");
-                    }}
+                    onChange={e => { setPartyKind(e.target.value as any); setStartTime(""); }}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
                   >
                     <option value="GROUP">Group</option>
                     <option value="SINGLE">Single</option>
                   </select>
                 </div>
-
                 {partyKind === "SINGLE" && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Handedness</label>
+                    <label className="block text-sm font-medium mb-2">Handedness</label>
                     <select
-                      className="w-full rounded-xl border border-gray-300 px-3 py-3"
                       value={handedness}
-                      onChange={(e) => {
-                        setHandedness(e.target.value as "RH" | "LH");
-                        setStartTime("");
-                        setBay("any");
-                      }}
+                      onChange={e => { setHandedness(e.target.value as any); setStartTime(""); }}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
                     >
                       <option value="RH">Right-handed</option>
                       <option value="LH">Left-handed</option>
@@ -477,15 +283,16 @@ export default function BookPage() {
 
               {/* Duration */}
               <div>
-                <label className="block text-sm font-medium mb-2">Duration</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {DURATIONS.map((d) => (
+                <label className="block text-sm font-medium mb-3">Duration</label>
+                <div className="grid grid-cols-4 gap-3">
+                  {DURATIONS.map(d => (
                     <button
                       key={d}
-                      type="button"
                       onClick={() => { setDuration(d); setStartTime(""); }}
-                      className={`rounded-lg border px-3 py-2 text-sm ${
-                        duration === d ? "border-black bg-black text-white" : "border-gray-300 text-black"
+                      className={`rounded-lg border py-3 text-sm font-medium transition ${
+                        duration === d
+                          ? "bg-black text-white border-black"
+                          : "border-gray-300 hover:border-gray-500"
                       }`}
                     >
                       {d} min
@@ -494,118 +301,90 @@ export default function BookPage() {
                 </div>
               </div>
 
-              {/* Bay (optional) */}
+              {/* Start Time */}
               <div>
-                <label className="block text-sm font-medium mb-1">Bay (optional)</label>
+                <label className="block text-sm font-medium mb-2">
+                  Start Time {baysAvailableAtTime > 0 && `(${baysAvailableAtTime} bay${baysAvailableAtTime > 1 ? "s" : ""} free)`}
+                </label>
                 <select
-                  className="w-full rounded-xl border border-gray-300 px-3 py-3"
-                  value={bay === "any" ? "any" : String(bay)}
-                  onChange={(e) => {
-                    const v = e.target.value === "any" ? "any" : Number(e.target.value);
-                    setBay(v as any);
-                    setStartTime(""); // reset when bay changes
-                  }}
-                  disabled={!bayOptions.length}
+                  value={startTime}
+                  onChange={e => setStartTime(e.target.value)}
+                  disabled={loading || availableStartTimes.length === 0}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 disabled:opacity-50"
                 >
-                  <option value="any">Any Available Bay</option>
-                  {bayOptions.map((n) => (<option key={n} value={n}>Bay {n}</option>))}
+                  <option value="">
+                    {loading ? "Loading…" : availableStartTimes.length ? "Select a time" : "No times available"}
+                  </option>
+                  {availableStartTimes.map(time => {
+                    const dateObj = new Date(`${date}T${time}:00`);
+                    const label = dateObj.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                    return <option key={time} value={time}>{label}</option>;
+                  })}
                 </select>
-                <div className="mt-2 text-xs text-gray-600">
-                  {loadingAvail ? "Loading availability…" : `Found ${bayOptions.length || 0} bays with availability.`}
+              </div>
+
+              <button
+                onClick={() => setStep(2)}
+                disabled={!startTime}
+                className="w-full bg-black text-white py-4 rounded-xl font-medium disabled:opacity-40"
+              >
+                Continue to Contact
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="text-lg font-medium mb-4">
+                {date} • {new Date(`${date}T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
+                {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                {" "}({duration} min)
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">First Name</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Jane" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Last Name</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Doe" />
                 </div>
               </div>
 
-              {/* Start time */}
               <div>
-                <label className="block text-sm font-medium mb-1">Start Time</label>
-                <select
-                  className="w-full rounded-xl border border-gray-300 px-3 py-3"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  disabled={loadingAvail}
-                >
-                  <option value="" disabled>
-                    {loadingAvail ? "Loading…" : startOptionsDisplay.length ? "Select a time" : "No times available"}
-                  </option>
-                  {startOptionsDisplay.map(({ value, label }) => (<option key={value} value={value}>{label}</option>))}
-                </select>
-              </div>
-
-              <div className="flex gap-2 mt-2">
-                <button
-                  className="rounded-lg bg-black px-5 py-3 text-white disabled:opacity-40"
-                  onClick={() => setStep(2)}
-                  disabled={!date || !startTime}
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              {/* First Name */}
-              <div>
-                <label className="block text-sm font-medium mb-1">First Name</label>
+                <label className="block text-sm font-medium mb-2">Phone</label>
                 <input
-                  className="w-full rounded-xl border border-gray-300 px-3 py-3"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Jane"
-                />
-              </div>
-
-              {/* Last Name */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Last Name</label>
-                <input
-                  className="w-full rounded-xl border border-gray-300 px-3 py-3"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Doe"
-                />
-              </div>
-
-              {/* Phone */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Phone</label>
-                <input
-                  className={`w-full rounded-xl border px-3 py-3 ${phoneErr ? "border-red-400" : "border-gray-300"}`}
                   value={phone}
-                  onChange={(e) => {
-                    const formatted = formatPhone(e.target.value);
-                    setPhone(formatted);
-                    if (phoneErr) setPhoneErr("");
-                  }}
-                  onBlur={handlePhoneBlur}
+                  onChange={e => { setPhone(formatPhone(e.target.value)); phoneErr && setPhoneErr(""); }}
+                  onBlur={() => !isValidPhone(phone) && setPhoneErr("10 digits required")}
+                  className={`w-full rounded-xl border px-4 py-3 ${phoneErr ? "border-red-500" : "border-gray-300"}`}
                   placeholder="(555) 123-4567"
                 />
-                {phoneErr && <p className="text-xs text-red-600 mt-1">{phoneErr}</p>}
+                {phoneErr && <p className="text-red-600 text-sm mt-1">{phoneErr}</p>}
               </div>
 
-              {/* Email */}
               <div>
-                <label className="block text-sm font-medium mb-1">Email</label>
+                <label className="block text-sm font-medium mb-2">Email</label>
                 <input
-                  className={`w-full rounded-xl border px-3 py-3 ${emailErr ? "border-red-400" : "border-gray-300"}`}
                   type="email"
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (emailErr) setEmailErr(""); }}
-                  onBlur={handleEmailBlur}
-                  placeholder="name@example.com"
+                  onChange={e => { setEmail(e.target.value); emailErr && setEmailErr(""); }}
+                  onBlur={() => !isValidEmail(email) && setEmailErr("Valid email required")}
+                  className={`w-full rounded-xl border px-4 py-3 ${emailErr ? "border-red-500" : "border-gray-300"}`}
+                  placeholder="jane@example.com"
                 />
-                {emailErr && <p className="text-xs text-red-600 mt-1">{emailErr}</p>}
+                {emailErr && <p className="text-red-600 text-sm mt-1">{emailErr}</p>}
               </div>
 
-              <div className="flex gap-2">
-                <button className="rounded-lg border border-black px-5 py-3 text-black" onClick={() => setStep(1)}>Back</button>
+              <div className="flex gap-4">
+                <button onClick={() => setStep(1)} className="flex-1 border border-black py-4 rounded-xl">
+                  Back
+                </button>
                 <button
-                  className="rounded-lg bg-black px-5 py-3 text-white disabled:opacity-40"
                   onClick={onSubmit}
                   disabled={submitting || !firstName || !lastName || !phone || !email || !!emailErr || !!phoneErr}
+                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium"
                 >
-                  {submitting ? "Booking…" : "Confirm Booking"}
+                  {submitting ? "Booking…" : "Confirm & Book"}
                 </button>
               </div>
             </div>
@@ -615,11 +394,3 @@ export default function BookPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

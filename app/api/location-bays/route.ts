@@ -1,36 +1,22 @@
 // app/api/location-bays/route.ts
-import { NextResponse } from "next/server";
-import { getPrisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { getLocationBays } from "@/services/location.service";
 
-export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const slug = searchParams.get("locationSlug");
+    const slug = req.nextUrl.searchParams.get("locationSlug")?.trim();
+
     if (!slug) {
-      return NextResponse.json({ error: "locationSlug is required" }, { status: 400 });
+      return new NextResponse("locationSlug is required", { status: 400 });
     }
 
-    const loc = await getPrisma().location.findUnique({
-      where: { slug },
-      select: { id: true },
-    });
-    if (!loc) return NextResponse.json({ error: "Location not found" }, { status: 404 });
-
-    const bays = await getPrisma().bay.findMany({
-      where: { locationId: loc.id },
-      orderBy: { number: "asc" },
-      select: {
-        number: true,
-        kind: true,         // 'SINGLE' | 'GROUP'
-        handedness: true,   // 'RH' | 'LH' | null
-        capacity: true,     // number
-      },
-    });
+    const bays = await getLocationBays(slug);
 
     return NextResponse.json({ bays });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
+  } catch (err: any) {
+    const status = err.message.includes("not found") ? 404 : 500;
+    return new NextResponse(err.message || "Server error", { status });
   }
 }

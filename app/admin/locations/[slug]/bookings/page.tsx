@@ -1,19 +1,19 @@
 // app/admin/locations/[slug]/bookings/page.tsx
 "use client";
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { useParams } from "next/navigation";
 
-// --- tiny icon stubs (no external deps) ---
-const Trash2 = (props: any) => <span {...props}>🗑️</span>;
-const ChevronLeft = (props: any) => <span {...props}>←</span>;
-const ChevronRight = (props: any) => <span {...props}>→</span>;
-const Plus = (props: any) => <span {...props}>＋</span>;
+// --- tiny icon stubs ---
+const Trash2 = (props: any) => <span {...props}>Trash</span>;
+const ChevronLeft = (props: any) => <span {...props}>Previous</span>;
+const ChevronRight = (props: any) => <span {...props}>Next</span>;
+const Plus = (props: any) => <span {...props}>Plus</span>;
 
 type Bay = { id: string; number: number };
 type Booking = {
   id: string;
-  bayId: string; // mapped server-side from bayNumber
+  bayId: string;
   locationId: string;
   firstName: string;
   lastName: string;
@@ -37,7 +37,7 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const minutesToTop = (m: number, px: number) => Math.round(m * px);
 
-// Build "HH:MM" options across 24h by step minutes
+// Build "HH:MM" options across 24h
 function buildTimeOptions(step: number) {
   const opts: { label: string; value: string }[] = [];
   for (let m = 0; m < 24 * 60; m += step) {
@@ -52,12 +52,19 @@ function buildTimeOptions(step: number) {
   return opts;
 }
 
-// Combine YYYY-MM-DD + "HH:MM" (local) => ISO
-function mergeDateAndTimeISO(dateOnlyISO: string, hhmm: string) {
-  const [Y, M, D] = [dateOnlyISO.slice(0, 4), dateOnlyISO.slice(5, 7), dateOnlyISO.slice(8, 10)].map(Number);
-  const [h, m] = hhmm.split(":").map(Number);
-  const d = new Date(Number(Y), Number(M) - 1, Number(D), h, m, 0, 0); // local time
-  return d.toISOString();
+// SAFE: Build local time string (YYYY-MM-DDTHH:MM:00) — no Z, no UTC shift
+function buildLocalISO(dateOnly: string, hhmm: string): string {
+  return `${dateOnly}T${hhmm}:00`;
+}
+
+// SAFE: Add minutes and return correct local ISO (handles midnight rollover)
+function addMinutesToLocalISO(localISO: string, minutes: number): string {
+  const [datePart, timePart] = localISO.split("T");
+  const [h, m] = timePart.split(":").map(Number);
+  const base = new Date(`${datePart}T${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`);
+  const result = new Date(base.getTime() + minutes * 60 * 1000);
+
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}T${String(result.getHours()).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
 }
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -70,7 +77,7 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-// ---------- Overlap helper (client-side guard) ----------
+// Client-side overlap check
 function hasOverlap(
   all: Booking[],
   bayId: string,
@@ -85,7 +92,6 @@ function hasOverlap(
     if (b.bayId !== bayId) continue;
     const s = new Date(b.start);
     const e = new Date(b.end);
-    // Overlap if s < end AND e > start
     if (s < end && e > start) return b;
   }
   return null;
@@ -116,7 +122,6 @@ function Modal({
   );
 }
 
-// 12-hour tick label for gutter
 function labelForHour(i: number) {
   const h24 = i % 24;
   const ampm = h24 < 12 ? "AM" : "PM";
@@ -128,41 +133,25 @@ export default function LocationBookingsPage() {
   const params = useParams() as { slug?: string } | null;
   const slug = (params?.slug ?? "").toString();
 
-  // state
   const [date, setDate] = useState<Date>(startOfDay(new Date()));
   const [data, setData] = useState<DayPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // create modal state
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
   const [createConflict, setCreateConflict] = useState<string | null>(null);
 
-  // edit modal state
-  const [editing, setEditing] = useState<{
-    id: string;
-    bayId: string;
-    dateOnly: string;
-    startHHMM: string;
-    duration: number;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-  } | null>(null);
+  const [editing, setEditing] = useState<any>(null);
   const [editConflict, setEditConflict] = useState<string | null>(null);
 
   const [page, setPage] = useState(0);
 
-  // layout — taller rows; min 30-min block still compact
-  const pxPerMin = 1.2; // 72px per hour, 36px per half-hour
+  const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
   const halfHourHeight = Math.round(30 * pxPerMin);
   const maxVisible = 10;
 
-  // refs for DnD
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // load
   const load = useCallback(async () => {
     if (!slug) return;
     setError(null);
@@ -180,51 +169,39 @@ export default function LocationBookingsPage() {
     load();
   }, [load]);
 
-  // derived
   const bays = useMemo(() => {
     return (data?.bays || []).sort((a, b) => a.number - b.number);
   }, [data?.bays]);
-  
+
   const totalPages = Math.ceil(bays.length / maxVisible) || 1;
   const safePage = Math.min(page, totalPages - 1);
-
   const visibleBays = useMemo(() => {
     return bays.slice(safePage * maxVisible, (safePage + 1) * maxVisible);
   }, [bays, safePage, maxVisible]);
-  
+
   const timeStep = Math.max(5, data?.minBookingMinutes || 60);
   const timeOptions = useMemo(() => buildTimeOptions(timeStep), [timeStep]);
 
-  // day nav
-  const goPrev = () => setDate((d) => new Date(d.getTime() - 86400000));
-  const goNext = () => setDate((d) => new Date(d.getTime() + 86400000));
+  const goPrev = () => setDate(d => new Date(d.getTime() - 86400000));
+  const goNext = () => setDate(d => new Date(d.getTime() + 86400000));
   const goToday = () => setDate(startOfDay(new Date()));
 
-  // ---------- Create booking ----------
+  // ========== CREATE BOOKING ==========
   const recalcCreateConflict = (draft: any) => {
     if (!data || !draft) return setCreateConflict(null);
-    const startISO = draft.startISO;
-    const endISO = draft.endISO;
-    const bayId = draft.bayId;
-    const conflict = hasOverlap(data.bookings, bayId, startISO, endISO);
-    if (conflict) {
-      setCreateConflict(
-        `Overlaps ${conflict.firstName} ${conflict.lastName} (${new Date(conflict.start).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}–${new Date(conflict.end).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})})`
-      );
-    } else {
-      setCreateConflict(null);
-    }
+    const conflict = hasOverlap(data.bookings, draft.bayId, draft.startISO, draft.endISO);
+    setCreateConflict(conflict ? `Overlaps ${conflict.firstName} ${conflict.lastName}` : null);
   };
 
   const handleAddBooking = () => {
     const defaultBay = visibleBays[0]?.id || bays[0]?.id || "";
     const selectedDate = fmtDate(date);
     const nowLocal = new Date();
-    const fallbackHHMM = `${String(nowLocal.getHours()).padStart(2, "0")}:${String(
-      Math.floor(nowLocal.getMinutes() / timeStep) * timeStep
-    ).padStart(2, "0")}`;
-    const startISO = mergeDateAndTimeISO(selectedDate, fallbackHHMM);
-    const endISO = new Date(new Date(startISO).getTime() + 60 * 60000).toISOString();
+    const roundedMinutes = Math.floor(nowLocal.getMinutes() / timeStep) * timeStep;
+    const fallbackHHMM = `${String(nowLocal.getHours()).padStart(2, "0")}:${String(roundedMinutes).padStart(2, "0")}`;
+
+    const startISO = buildLocalISO(selectedDate, fallbackHHMM);
+    const endISO = addMinutesToLocalISO(startISO, 60);
 
     const draft = {
       bayId: defaultBay,
@@ -239,16 +216,11 @@ export default function LocationBookingsPage() {
       phone: "",
     };
     setCreatingDraft(draft);
-    // compute initial conflict
     setTimeout(() => recalcCreateConflict(draft), 0);
   };
 
   const createBooking = async () => {
-    if (!data || !creatingDraft) return;
-    // final guard
-    recalcCreateConflict(creatingDraft);
-    if (createConflict) return;
-
+    if (!data || !creatingDraft || createConflict) return;
     await fetchJSON(`/api/admin/bookings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -257,18 +229,17 @@ export default function LocationBookingsPage() {
         bayId: creatingDraft.bayId,
         firstName: creatingDraft.firstName,
         lastName: creatingDraft.lastName,
-        email: creatingDraft.email,
-        phone: creatingDraft.phone,
+        email: creatingDraft.email || null,
+        phone: creatingDraft.phone || null,
         startISO: creatingDraft.startISO,
         endISO: creatingDraft.endISO,
       }),
     });
-    // IMPORTANT: do NOT call /api/notify/confirmation here — server already sends confirmations.
     setCreatingDraft(null);
     await load();
   };
 
-  // ---------- Delete booking ----------
+  // ========== DELETE ==========
   const deleteBooking = async (id: string) => {
     if (!confirm("Delete this booking?")) return;
     try {
@@ -279,20 +250,18 @@ export default function LocationBookingsPage() {
       });
       await load();
     } catch (err: any) {
-      alert("Error deleting booking: " + err.message);
+      alert("Error deleting: " + err.message);
     }
   };
 
-  // ---------- Edit booking modal ----------
+  // ========== EDIT MODAL ==========
   const openEditModal = (bk: Booking) => {
     const s = new Date(bk.start);
     const dateOnly = fmtDate(s);
     const startHHMM = `${String(s.getHours()).padStart(2, "0")}:${String(s.getMinutes()).padStart(2, "0")}`;
-    const duration = Math.max(
-      timeStep,
-      Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000)
-    );
-    const next = {
+    const duration = Math.max(timeStep, Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000));
+
+    setEditing({
       id: bk.id,
       bayId: bk.bayId,
       dateOnly,
@@ -302,80 +271,52 @@ export default function LocationBookingsPage() {
       lastName: bk.lastName,
       email: bk.email || "",
       phone: bk.phone || "",
-    };
-    setEditing(next);
+    });
     setEditConflict(null);
   };
 
-  const recalcEditConflict = (state: NonNullable<typeof editing>) => {
-    if (!data || !state) return setEditConflict(null);
-    const startISO = mergeDateAndTimeISO(state.dateOnly, state.startHHMM);
-    const endISO = new Date(new Date(startISO).getTime() + state.duration * 60000).toISOString();
+  const recalcEditConflict = (state: any) => {
+    if (!data) return;
+    const startISO = buildLocalISO(state.dateOnly, state.startHHMM);
+    const endISO = addMinutesToLocalISO(startISO, state.duration);
     const conflict = hasOverlap(data.bookings, state.bayId, startISO, endISO, state.id);
-    if (conflict) {
-      setEditConflict(
-        `Overlaps ${conflict.firstName} ${conflict.lastName} (${new Date(conflict.start).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}–${new Date(conflict.end).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})})`
-      );
-    } else {
-      setEditConflict(null);
-    }
+    setEditConflict(conflict ? `Overlaps ${conflict.firstName} ${conflict.lastName}` : null);
   };
 
   const saveEdit = async () => {
-    if (!editing) return;
-    const startISO = mergeDateAndTimeISO(editing.dateOnly, editing.startHHMM);
-    const endISO = new Date(new Date(startISO).getTime() + editing.duration * 60000).toISOString();
-    const conflict = data ? hasOverlap(data.bookings, editing.bayId, startISO, endISO, editing.id) : null;
-    if (conflict) {
-      setEditConflict(
-        `Overlaps ${conflict.firstName} ${conflict.lastName} (${new Date(conflict.start).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}–${new Date(conflict.end).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})})`
-      );
-      return;
-    }
+    if (!editing || editConflict) return;
+    const startISO = buildLocalISO(editing.dateOnly, editing.startHHMM);
+    const endISO = addMinutesToLocalISO(startISO, editing.duration);
 
-    try {
-      await fetchJSON(`/api/admin/bookings/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editing.id,
-          bayId: editing.bayId,
-          startISO,
-          endISO,
-          firstName: editing.firstName,
-          lastName: editing.lastName,
-          email: editing.email,
-          phone: editing.phone,
-        }),
-      });
-      setEditing(null);
-      await load();
-    } catch (err: any) {
-      alert("Error saving booking: " + err.message);
-    }
+    await fetchJSON(`/api/admin/bookings/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editing.id,
+        bayId: editing.bayId,
+        startISO,
+        endISO,
+        firstName: editing.firstName,
+        lastName: editing.lastName,
+        email: editing.email || null,
+        phone: editing.phone || null,
+      }),
+    });
+    setEditing(null);
+    await load();
   };
 
-  // ---------- Drag & Drop (move time/bay) ----------
+  // ========== DRAG & DROP ==========
   const DRAG_KEY = "tee24/booking";
 
   const onBookingDragStart = (e: React.DragEvent, bk: Booking) => {
     const s = new Date(bk.start);
     const mins = s.getHours() * 60 + s.getMinutes();
-    const duration = Math.max(
-      timeStep,
-      Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000)
-    );
-    e.dataTransfer.setData(
-      DRAG_KEY,
-      JSON.stringify({ id: bk.id, startMinutes: mins, durationMinutes: duration })
-    );
+    const duration = Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000);
+    e.dataTransfer.setData(DRAG_KEY, JSON.stringify({ id: bk.id, durationMinutes: duration }));
+
     const crt = document.createElement("div");
-    crt.style.padding = "6px 10px";
-    crt.style.background = "#ecfdf5";
-    crt.style.border = "1px solid #a7f3d0";
-    crt.style.borderRadius = "8px";
-    crt.style.fontSize = "12px";
-    crt.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+    crt.style.cssText = "padding:6px 10px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; font-size:12px; box-shadow:0 4px 12px rgba(0,0,0,0.15);";
     crt.innerText = `${bk.firstName} ${bk.lastName}`;
     document.body.appendChild(crt);
     e.dataTransfer.setDragImage(crt, 0, 0);
@@ -396,183 +337,126 @@ export default function LocationBookingsPage() {
     if (!col) return;
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const minutesRaw = Math.max(0, Math.round(y / pxPerMin));
-    const snapped = Math.max(0, Math.round(minutesRaw / timeStep) * timeStep);
+    const minutesRaw = Math.round(y / pxPerMin);
+    const snapped = Math.round(minutesRaw / timeStep) * timeStep;
     const hh = Math.floor(snapped / 60);
     const mm = snapped % 60;
-
-    const dateOnly = fmtDate(date);
     const hhmm = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-    const newStartISO = mergeDateAndTimeISO(dateOnly, hhmm);
-    const newEndISO = new Date(new Date(newStartISO).getTime() + durationMinutes * 60000).toISOString();
+    const dateOnly = fmtDate(date);
+
+    const newStartISO = buildLocalISO(dateOnly, hhmm);
+    const newEndISO = addMinutesToLocalISO(newStartISO, durationMinutes);
 
     const conflict = hasOverlap(data.bookings, bay.id, newStartISO, newEndISO, id);
     if (conflict) {
-      alert(
-        `Cannot move: overlaps ${conflict.firstName} ${conflict.lastName} ` +
-        `(${new Date(conflict.start).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}–` +
-        `${new Date(conflict.end).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})})`
-      );
+      alert(`Cannot move: overlaps ${conflict.firstName} ${conflict.lastName}`);
       return;
     }
 
-    try {
-      await fetchJSON(`/api/admin/bookings/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          bayId: bay.id,
-          startISO: newStartISO,
-          endISO: newEndISO,
-        }),
-      });
-      await load();
-    } catch (err: any) {
-      alert("Error moving booking: " + err.message);
-    }
+    await fetchJSON(`/api/admin/bookings/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, bayId: bay.id, startISO: newStartISO, endISO: newEndISO }),
+    });
+    await load();
   };
 
-  // ----- Palette for per-column alternating colors -----
+  // Palette
   const palette = [
     ["bg-blue-50", "border-blue-200", "text-blue-900"],
     ["bg-emerald-50", "border-emerald-200", "text-emerald-900"],
     ["bg-amber-50", "border-amber-200", "text-amber-900"],
     ["bg-violet-50", "border-violet-200", "text-violet-900"],
     ["bg-rose-50", "border-rose-200", "text-rose-900"],
-    ["bg-cyan-50", "border-cyan-200", "text-cyan-900"],
-    ["bg-fuchsia-50", "border-fuchsia-200", "text-fuchsia-900"],
-    ["bg-lime-50", "border-lime-200", "text-lime-900"],
-    ["bg-orange-50", "border-orange-200", "text-orange-900"],
-    ["bg-sky-50", "border-sky-200", "text-sky-900"],
   ];
 
   return (
     <div className="p-6 space-y-4">
-      {/* Header controls */}
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <button onClick={goPrev} className="rounded-xl border px-3 py-2 hover:bg-gray-50">
-            <ChevronLeft />
-          </button>
+          <button onClick={goPrev} className="rounded-xl border px-3 py-2 hover:bg-gray-50"><ChevronLeft /></button>
           <div className="min-w-[220px] rounded-xl border px-4 py-2 text-center text-sm font-medium">
-            {date.toLocaleDateString(undefined, {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
+            {date.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
           </div>
-          <button onClick={goNext} className="rounded-xl border px-3 py-2 hover:bg-gray-50">
-            <ChevronRight />
-          </button>
-          <button onClick={goToday} className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">
-            Today
-          </button>
+          <button onClick={goNext} className="rounded-xl border px-3 py-2 hover:bg-gray-50"><ChevronRight /></button>
+          <button onClick={goToday} className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">Today</button>
         </div>
-
-        <button
-          onClick={handleAddBooking}
-          className="inline-flex items-center gap-1 rounded-xl border bg-white px-3 py-2 text-sm hover:bg-gray-50"
-        >
+        <button onClick={handleAddBooking} className="inline-flex items-center gap-1 rounded-xl border bg-white px-3 py-2 text-sm hover:bg-gray-50">
           <Plus /> Add Booking
         </button>
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-      {/* Bay header with pagination */}
+      {/* Grid Header */}
       <div className="flex items-center justify-between border-b bg-white text-sm font-medium">
-        <div
-          className="grid flex-1"
-          style={{ gridTemplateColumns: `80px repeat(${visibleBays.length}, minmax(120px, 1fr))` }}
-        >
+        <div className="grid flex-1" style={{ gridTemplateColumns: `80px repeat(${visibleBays.length}, minmax(120px, 1fr))` }}>
           <div className="px-3 py-2 text-right text-gray-500">Time</div>
-          {visibleBays.map((bay) => (
-            <div key={bay.id} className="px-3 py-2">
-              Bay {bay.number}
-            </div>
-          ))}
+          {visibleBays.map(bay => <div key={bay.id} className="px-3 py-2">Bay {bay.number}</div>)}
         </div>
-
-        {bays.length > maxVisible && (
-          <div className="flex items-center gap-2 border-l px-3 py-2 text-xs text-gray-600">
-            <span>
-              Bays {safePage * maxVisible + 1}–
-              {Math.min((safePage + 1) * maxVisible, bays.length)} of {bays.length}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={safePage === 0}
-              className="rounded-md border px-2 py-0.5 disabled:opacity-50"
-            >
-              ←
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={safePage >= totalPages - 1}
-              className="rounded-md border px-2 py-0.5 disabled:opacity-50"
-            >
-              →
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Calendar grid */}
+      {/* Calendar Grid */}
       <div className="grid overflow-auto border" style={{ gridTemplateColumns: `80px repeat(${visibleBays.length}, 1fr)` }}>
         {/* Time gutter */}
         <div className="relative" style={{ height: totalHeight }}>
           {Array.from({ length: 25 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute left-0 right-0 border-t text-right text-[10px] text-gray-500"
-              style={{ top: minutesToTop(i * 60, pxPerMin) }}
-            >
+            <div key={i} className="absolute left-0 right-0 border-t text-right text-[10px] text-gray-500" style={{ top: minutesToTop(i * 60, pxPerMin) }}>
               <div className="-translate-y-1/2 px-2">{labelForHour(i)}</div>
             </div>
           ))}
         </div>
 
-        {/* Bay columns (drop targets) */}
-        {visibleBays.map((bay) => {
+        {/* Bay columns */}
+        {visibleBays.map(bay => {
           const bookingsForBay = (data?.bookings || [])
-            .filter((b) => b.bayId === bay.id)
+            .filter(b => b.bayId === bay.id)
             .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
           return (
             <div
               key={bay.id}
-              ref={(el) => { bayRefs.current[bay.id] = el; }}
+              ref={el => { bayRefs.current[bay.id] = el; }}
               className="relative border-l"
               style={{ height: totalHeight }}
               onDragOver={onBayDragOver}
-              onDrop={(e) => onBayDrop(e, bay)}
+              onDrop={e => onBayDrop(e, bay)}
             >
-              {/* grid lines */}
               <div className="absolute inset-0">
                 {Array.from({ length: 48 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="absolute left-0 right-0 border-t border-gray-100"
-                    style={{ top: minutesToTop(i * 30, pxPerMin) }}
-                  />
+                  <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: minutesToTop(i * 30, pxPerMin) }} />
                 ))}
-                <div className="absolute left-0 right-0 border-t border-gray-100" style={{ top: minutesToTop(24 * 60, pxPerMin) }} />
               </div>
 
-              {/* bookings: full width + single line + tight leading */}
               {bookingsForBay.map((bk, idx) => {
-                const s = new Date(bk.start);
-                const e = new Date(bk.end);
-                const startMins = s.getHours() * 60 + s.getMinutes();
-                const endMins = e.getHours() * 60 + e.getMinutes();
-                const top = minutesToTop(startMins, pxPerMin);
-                const height = Math.max(halfHourHeight / 2, minutesToTop(endMins - startMins, pxPerMin));
+                const startUTC = new Date(bk.start);
+                const endUTC = new Date(bk.end);
+                const tz = data!.timezone; // e.g. "America/New_York"
+
+                const startLocal = toZonedTime(startUTC, tz);
+                const endLocal = toZonedTime(endUTC, tz);
+
+                // Midnight of the currently viewed day (in local time)
+                const viewedDayMidnight = new Date(date);
+                viewedDayMidnight.setHours(0, 0, 0, 0);
+
+                // Clamp booking to visible day
+                let displayStartMins = startLocal.getHours() * 60 + startLocal.getMinutes();
+                let displayEndMins = endLocal.getHours() * 60 + endLocal.getMinutes();
+
+                if (startLocal < viewedDayMidnight) {
+                    displayStartMins = 0; // started yesterday → show from midnight
+                }
+                if (endLocal > new Date(viewedDayMidnight.getTime() + 24 * 60 * 60 * 1000)) {
+                    displayEndMins = 24 * 60; // ends tomorrow → cap at end of day
+                }
+
+                const top = minutesToTop(displayStartMins, pxPerMin);
+                const height = minutesToTop(displayEndMins - displayStartMins, pxPerMin);
+
+                // Use local time for label
+                const timeLabel = `${startLocal.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–${endLocal.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 
                 const [bg, br, tx] = palette[idx % palette.length];
 
@@ -582,20 +466,14 @@ export default function LocationBookingsPage() {
                     className={`absolute left-0 right-0 border-y shadow-sm px-2 py-1 cursor-grab active:cursor-grabbing ${bg} ${br} ${tx}`}
                     style={{ top, height, minHeight: Math.min(height, 28) }}
                     draggable
-                    onDragStart={(e) => onBookingDragStart(e, bk)}
+                    onDragStart={e => onBookingDragStart(e, bk)}
                     onClick={() => openEditModal(bk)}
-                    title={`${bk.firstName} ${bk.lastName}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="text-[11px] leading-none font-medium truncate">
-                        {bk.firstName} {bk.lastName} —{" "}
-                        {s.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{e.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                        {bk.firstName} {bk.lastName} — {timeLabel}
                       </div>
-                      <button
-                        className="rounded-md p-1 hover:bg-black/5"
-                        title="Delete"
-                        onClick={(ev) => { ev.stopPropagation(); deleteBooking(bk.id); }}
-                      >
+                      <button className="rounded-md p-1 hover:bg-black/5" onClick={ev => { ev.stopPropagation(); deleteBooking(bk.id); }}>
                         <Trash2 />
                       </button>
                     </div>
@@ -607,297 +485,139 @@ export default function LocationBookingsPage() {
         })}
       </div>
 
-      {/* Create booking modal */}
+      {/* Create Modal */}
       <Modal open={!!creatingDraft} onClose={() => { setCreatingDraft(null); setCreateConflict(null); }} title="Create Booking">
         {creatingDraft && data && (
-          <div className="space-y-3 text-sm">
-            {createConflict && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {createConflict}
-              </div>
-            )}
+          <div className="space-y-4">
+            {createConflict && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{createConflict}</div>}
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">First name</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={creatingDraft.firstName}
-                  onChange={(e) =>
-                    setCreatingDraft({ ...creatingDraft, firstName: e.target.value })
-                  }
-                />
-              </label>
-              <label className="space-y-1">
-                <div className="text-gray-500">Last name</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={creatingDraft.lastName}
-                  onChange={(e) =>
-                    setCreatingDraft({ ...creatingDraft, lastName: e.target.value })
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">Phone</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={creatingDraft.phone}
-                  onChange={(e) =>
-                    setCreatingDraft({ ...creatingDraft, phone: e.target.value })
-                  }
-                />
-              </label>
-              <label className="space-y-1">
-                <div className="text-gray-500">Email</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={creatingDraft.email}
-                  onChange={(e) =>
-                    setCreatingDraft({ ...creatingDraft, email: e.target.value })
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">Date</div>
-                <input
-                  type="date"
-                  className="w-full rounded-lg border p-2"
-                  value={creatingDraft.dateOnly}
-                  onChange={(e) => {
-                    const dateOnly = e.target.value;
-                    const startISO = mergeDateAndTimeISO(dateOnly, creatingDraft.startHHMM);
-                    const endISO = new Date(new Date(startISO).getTime() + (creatingDraft.duration || 60) * 60000).toISOString();
-                    const draft = { ...creatingDraft, dateOnly, startISO, endISO };
-                    setCreatingDraft(draft);
-                    recalcCreateConflict(draft);
-                  }}
-                />
-              </label>
-
-              <label className="space-y-1">
-                <div className="text-gray-500">Start Time</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bay</label>
                 <select
-                  className={`w-full rounded-lg border p-2 ${createConflict ? "border-red-400" : ""}`}
-                  value={creatingDraft.startHHMM}
-                  onChange={(e) => {
-                    const startHHMM = e.target.value;
-                    const startISO = mergeDateAndTimeISO(creatingDraft.dateOnly, startHHMM);
-                    const endISO = new Date(new Date(startISO).getTime() + (creatingDraft.duration || 60) * 60000).toISOString();
-                    const draft = { ...creatingDraft, startHHMM, startISO, endISO };
-                    setCreatingDraft(draft);
-                    recalcCreateConflict(draft);
-                  }}
-                >
-                  {timeOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">Duration (minutes)</div>
-                <input
-                  type="number"
-                  min={timeStep}
-                  step={timeStep}
-                  className={`w-full rounded-lg border p-2 ${createConflict ? "border-red-400" : ""}`}
-                  value={creatingDraft.duration || timeStep}
-                  onChange={(e) => {
-                    const minutes = Math.max(timeStep, Number(e.target.value));
-                    const startISO = creatingDraft.startISO;
-                    const endISO = new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
-                    const draft = { ...creatingDraft, duration: minutes, endISO };
-                    setCreatingDraft(draft);
-                    recalcCreateConflict(draft);
-                  }}
-                />
-              </label>
-
-              <label className="space-y-1">
-                <div className="text-gray-500">Bay</div>
-                <select
-                  className={`w-full rounded-lg border p-2 ${createConflict ? "border-red-400" : ""}`}
                   value={creatingDraft.bayId}
-                  onChange={(e) => {
+                  onChange={e => {
                     const draft = { ...creatingDraft, bayId: e.target.value };
                     setCreatingDraft(draft);
                     recalcCreateConflict(draft);
                   }}
+                  className="w-full rounded-lg border px-3 py-2"
                 >
-                  {data.bays.map((bay) => (
-                    <option key={bay.id} value={bay.id}>
-                      Bay {bay.number}
-                    </option>
-                  ))}
+                  {bays.map(b => <option key={b.id} value={b.id}>Bay {b.number}</option>)}
                 </select>
-              </label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                <select
+                  value={creatingDraft.startHHMM}
+                  onChange={e => {
+                    const startISO = buildLocalISO(creatingDraft.dateOnly, e.target.value);
+                    const endISO = addMinutesToLocalISO(startISO, creatingDraft.duration);
+                    const draft = { ...creatingDraft, startHHMM: e.target.value, startISO, endISO };
+                    setCreatingDraft(draft);
+                    recalcCreateConflict(draft);
+                  }}
+                  className="w-full rounded-lg border px-3 py-2"
+                >
+                  {timeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button className="rounded-xl border px-3 py-2" onClick={() => { setCreatingDraft(null); setCreateConflict(null); }}>
-                Cancel
-              </button>
-              <button
-                className="rounded-xl border bg-white px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
-                onClick={createBooking}
-                disabled={!!createConflict}
-                title={createConflict || undefined}
-              >
-                Create
-              </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+              <input
+                type="number"
+                min={timeStep}
+                step={timeStep}
+                value={creatingDraft.duration}
+                onChange={e => {
+                  const minutes = Math.max(timeStep, Number(e.target.value) || timeStep);
+                  const endISO = addMinutesToLocalISO(creatingDraft.startISO, minutes);
+                  const draft = { ...creatingDraft, duration: minutes, endISO };
+                  setCreatingDraft(draft);
+                  recalcCreateConflict(draft);
+                }}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <input placeholder="First Name" value={creatingDraft.firstName} onChange={e => setCreatingDraft({ ...creatingDraft, firstName: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Last Name" value={creatingDraft.lastName} onChange={e => setCreatingDraft({ ...creatingDraft, lastName: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Email (optional)" value={creatingDraft.email} onChange={e => setCreatingDraft({ ...creatingDraft, email: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Phone (optional)" value={creatingDraft.phone} onChange={e => setCreatingDraft({ ...creatingDraft, phone: e.target.value })} className="rounded-lg border px-3 py-2" />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3">
+              <button onClick={() => { setCreatingDraft(null); setCreateConflict(null); }} className="rounded-xl border px-4 py-2">Cancel</button>
+              <button onClick={createBooking} disabled={!!createConflict || !creatingDraft.firstName} className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50">Create</button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Edit booking modal */}
-      <Modal open={!!editing} onClose={() => { setEditing(null); setEditConflict(null); }} title="Booking Details" wide>
-        {editing && data && (
-          <div className="space-y-3 text-sm">
-            {editConflict && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {editConflict}
-              </div>
-            )}
+      {/* Edit Modal */}
+      <Modal open={!!editing} onClose={() => { setEditing(null); setEditConflict(null); }} title="Edit Booking" wide>
+        {editing && (
+          <div className="space-y-4">
+            {editConflict && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{editConflict}</div>}
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">First name</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={editing.firstName}
-                  onChange={(e) => setEditing((s) => { const n = { ...s!, firstName: e.target.value }; return n; })}
-                />
-              </label>
-              <label className="space-y-1">
-                <div className="text-gray-500">Last name</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={editing.lastName}
-                  onChange={(e) => setEditing((s) => { const n = { ...s!, lastName: e.target.value }; return n; })}
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">Phone</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={editing.phone}
-                  onChange={(e) => setEditing((s) => { const n = { ...s!, phone: e.target.value }; return n; })}
-                />
-              </label>
-              <label className="space-y-1">
-                <div className="text-gray-500">Email</div>
-                <input
-                  className="w-full rounded-lg border p-2"
-                  value={editing.email}
-                  onChange={(e) => setEditing((s) => { const n = { ...s!, email: e.target.value }; return n; })}
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <label className="space-y-1">
-                <div className="text-gray-500">Date</div>
-                <input
-                  type="date"
-                  className="w-full rounded-lg border p-2"
-                  value={editing.dateOnly}
-                  onChange={(e) => {
-                    const n = { ...editing, dateOnly: e.target.value };
-                    setEditing(n);
-                    recalcEditConflict(n);
-                  }}
-                />
-              </label>
-
-              <label className="space-y-1">
-                <div className="text-gray-500">Start Time</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bay</label>
                 <select
-                  className={`w-full rounded-lg border p-2 ${editConflict ? "border-red-400" : ""}`}
+                  value={editing.bayId}
+                  onChange={e => { const n = { ...editing, bayId: e.target.value }; setEditing(n); recalcEditConflict(n); }}
+                  className="w-full rounded-lg border px-3 py-2"
+                >
+                  {bays.map(b => <option key={b.id} value={b.id}>Bay {b.number}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                <select
                   value={editing.startHHMM}
-                  onChange={(e) => {
+                  onChange={e => {
                     const n = { ...editing, startHHMM: e.target.value };
                     setEditing(n);
                     recalcEditConflict(n);
                   }}
+                  className="w-full rounded-lg border px-3 py-2"
                 >
-                  {timeOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  {timeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-              </label>
-
-              <label className="space-y-1">
-                <div className="text-gray-500">Duration (minutes)</div>
-                <input
-                  type="number"
-                  min={timeStep}
-                  step={timeStep}
-                  className={`w-full rounded-lg border p-2 ${editConflict ? "border-red-400" : ""}`}
-                  value={editing.duration}
-                  onChange={(e) => {
-                    const n = { ...editing, duration: Math.max(timeStep, Number(e.target.value)) };
-                    setEditing(n);
-                    recalcEditConflict(n);
-                  }}
-                />
-              </label>
+              </div>
             </div>
 
-            <label className="space-y-1 block">
-              <div className="text-gray-500">Bay</div>
-              <select
-                className={`w-full rounded-lg border p-2 ${editConflict ? "border-red-400" : ""}`}
-                value={editing.bayId}
-                onChange={(e) => {
-                  const n = { ...editing, bayId: e.target.value };
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+              <input
+                type="number"
+                min={timeStep}
+                step={timeStep}
+                value={editing.duration}
+                onChange={e => {
+                  const n = { ...editing, duration: Math.max(timeStep, Number(e.target.value) || timeStep) };
                   setEditing(n);
                   recalcEditConflict(n);
                 }}
-              >
-                {data.bays.map((bay) => (
-                  <option key={bay.id} value={bay.id}>
-                    Bay {bay.number}
-                  </option>
-                ))}
-              </select>
-            </label>
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <button
-                className="rounded-xl border px-3 py-2 text-red-600"
-                onClick={async () => {
-                  if (!confirm("Delete this booking?")) return;
-                  await deleteBooking(editing.id);
-                  setEditing(null);
-                }}
-              >
-                Delete
-              </button>
-              <div className="flex items-center gap-2">
-                <button className="rounded-xl border px-3 py-2" onClick={() => { setEditing(null); setEditConflict(null); }}>
-                  Cancel
-                </button>
-                <button
-                  className="rounded-xl border bg-white px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
-                  onClick={saveEdit}
-                  disabled={!!editConflict}
-                  title={editConflict || undefined}
-                >
-                  Save
-                </button>
+            <div className="grid grid-cols-2 gap-4">
+              <input placeholder="First Name" value={editing.firstName} onChange={e => setEditing({ ...editing, firstName: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Last Name" value={editing.lastName} onChange={e => setEditing({ ...editing, lastName: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="Phone" value={editing.phone} onChange={e => setEditing({ ...editing, phone: e.target.value })} className="rounded-lg border px-3 py-2" />
+            </div>
+
+            <div className="flex justify-between pt-4">
+              <button onClick={() => deleteBooking(editing.id)} className="text-red-600 font-medium">Delete Booking</button>
+              <div className="flex gap-3">
+                <button onClick={() => { setEditing(null); setEditConflict(null); }} className="rounded-xl border px-4 py-2">Cancel</button>
+                <button onClick={saveEdit} disabled={!!editConflict} className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50">Save Changes</button>
               </div>
             </div>
           </div>
@@ -906,6 +626,3 @@ export default function LocationBookingsPage() {
     </div>
   );
 }
-
-
-
