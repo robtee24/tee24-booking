@@ -3,212 +3,322 @@ import { getPrisma } from "@/lib/db";
 import {
   toZonedTime,
   fromZonedTime,
-  startOfDay,
-  isWithinInterval,
+  formatInTimeZone,
 } from "date-fns-tz";
-import { 
-  addDays,
-  addMinutes, 
-} from "date-fns";
+import { addDays, addMinutes, parse, format } from "date-fns";
+import type {
+  AvailabilityRequest,
+  AvailabilityResult,
+  AvailableBaysResult,
+  TimeSlot,
+  StartTimes,
+} from "@/types/availability";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-export type AvailabilityRequest = {
-  locationSlug: string;
-  date: string; // YYYY-MM-DD in UTC
-  kind: "SINGLE" | "GROUP";
-  hand?: "RH" | "LH";
-};
-
-export type TimeSlot = {
-  start: string; // ISO UTC
-  end: string;   // ISO UTC
-  availableCount: number;
-};
-
-export type StartTimes = Record<30 | 60 | 90 | 120, string[]>; // HH:mm strings
-
-export type AvailabilityResult = {
-  slots: TimeSlot[];
-  startTimes: StartTimes;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
 const STEP_MINUTES = 30;
 const DURATIONS = [30, 60, 90, 120] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Core availability engine
+// Align a UTC date to the next step boundary based on local time minutes
+// ─────────────────────────────────────────────────────────────────────────────
+function alignToLocalStep(
+  utcDate: Date,
+  step: number,
+  mode: "ceil" | "floor",
+  tz: string
+): Date {
+  const localMinutes = Number(formatInTimeZone(utcDate, tz, "mm"));
+  const alignedMinutes =
+    mode === "ceil"
+      ? Math.ceil(localMinutes / step) * step
+      : Math.floor(localMinutes / step) * step;
+  const diffMinutes = alignedMinutes - localMinutes;
+  return addMinutes(utcDate, diffMinutes);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exact window check (used when creating a booking)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getAvailableBaysAtExactWindow(
+  req: {
+    locationSlug: string;
+    startUTC: Date;
+    endUTC: Date;
+    kind: "SINGLE" | "GROUP";
+    hand?: "RH" | "LH";
+  }
+): Promise<AvailableBaysResult> {
+  const { locationSlug, startUTC, endUTC, kind, hand } = req;
+  if (endUTC <= startUTC) return { availableCount: 0, freeBayNumbers: [] };
+
+  const location = await getPrisma().location.findUnique({
+    where: { slug: locationSlug },
+    select: { id: true, timezone: true, open24Hours: true, hours: true },
+  });
+  if (!location || !location.timezone) return { availableCount: 0, freeBayNumbers: [] };
+
+  const tz = location.timezone;
+
+  // Get local date for startUTC to build windows around the correct local day
+  const localDatePart = formatInTimeZone(startUTC, tz, "yyyy-MM-dd");
+  const localMidnightLocal = parse(`${localDatePart} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());
+  const localMidnightUTC = fromZonedTime(localMidnightLocal, tz);
+
+  const operatingWindows = buildOperatingWindows(localMidnightUTC, location, tz);
+
+  if (
+    !location.open24Hours &&
+    (
+      !operatingWindows.some((w) => startUTC >= w.start && startUTC < w.end) ||
+      !operatingWindows.some((w) => endUTC > w.start && endUTC <= w.end)
+    )
+  ) {
+    return { availableCount: 0, freeBayNumbers: [] };
+  }
+
+  const [bays, bookings] = await Promise.all([
+    getPrisma().bay.findMany({
+      where: { locationId: location.id },
+      select: { number: true, kind: true, handedness: true },
+    }),
+    getPrisma().booking.findMany({
+      where: {
+        locationId: location.id,
+        canceledAt: null,
+        OR: [{ start: { lt: endUTC } }, { end: { gt: startUTC } }],
+      },
+      select: { bayNumber: true, start: true, end: true },
+    }),
+  ]);
+
+  const eligibleBayNumbers = getEligibleBayNumbers(bays, kind, hand);
+  if (eligibleBayNumbers.length === 0) return { availableCount: 0, freeBayNumbers: [] };
+
+  const busyByBay = new Map<number, { start: Date; end: Date }[]>();
+  for (const num of eligibleBayNumbers) busyByBay.set(num, []);
+  for (const b of bookings) {
+    if (eligibleBayNumbers.includes(b.bayNumber)) {
+      busyByBay.get(b.bayNumber)!.push({ start: b.start, end: b.end });
+    }
+  }
+
+  const isBayFree = (bayNumber: number): boolean => {
+    const intervals = busyByBay.get(bayNumber)!;
+    return !intervals.some((i) => i.start < endUTC && i.end > startUTC);
+  };
+
+  const freeBayNumbers = eligibleBayNumbers.filter(isBayFree).sort((a, b) => a - b);
+  return { availableCount: freeBayNumbers.length, freeBayNumbers };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main availability for a full day
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getAvailability(
   req: AvailabilityRequest
 ): Promise<AvailabilityResult> {
-  const { locationSlug, date: dateStr, kind, hand } = req;
+  const {
+    locationSlug,
+    date: dateStr,
+    kind,
+    hand,
+    includeSlots = false,
+    includeFreeBays = false,
+  } = req;
 
-  // 1. Load location + bays
   const location = await getPrisma().location.findUnique({
     where: { slug: locationSlug },
-    select: {
-      id: true,
-      timezone: true,
-      open24Hours: true,
-      hours: true,
-    },
+    select: { id: true, timezone: true, open24Hours: true, hours: true },
   });
-
-  if (!location) throw new Error("Location not found");
-  if (!location.timezone) throw new Error("Location has no timezone");
+  if (!location || !location.timezone) throw new Error("Location not found or missing timezone");
 
   const tz = location.timezone;
-  const localDateMidnight = toZonedTime(new Date(`${dateStr}T00:00:00Z`), tz);
 
-  // 2. Determine eligible bay numbers
-  const bays = await getPrisma().bay.findMany({
-    where: { locationId: location.id },
-    select: { number: true, kind: true, handedness: true },
-  });
+  // Local midnight UTC timestamp
+  const localMidnightLocal = parse(`${dateStr} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());
+  const localMidnightUTC = fromZonedTime(localMidnightLocal, tz);
 
-  const eligibleBayNumbers = bays
-    .filter((b) => {
-      if (kind === "GROUP") return b.kind === "GROUP";
-      return b.kind === "SINGLE" && (!hand || b.handedness === hand);
-    })
-    .map((b) => b.number);
+  // Next day midnight UTC timestamp
+  const nextDayStr = format(addDays(parse(dateStr, "yyyy-MM-dd", new Date()), 1), "yyyy-MM-dd");
+  const dayEndLocal = parse(`${nextDayStr} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());
+  const dayEndUTC = fromZonedTime(dayEndLocal, tz);
 
-  if (eligibleBayNumbers.length === 0) {
-    return { slots: [], startTimes: { 30: [], 60: [], 90: [], 120: [] } };
-  }
-
-  // 3. Build operating windows (today + tomorrow for overnight)
-  const operatingWindows = buildOperatingWindows(localDateMidnight, location);
+  const operatingWindows = buildOperatingWindows(localMidnightUTC, location, tz);
   if (operatingWindows.length === 0) {
-    return { slots: [], startTimes: { 30: [], 60: [], 90: [], 120: [] } };
+    return {
+      startTimes: { 30: [], 60: [], 90: [], 120: [] },
+      ...(includeSlots && { slots: [] }),
+      ...(includeFreeBays && { freeBaysBySlot: {} }),
+    };
   }
 
-  const searchStartLocal = operatingWindows[0].start;
-  const searchEndLocal = operatingWindows[operatingWindows.length - 1].end;
+  const dayStartUTC = operatingWindows[0].start;
 
-  const searchStartUtc = fromZonedTime(searchStartLocal, tz);
-  const searchEndUtc = fromZonedTime(searchEndLocal, tz);
+  const [bays, bookings] = await Promise.all([
+    getPrisma().bay.findMany({
+      where: { locationId: location.id },
+      select: { number: true, kind: true, handedness: true },
+    }),
+    getPrisma().booking.findMany({
+      where: {
+        locationId: location.id,
+        canceledAt: null,
+        start: { lt: dayEndUTC },
+        end: { gt: dayStartUTC },
+      },
+      select: { bayNumber: true, start: true, end: true },
+    }),
+  ]);
 
-  // 4. Load all bookings that overlap the search window
-  const bookings = await getPrisma().booking.findMany({
-    where: {
-      locationId: location.id,
-      bayNumber: { in: eligibleBayNumbers },
-      NOT: [{ end: { lte: searchStartUtc } }, { start: { gte: searchEndUtc } }],
-      canceledAt: null,
-    },
-    select: { bayNumber: true, start: true, end: true },
-  });
+  const eligibleBayNumbers = getEligibleBayNumbers(bays, kind, hand);
+  if (eligibleBayNumbers.length === 0) {
+    return {
+      startTimes: { 30: [], 60: [], 90: [], 120: [] },
+      ...(includeSlots && { slots: [] }),
+      ...(includeFreeBays && { freeBaysBySlot: {} }),
+    };
+  }
 
-  // 5. Build busy blocks per bay
-  const busyByBay = new Map<number, { start: Date; end: Date }[]>();
-  for (const n of eligibleBayNumbers) busyByBay.set(n, []);
+  // ── DEBUG: Rich busyByBay logging ──
+  console.log(`\nEligible bays for ${kind}: [${eligibleBayNumbers.join(", ")}]`);
+  console.log(`Total bookings fetched: ${bookings.length}`);
+  const busyByBay = new Map<number, { start: Date; end: Date; localStart: string; localEnd: string }[]>();
+  for (const num of eligibleBayNumbers) busyByBay.set(num, []);
   for (const b of bookings) {
-    busyByBay.get(b.bayNumber)!.push({ start: b.start, end: b.end });
+    const localStart = formatInTimeZone(b.start, tz, "yyyy-MM-dd HH:mm");
+    const localEnd = formatInTimeZone(b.end, tz, "yyyy-MM-dd HH:mm");
+    if (eligibleBayNumbers.includes(b.bayNumber)) {
+      busyByBay.get(b.bayNumber)!.push({
+        start: b.start,
+        end: b.end,
+        localStart,
+        localEnd,
+      });
+      console.log(`Added to bay ${b.bayNumber}: ${localStart} → ${localEnd} (UTC: ${b.start.toISOString()} → ${b.end.toISOString()})`);
+    } else {
+      console.log(`Skipped ineligible bay ${b.bayNumber}: ${localStart} → ${localEnd}`);
+    }
   }
+  console.log("\nFinal busy intervals (local time):");
+  for (const [bay, intervals] of busyByBay.entries()) {
+    console.log(`Bay ${bay}:`);
+    if (intervals.length === 0) console.log(" → No bookings");
+    else intervals.forEach(i => console.log(` → ${i.localStart} → ${i.localEnd}`));
+  }
+  // ── End debug ──
 
-  // 6. Invert to free windows (across all eligible bays)
-  const allFreeUtc = invertBusyAcrossBays(
-    Array.from(busyByBay.entries()).map(([bayNumber, busy]) => ({
-      bayNumber,
-      busy: normalizeBusy(busy),
-    })),
-    searchStartUtc,
-    searchEndUtc
-  );
+  const isBayFree = (bayNumber: number, startUTC: Date, endUTC: Date): boolean => {
+    const intervals = busyByBay.get(bayNumber) || [];
+    const requestedLocalStart = formatInTimeZone(startUTC, tz, "HH:mm");
+    const requestedLocalEnd = formatInTimeZone(endUTC, tz, "HH:mm");
+    if (intervals.length === 0) {
+      console.log(`FREE (no bookings): Bay ${bayNumber} → ${requestedLocalStart}–${requestedLocalEnd}`);
+      return true;
+    }
+    for (const interval of intervals) {
+      const existingLocalStart = formatInTimeZone(interval.start, tz, "HH:mm");
+      const existingLocalEnd = formatInTimeZone(interval.end, tz, "HH:mm");
+      const overlaps = interval.start < endUTC && interval.end > startUTC;
+      if (overlaps) {
+        console.log(
+          `BLOCKED: Bay ${bayNumber} → requested ${requestedLocalStart}–${requestedLocalEnd} overlaps with existing ${existingLocalStart}–${existingLocalEnd}`
+        );
+        return false;
+      } else {
+        console.log(
+          `NO OVERLAP: requested ${requestedLocalStart}–${requestedLocalEnd} does NOT overlap with existing ${existingLocalStart}–${existingLocalEnd}`
+        );
+      }
+    }
+    console.log(`FREE: Bay ${bayNumber} → ${requestedLocalStart}–${requestedLocalEnd} (no conflicts after checking all)`);
+    return true;
+  };
 
-  // 7. Filter free windows by operating hours (unless open24Hours)
-  const validFreeLocal = allFreeUtc
-    .map((f) => ({
-      start: toZonedTime(f.start, tz),
-      end: toZonedTime(f.end, tz),
-    }))
-    .filter((f) => {
-      if (location.open24Hours) return true;
-      return isLocationOpenAt(f.start, operatingWindows) && isLocationOpenAt(f.end, operatingWindows);
-    });
-
-  // 8. Generate aligned free slots
-  const alignedFreeUtc = validFreeLocal.flatMap((f) => {
-    const start = alignToStep(f.start, STEP_MINUTES, "ceil");
-    const end = alignToStep(f.end, STEP_MINUTES, "floor");
-    if (end.getTime() <= start.getTime()) return [];
-    return [{ start: fromZonedTime(start, tz), end: fromZonedTime(end, tz) }];
-  });
-
-  const mergedFreeUtc = normalizeBusy(alignedFreeUtc);
-
-  // 9. Generate startTimes for each duration
   const startTimes: StartTimes = { 30: [], 60: [], 90: [], 120: [] };
+  const slots: TimeSlot[] | undefined = includeSlots ? [] : undefined;
+  const freeBaysBySlot: Record<string, number[]> | undefined = includeFreeBays ? {} : undefined;
 
-  for (const duration of DURATIONS) {
-    const valid: string[] = [];
-    let cursor = new Date(searchStartLocal);
+  let cursorUTC = dayStartUTC;
+  while (cursorUTC < dayEndUTC) {
+    const startUTC = alignToLocalStep(cursorUTC, STEP_MINUTES, "ceil", tz);
+    console.log('in cursor startLocal', formatInTimeZone(startUTC, tz, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx"));
+    console.log('in cursor startUTC', startUTC);
 
-    while (cursor < searchEndLocal) {
-      const candidateStart = alignToStep(cursor, STEP_MINUTES, "ceil");
-      const candidateEnd = addMinutes(candidateStart, duration);
+    let activeWindow: { start: Date; end: Date } | undefined;
+    if (!location.open24Hours) {
+      activeWindow = operatingWindows.find((w) => startUTC >= w.start && startUTC < w.end);
+      if (!activeWindow) {
+        cursorUTC = addMinutes(startUTC, STEP_MINUTES);
+        continue;
+      }
+    }
 
-      if (candidateEnd > searchEndLocal) break;
-
-      if (
-        !location.open24Hours &&
-        (!isLocationOpenAt(candidateStart, operatingWindows) ||
-          !isLocationOpenAt(candidateEnd, operatingWindows))
-      ) {
-        cursor = addMinutes(candidateStart, STEP_MINUTES);
+    for (const duration of DURATIONS) {
+      const endUTC = addMinutes(startUTC, duration);
+      if (endUTC > addMinutes(dayEndUTC, 120)) continue;
+      if (!location.open24Hours && endUTC > activeWindow!.end) {
         continue;
       }
 
-      const startUtc = fromZonedTime(candidateStart, tz);
-      const endUtc = fromZonedTime(candidateEnd, tz);
-
-      const hasFreeBay = mergedFreeUtc.some(
-        (block) => block.start <= startUtc && block.end >= endUtc
+      // ── DEBUG: Log before filtering ──
+      console.log(`\nCHECKING SLOT: ${formatInTimeZone(startUTC, tz, "HH:mm")} → ${formatInTimeZone(endUTC, tz, "HH:mm")} (${duration}min)`);
+      const freeBayNumbers = eligibleBayNumbers
+        .filter((n) => isBayFree(n, startUTC, endUTC))
+        .sort((a, b) => a - b);
+      // ── DEBUG: Log after filtering ──
+      console.log(
+        `RESULT FOR SLOT: ${freeBayNumbers.length > 0 ? "AVAILABLE" : "BLOCKED"} — ${freeBayNumbers.length} free bay(s): [${freeBayNumbers.join(", ")}]`
       );
 
-      if (hasFreeBay) {
-        valid.push(toHHMM(candidateStart));
+      if (freeBayNumbers.length > 0) {
+        const timeStr = formatInTimeZone(startUTC, tz, "HH:mm");
+        if (!startTimes[duration].includes(timeStr)) {
+          startTimes[duration].push(timeStr);
+        }
+        if (includeSlots && slots) {
+          slots.push({
+            start: startUTC.toISOString(),
+            end: endUTC.toISOString(),
+            availableCount: freeBayNumbers.length,
+          });
+        }
+        if (includeFreeBays && freeBaysBySlot) {
+          const key = `${startUTC.toISOString()}|${duration}`;
+          freeBaysBySlot[key] = freeBayNumbers;
+        }
       }
-
-      cursor = addMinutes(candidateStart, STEP_MINUTES);
     }
-
-    startTimes[duration] = Array.from(new Set(valid)).sort();
+    cursorUTC = addMinutes(startUTC, STEP_MINUTES);
   }
 
-  // 10. Final slots with availableCount
-  const slots: TimeSlot[] = mergedFreeUtc.map((block) => {
-    const overlappingBays = new Set<number>();
-    for (const [bayNumber, busy] of busyByBay.entries()) {
-      if (busy.some((b) => b.start < block.end && b.end > block.start)) {
-        overlappingBays.add(bayNumber);
-      }
-    }
-    return {
-      start: block.start.toISOString(),
-      end: block.end.toISOString(),
-      availableCount: eligibleBayNumbers.length - overlappingBays.size,
-    };
-  });
-
-  return { slots, startTimes };
+  for (const d of DURATIONS) startTimes[d].sort();
+  return {
+    startTimes,
+    ...(includeSlots && slots ? { slots } : {}),
+    ...(includeFreeBays && freeBaysBySlot ? { freeBaysBySlot } : {}),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function buildOperatingWindows(
-  localMidnight: Date,
-  location: { open24Hours: boolean; hours: any }
-): { start: Date; end: Date }[] {
+export function getEligibleBayNumbers(
+  bays: { number: number; kind: string; handedness: string | null }[],
+  kind: "SINGLE" | "GROUP",
+  handedness?: "RH" | "LH"
+): number[] {
+  return bays
+    .filter((bay) => {
+      if (kind === "GROUP") return bay.kind === "GROUP";
+      if (bay.kind !== "SINGLE") return false;
+      if (handedness !== undefined) return bay.handedness === handedness;
+      return bay.handedness !== "LH";
+    })
+    .map((b) => b.number);
+}
+
+function buildOperatingWindows(localMidnightUTC: Date, location: any, tz: string): { start: Date; end: Date }[] {
   if (location.open24Hours) {
-    return [{ start: localMidnight, end: addDays(localMidnight, 2) }];
+    return [{ start: localMidnightUTC, end: addDays(localMidnightUTC, 2) }];
   }
 
   const windows: { start: Date; end: Date }[] = [];
@@ -219,99 +329,28 @@ function buildOperatingWindows(
     : [];
 
   for (let i = 0; i < 2; i++) {
-    const day = addDays(localMidnight, i);
-    const dayOfWeek = day.getDay();
+    const dayUTC = addDays(localMidnightUTC, i);
+    const dayLocalDate = formatInTimeZone(dayUTC, tz, "yyyy-MM-dd");
+    const dayOfWeek = Number(formatInTimeZone(dayUTC, tz, "i")) - 1; // getDay() equivalent, 0=Sun
+
     const dayHours = hoursArray.find((h: any) => h.day === dayOfWeek);
     if (!dayHours || dayHours.closed) continue;
 
-    const [openH, openM] = dayHours.open.split(":").map(Number);
-    const [closeH, closeM] = dayHours.close.split(":").map(Number);
+    const openLocalStr = `${dayLocalDate} ${dayHours.open}:00`;
+    const closeLocalStr = `${dayLocalDate} ${dayHours.close}:00`;
 
-    const open = new Date(day);
-    open.setHours(openH, openM, 0, 0);
+    const openLocal = parse(openLocalStr, "yyyy-MM-dd HH:mm:ss", new Date());
+    let closeLocal = parse(closeLocalStr, "yyyy-MM-dd HH:mm:ss", new Date());
 
-    let close = new Date(day);
-    close.setHours(closeH, closeM, 0, 0);
-    if (close <= open) close = addDays(close, 1);
+    const openUTC = fromZonedTime(openLocal, tz);
+    let closeUTC = fromZonedTime(closeLocal, tz);
 
-    windows.push({ start: open, end: close });
+    if (closeUTC <= openUTC) {
+      closeLocal = addDays(closeLocal, 1);
+      closeUTC = fromZonedTime(closeLocal, tz);
+    }
+
+    windows.push({ start: openUTC, end: closeUTC });
   }
-
   return windows;
-}
-
-function normalizeBusy(busy: { start: Date; end: Date }[]): { start: Date; end: Date }[] {
-  if (!busy.length) return [];
-  const sorted = busy.slice().sort((a, b) => a.start.getTime() - b.start.getTime());
-  const result: typeof busy = [];
-  let current = { ...sorted[0] };
-
-  for (let i = 1; i < sorted.length; i++) {
-    const next = sorted[i];
-    if (next.start <= current.end) {
-      current.end = next.end > current.end ? next.end : current.end;
-    } else {
-      result.push(current);
-      current = { ...next };
-    }
-  }
-  result.push(current);
-  return result;
-}
-
-function invertBusyAcrossBays(
-  bays: { bayNumber: number; busy: { start: Date; end: Date }[] }[],
-  windowStart: Date,
-  windowEnd: Date
-): { start: Date; end: Date }[] {
-  const allBusy = bays.flatMap((b) => b.busy);
-  return invertBusy(allBusy, windowStart, windowEnd);
-}
-
-function invertBusy(
-  busy: { start: Date; end: Date }[],
-  windowStart: Date,
-  windowEnd: Date
-): { start: Date; end: Date }[] {
-  const merged = normalizeBusy(
-    busy
-      .map((b) => ({
-        start: new Date(Math.max(b.start.getTime(), windowStart.getTime())),
-        end: new Date(Math.min(b.end.getTime(), windowEnd.getTime())),
-      }))
-      .filter((b) => b.end > b.start)
-  );
-
-  const free: { start: Date; end: Date }[] = [];
-  let cursor = new Date(windowStart);
-
-  for (const block of merged) {
-    if (block.start > cursor) {
-      free.push({ start: new Date(cursor), end: new Date(block.start) });
-    }
-    cursor = block.end > cursor ? block.end : cursor;
-  }
-
-  if (cursor < windowEnd) {
-    free.push({ start: new Date(cursor), end: new Date(windowEnd) });
-  }
-
-  return free;
-}
-
-function alignToStep(date: Date, step: number, mode: "ceil" | "floor" = "ceil"): Date {
-  const d = new Date(date);
-  d.setSeconds(0, 0);
-  const minutes = d.getMinutes();
-  const aligned = mode === "ceil" ? Math.ceil(minutes / step) : Math.floor(minutes / step);
-  d.setMinutes(aligned * step, 0, 0);
-  return d;
-}
-
-function isLocationOpenAt(date: Date, windows: { start: Date; end: Date }[]): boolean {
-  return windows.some((w) => date >= w.start && date < w.end);
-}
-
-function toHHMM(date: Date): string {
-  return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
 }

@@ -85,7 +85,6 @@ export default function Page() {
   );
 }
 
-/** The original component (unchanged logic) */
 function BayCalendarPage() {
   const sp = useSearchParams();
   const id = ((sp && sp.get("id")) || "").trim();

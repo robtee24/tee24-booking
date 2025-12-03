@@ -1,43 +1,22 @@
 // app/admin/locations/[slug]/bookings/page.tsx
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { useParams } from "next/navigation";
 
-// --- tiny icon stubs ---
+// Shared types
+import type { AdminDayView, Bay, AdminBooking } from "@/types/admin-booking";
+
+// Icons (stubs)
 const Trash2 = (props: any) => <span {...props}>Trash</span>;
 const ChevronLeft = (props: any) => <span {...props}>Previous</span>;
 const ChevronRight = (props: any) => <span {...props}>Next</span>;
 const Plus = (props: any) => <span {...props}>Plus</span>;
 
-type Bay = { id: string; number: number };
-type Booking = {
-  id: string;
-  bayId: string;
-  locationId: string;
-  firstName: string;
-  lastName: string;
-  email?: string | null;
-  phone?: string | null;
-  start: string | Date;
-  end: string | Date;
-  note?: string | null;
-};
-
-type DayPayload = {
-  date: string;
-  bays: Bay[];
-  bookings: Booking[];
-  locationId: string;
-  locationName: string;
-  minBookingMinutes: number;
-};
-
+// Helpers
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const minutesToTop = (m: number, px: number) => Math.round(m * px);
 
-// Build "HH:MM" options across 24h
 function buildTimeOptions(step: number) {
   const opts: { label: string; value: string }[] = [];
   for (let m = 0; m < 24 * 60; m += step) {
@@ -52,64 +31,19 @@ function buildTimeOptions(step: number) {
   return opts;
 }
 
-// SAFE: Build local time string (YYYY-MM-DDTHH:MM:00) — no Z, no UTC shift
 function buildLocalISO(dateOnly: string, hhmm: string): string {
   return `${dateOnly}T${hhmm}:00`;
 }
 
-// SAFE: Add minutes and return correct local ISO (handles midnight rollover)
 function addMinutesToLocalISO(localISO: string, minutes: number): string {
   const [datePart, timePart] = localISO.split("T");
   const [h, m] = timePart.split(":").map(Number);
   const base = new Date(`${datePart}T${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`);
   const result = new Date(base.getTime() + minutes * 60 * 1000);
-
   return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}T${String(result.getHours()).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
 }
 
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { cache: "no-store", ...init });
-  if (!res.ok) {
-    let detail = "";
-    try { detail = await res.text(); } catch {}
-    throw new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ""}`);
-  }
-  return res.json();
-}
-
-// Client-side overlap check
-function hasOverlap(
-  all: Booking[],
-  bayId: string,
-  startISO: string,
-  endISO: string,
-  excludeId?: string
-): Booking | null {
-  const start = new Date(startISO);
-  const end = new Date(endISO);
-  for (const b of all) {
-    if (excludeId && b.id === excludeId) continue;
-    if (b.bayId !== bayId) continue;
-    const s = new Date(b.start);
-    const e = new Date(b.end);
-    if (s < end && e > start) return b;
-  }
-  return null;
-}
-
-function Modal({
-  open,
-  onClose,
-  title,
-  children,
-  wide = false,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title?: string;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
+function Modal({ open, onClose, title, children, wide = false }: any) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -129,56 +63,46 @@ function labelForHour(i: number) {
   return `${h12}:00 ${ampm}`;
 }
 
+const DRAG_KEY = "admin-booking-drag";
+
 export default function LocationBookingsPage() {
-  const params = useParams() as { slug?: string } | null;
-  const slug = (params?.slug ?? "").toString();
+  const params = useParams() as { slug?: string };
+  const slug = params?.slug?.toString() ?? "";
 
   const [date, setDate] = useState<Date>(startOfDay(new Date()));
-  const [data, setData] = useState<DayPayload | null>(null);
+  const [data, setData] = useState<AdminDayView | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
-  const [createConflict, setCreateConflict] = useState<string | null>(null);
-
   const [editing, setEditing] = useState<any>(null);
-  const [editConflict, setEditConflict] = useState<string | null>(null);
-
   const [page, setPage] = useState(0);
 
   const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
-  const halfHourHeight = Math.round(30 * pxPerMin);
   const maxVisible = 10;
-
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(async () => {
     if (!slug) return;
     setError(null);
     try {
-      const payload = await fetchJSON<DayPayload>(
-        `/api/admin/bookings/day?locationSlug=${encodeURIComponent(slug)}&date=${fmtDate(date)}`
-      );
-      setData(payload);
+      const res = await fetch(`/api/admin/bookings/day?locationSlug=${slug}&date=${fmtDate(date)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setData(await res.json());
     } catch (e: any) {
-      setError(e.message || String(e));
+      setError(e.message || "Failed to load bookings");
     }
   }, [slug, date]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  const bays = useMemo(() => {
-    return (data?.bays || []).sort((a, b) => a.number - b.number);
-  }, [data?.bays]);
-
+  const bays = useMemo(() => (data?.bays || []).sort((a, b) => a.number - b.number), [data?.bays]);
   const totalPages = Math.ceil(bays.length / maxVisible) || 1;
   const safePage = Math.min(page, totalPages - 1);
-  const visibleBays = useMemo(() => {
-    return bays.slice(safePage * maxVisible, (safePage + 1) * maxVisible);
-  }, [bays, safePage, maxVisible]);
+  const visibleBays = useMemo(() => bays.slice(safePage * maxVisible, (safePage + 1) * maxVisible), [bays, safePage]);
 
+  // This is the actual step used for snapping (e.g. 15, 30)
   const timeStep = Math.max(5, data?.minBookingMinutes || 60);
   const timeOptions = useMemo(() => buildTimeOptions(timeStep), [timeStep]);
 
@@ -186,133 +110,121 @@ export default function LocationBookingsPage() {
   const goNext = () => setDate(d => new Date(d.getTime() + 86400000));
   const goToday = () => setDate(startOfDay(new Date()));
 
-  // ========== CREATE BOOKING ==========
-  const recalcCreateConflict = (draft: any) => {
-    if (!data || !draft) return setCreateConflict(null);
-    const conflict = hasOverlap(data.bookings, draft.bayId, draft.startISO, draft.endISO);
-    setCreateConflict(conflict ? `Overlaps ${conflict.firstName} ${conflict.lastName}` : null);
+  // Secure admin API
+  const adminApi = async (method: "POST" | "PATCH", payload: any) => {
+    const res = await fetch("/api/admin/bookings", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Request failed");
+    }
+    return res.json();
   };
 
+  // Add Booking
   const handleAddBooking = () => {
     const defaultBay = visibleBays[0]?.id || bays[0]?.id || "";
     const selectedDate = fmtDate(date);
-    const nowLocal = new Date();
-    const roundedMinutes = Math.floor(nowLocal.getMinutes() / timeStep) * timeStep;
-    const fallbackHHMM = `${String(nowLocal.getHours()).padStart(2, "0")}:${String(roundedMinutes).padStart(2, "0")}`;
+    const now = new Date();
+    const roundedMinutes = Math.floor(now.getMinutes() / timeStep) * timeStep;
+    const fallbackHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(roundedMinutes).padStart(2, "0")}`;
+    const startLocal = buildLocalISO(selectedDate, fallbackHHMM);
+    const endLocal = addMinutesToLocalISO(startLocal, timeStep);
 
-    const startISO = buildLocalISO(selectedDate, fallbackHHMM);
-    const endISO = addMinutesToLocalISO(startISO, 60);
-
-    const draft = {
+    setCreatingDraft({
       bayId: defaultBay,
       dateOnly: selectedDate,
       startHHMM: fallbackHHMM,
-      startISO,
-      endISO,
-      duration: 60,
+      startLocal,
+      endLocal,
+      duration: timeStep,
       firstName: "",
       lastName: "",
       email: "",
       phone: "",
-    };
-    setCreatingDraft(draft);
-    setTimeout(() => recalcCreateConflict(draft), 0);
-  };
-
-  const createBooking = async () => {
-    if (!data || !creatingDraft || createConflict) return;
-    await fetchJSON(`/api/admin/bookings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        locationId: data.locationId,
-        bayId: creatingDraft.bayId,
-        firstName: creatingDraft.firstName,
-        lastName: creatingDraft.lastName,
-        email: creatingDraft.email || null,
-        phone: creatingDraft.phone || null,
-        startISO: creatingDraft.startISO,
-        endISO: creatingDraft.endISO,
-      }),
     });
-    setCreatingDraft(null);
-    await load();
   };
 
-  // ========== DELETE ==========
-  const deleteBooking = async (id: string) => {
-    if (!confirm("Delete this booking?")) return;
+  // Create booking
+  const createBooking = async () => {
+    if (!data || !creatingDraft || !creatingDraft.firstName.trim()) return;
+
+    const bayNumber = bays.find(b => b.id === creatingDraft.bayId)?.number;
+    if (!bayNumber) return alert("Invalid bay");
+
     try {
-      await fetchJSON(`/api/admin/bookings/delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+      await adminApi("POST", {
+        locationSlug: slug,
+        startLocal: creatingDraft.startLocal,
+        endLocal: creatingDraft.endLocal,
+        bayNumber,
+        firstName: creatingDraft.firstName.trim(),
+        lastName: creatingDraft.lastName?.trim() || undefined,
+        email: creatingDraft.email?.trim() || null,
+        phone: creatingDraft.phone?.trim() || null,
       });
+
+      setCreatingDraft(null);
       await load();
     } catch (err: any) {
-      alert("Error deleting: " + err.message);
+      alert("Create failed: " + err.message);
     }
   };
 
-  // ========== EDIT MODAL ==========
-  const openEditModal = (bk: Booking) => {
-    const s = new Date(bk.start);
-    const dateOnly = fmtDate(s);
-    const startHHMM = `${String(s.getHours()).padStart(2, "0")}:${String(s.getMinutes()).padStart(2, "0")}`;
-    const duration = Math.max(timeStep, Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000));
+  // Update booking
+  const updateBooking = async (id: string, updates: { bayId: string; startLocal: string; endLocal: string }) => {
+    const bayNumber = bays.find(b => b.id === updates.bayId)?.number;
+    if (!bayNumber) throw new Error("Invalid bay");
 
-    setEditing({
-      id: bk.id,
-      bayId: bk.bayId,
-      dateOnly,
-      startHHMM,
-      duration,
-      firstName: bk.firstName,
-      lastName: bk.lastName,
-      email: bk.email || "",
-      phone: bk.phone || "",
-    });
-    setEditConflict(null);
+    try {
+      await adminApi("POST", {
+        locationSlug: slug,
+        startLocal: updates.startLocal,
+        endLocal: updates.endLocal,
+        bayNumber,
+      });
+
+      await adminApi("PATCH", { id, bayId: updates.bayId });
+      await load();
+    } catch (err: any) {
+      alert("Cannot move booking: " + err.message);
+      throw err;
+    }
   };
 
-  const recalcEditConflict = (state: any) => {
-    if (!data) return;
-    const startISO = buildLocalISO(state.dateOnly, state.startHHMM);
-    const endISO = addMinutesToLocalISO(startISO, state.duration);
-    const conflict = hasOverlap(data.bookings, state.bayId, startISO, endISO, state.id);
-    setEditConflict(conflict ? `Overlaps ${conflict.firstName} ${conflict.lastName}` : null);
-  };
-
+  // Save edit
   const saveEdit = async () => {
-    if (!editing || editConflict) return;
-    const startISO = buildLocalISO(editing.dateOnly, editing.startHHMM);
-    const endISO = addMinutesToLocalISO(startISO, editing.duration);
+    if (!editing) return;
 
-    await fetchJSON(`/api/admin/bookings/update`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const bayNumber = bays.find(b => b.id === editing.bayId)?.number;
+    if (!bayNumber) return alert("Invalid bay");
+
+    const startLocal = buildLocalISO(editing.dateOnly, editing.startHHMM);
+    const endLocal = addMinutesToLocalISO(startLocal, editing.duration);
+
+    try {
+      await updateBooking(editing.id, { bayId: editing.bayId, startLocal, endLocal });
+
+      await adminApi("PATCH", {
         id: editing.id,
-        bayId: editing.bayId,
-        startISO,
-        endISO,
-        firstName: editing.firstName,
-        lastName: editing.lastName,
-        email: editing.email || null,
-        phone: editing.phone || null,
-      }),
-    });
-    setEditing(null);
-    await load();
+        firstName: editing.firstName.trim(),
+        lastName: editing.lastName?.trim() || undefined,
+        email: editing.email?.trim() || null,
+        phone: editing.phone?.trim() || null,
+      });
+
+      setEditing(null);
+    } catch (err: any) {
+      alert("Save failed: " + err.message);
+    }
   };
 
-  // ========== DRAG & DROP ==========
-  const DRAG_KEY = "tee24/booking";
-
-  const onBookingDragStart = (e: React.DragEvent, bk: Booking) => {
-    const s = new Date(bk.start);
-    const mins = s.getHours() * 60 + s.getMinutes();
-    const duration = Math.round((new Date(bk.end).getTime() - s.getTime()) / 60000);
+  // Drag handlers
+  const onBookingDragStart = (e: React.DragEvent, bk: AdminBooking) => {
+    const duration = Math.round((new Date(bk.end).getTime() - new Date(bk.start).getTime()) / 60000);
     e.dataTransfer.setData(DRAG_KEY, JSON.stringify({ id: bk.id, durationMinutes: duration }));
 
     const crt = document.createElement("div");
@@ -330,11 +242,12 @@ export default function LocationBookingsPage() {
   const onBayDrop = async (e: React.DragEvent, bay: Bay) => {
     e.preventDefault();
     const payload = e.dataTransfer.getData(DRAG_KEY);
-    if (!payload || !data) return;
-    const { id, durationMinutes } = JSON.parse(payload);
+    if (!payload) return;
 
+    const { id, durationMinutes } = JSON.parse(payload);
     const col = bayRefs.current[bay.id];
     if (!col) return;
+
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const minutesRaw = Math.round(y / pxPerMin);
@@ -343,22 +256,27 @@ export default function LocationBookingsPage() {
     const mm = snapped % 60;
     const hhmm = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
     const dateOnly = fmtDate(date);
+    const newStartLocal = buildLocalISO(dateOnly, hhmm);
+    const newEndLocal = addMinutesToLocalISO(newStartLocal, durationMinutes);
 
-    const newStartISO = buildLocalISO(dateOnly, hhmm);
-    const newEndISO = addMinutesToLocalISO(newStartISO, durationMinutes);
+    try {
+      await updateBooking(id, { bayId: bay.id, startLocal: newStartLocal, endLocal: newEndLocal });
+    } catch {}
+  };
 
-    const conflict = hasOverlap(data.bookings, bay.id, newStartISO, newEndISO, id);
-    if (conflict) {
-      alert(`Cannot move: overlaps ${conflict.firstName} ${conflict.lastName}`);
-      return;
+  // Delete
+  const deleteBooking = async (id: string) => {
+    if (!confirm("Delete this booking?")) return;
+    try {
+      await fetch("/api/admin/bookings/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      await load();
+    } catch (err: any) {
+      alert("Delete failed: " + err.message);
     }
-
-    await fetchJSON(`/api/admin/bookings/update`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, bayId: bay.id, startISO: newStartISO, endISO: newEndISO }),
-    });
-    await load();
   };
 
   // Palette
@@ -369,6 +287,62 @@ export default function LocationBookingsPage() {
     ["bg-violet-50", "border-violet-200", "text-violet-900"],
     ["bg-rose-50", "border-rose-200", "text-rose-900"],
   ];
+
+const getBlockedSlots = (bayId: string) => {
+  const bayNumber = bays.find(b => b.id === bayId)?.number;
+  if (!bayNumber || !data) return [];
+
+  const tz = data.timezone;
+  console.log("Timezone:", tz);
+
+  const slots = data.bookings
+    .filter(b => b.bayNumber === bayNumber)
+    .map(b => {
+      const startUTC = new Date(b.start);
+      const endUTC = new Date(b.end);
+
+      // Convert to local time using location's timezone
+      const startLocal = new Date(startUTC.toLocaleString("en-US", { timeZone: tz }));
+      const endLocal = new Date(endUTC.toLocaleString("en-US", { timeZone: tz }));
+
+      const startMins = startLocal.getHours() * 60 + startLocal.getMinutes();
+      const endMins = endLocal.getHours() * 60 + endLocal.getMinutes();
+
+      console.log(`Booking ID: ${b.id} | Bay ${bayNumber} | Local: ${startLocal.toLocaleTimeString()} → ${endLocal.toLocaleTimeString()} | Mins: ${startMins} → ${endMins}`);
+
+      return { startMins, endMins };
+    });
+
+  console.log("Blocked slots for bay", bayNumber, ":", slots);
+  return slots;
+};
+
+const isSlotBlocked = (startMins: number, durationMins: number, blockedSlots: any[]) => {
+  const proposedEnd = startMins + durationMins;
+
+  console.log(`Checking slot: ${minsToTime(startMins)} → ${minsToTime(proposedEnd)} (${durationMins} mins)`);
+
+  const blocked = blockedSlots.some(slot => {
+    const overlaps = startMins < slot.endMins && proposedEnd > slot.startMins;
+    if (overlaps) {
+      console.log(`BLOCKED by: ${minsToTime(slot.startMins)} → ${minsToTime(slot.endMins)} | Condition: ${startMins} < ${slot.endMins} && ${proposedEnd} > ${slot.startMins} → ${overlaps}`);
+    }
+    return overlaps;
+  });
+
+  if (!blocked) {
+    console.log("ALLOWED (no overlap)");
+  }
+
+  return blocked;
+};
+
+// Helper for readable time
+const minsToTime = (mins: number) => {
+  const h = Math.floor(mins / 60).toString().padStart(2, "0");
+  const m = (mins % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+};
 
   return (
     <div className="p-6 space-y-4">
@@ -411,7 +385,7 @@ export default function LocationBookingsPage() {
         {/* Bay columns */}
         {visibleBays.map(bay => {
           const bookingsForBay = (data?.bookings || [])
-            .filter(b => b.bayId === bay.id)
+            .filter(b => b.bayNumber === bay.number)
             .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
           return (
@@ -423,41 +397,37 @@ export default function LocationBookingsPage() {
               onDragOver={onBayDragOver}
               onDrop={e => onBayDrop(e, bay)}
             >
+              {/* Dynamic grid lines */}
               <div className="absolute inset-0">
-                {Array.from({ length: 48 }).map((_, i) => (
-                  <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: minutesToTop(i * 30, pxPerMin) }} />
-                ))}
+                {Array.from({ length: Math.ceil(1440 / timeStep) }).map((_, i) => {
+                  const mins = i * timeStep;
+                  const isHour = mins % 60 === 0;
+                  return (
+                    <div
+                      key={i}
+                      className={`absolute left-0 right-0 border-t ${isHour ? "border-gray-300" : "border-gray-100"}`}
+                      style={{ top: minutesToTop(mins, pxPerMin) }}
+                    />
+                  );
+                })}
               </div>
 
+              {/* Bookings */}
               {bookingsForBay.map((bk, idx) => {
                 const startUTC = new Date(bk.start);
                 const endUTC = new Date(bk.end);
-                const tz = data!.timezone; // e.g. "America/New_York"
+                const tz = data!.timezone;
+                const startLocal = new Date(startUTC.toLocaleString("en-US", { timeZone: tz }));
+                const endLocal = new Date(endUTC.toLocaleString("en-US", { timeZone: tz }));
 
-                const startLocal = toZonedTime(startUTC, tz);
-                const endLocal = toZonedTime(endUTC, tz);
-
-                // Midnight of the currently viewed day (in local time)
-                const viewedDayMidnight = new Date(date);
-                viewedDayMidnight.setHours(0, 0, 0, 0);
-
-                // Clamp booking to visible day
                 let displayStartMins = startLocal.getHours() * 60 + startLocal.getMinutes();
                 let displayEndMins = endLocal.getHours() * 60 + endLocal.getMinutes();
-
-                if (startLocal < viewedDayMidnight) {
-                    displayStartMins = 0; // started yesterday → show from midnight
-                }
-                if (endLocal > new Date(viewedDayMidnight.getTime() + 24 * 60 * 60 * 1000)) {
-                    displayEndMins = 24 * 60; // ends tomorrow → cap at end of day
-                }
+                if (startLocal < startOfDay(date)) displayStartMins = 0;
+                if (endLocal > new Date(date.getTime() + 24 * 60 * 60 * 1000)) displayEndMins = 24 * 60;
 
                 const top = minutesToTop(displayStartMins, pxPerMin);
                 const height = minutesToTop(displayEndMins - displayStartMins, pxPerMin);
-
-                // Use local time for label
                 const timeLabel = `${startLocal.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–${endLocal.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-
                 const [bg, br, tx] = palette[idx % palette.length];
 
                 return (
@@ -467,7 +437,20 @@ export default function LocationBookingsPage() {
                     style={{ top, height, minHeight: Math.min(height, 28) }}
                     draggable
                     onDragStart={e => onBookingDragStart(e, bk)}
-                    onClick={() => openEditModal(bk)}
+                    onClick={() => {
+                      const duration = Math.max(timeStep, Math.round((endUTC.getTime() - startUTC.getTime()) / 60000));
+                      setEditing({
+                        id: bk.id,
+                        bayId: bay.id,
+                        dateOnly: fmtDate(startLocal),
+                        startHHMM: `${String(startLocal.getHours()).padStart(2, "0")}:${String(startLocal.getMinutes()).padStart(2, "0")}`,
+                        duration,
+                        firstName: bk.firstName,
+                        lastName: bk.lastName || "",
+                        email: bk.email || "",
+                        phone: bk.phone || "",
+                      });
+                    }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="text-[11px] leading-none font-medium truncate">
@@ -486,40 +469,53 @@ export default function LocationBookingsPage() {
       </div>
 
       {/* Create Modal */}
-      <Modal open={!!creatingDraft} onClose={() => { setCreatingDraft(null); setCreateConflict(null); }} title="Create Booking">
+      <Modal open={!!creatingDraft} onClose={() => setCreatingDraft(null)} title="Create Booking">
         {creatingDraft && data && (
           <div className="space-y-4">
-            {createConflict && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{createConflict}</div>}
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Bay</label>
                 <select
                   value={creatingDraft.bayId}
-                  onChange={e => {
-                    const draft = { ...creatingDraft, bayId: e.target.value };
-                    setCreatingDraft(draft);
-                    recalcCreateConflict(draft);
-                  }}
+                  onChange={e => setCreatingDraft({ ...creatingDraft, bayId: e.target.value })}
                   className="w-full rounded-lg border px-3 py-2"
                 >
                   {bays.map(b => <option key={b.id} value={b.id}>Bay {b.number}</option>)}
                 </select>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
                 <select
                   value={creatingDraft.startHHMM}
                   onChange={e => {
-                    const startISO = buildLocalISO(creatingDraft.dateOnly, e.target.value);
-                    const endISO = addMinutesToLocalISO(startISO, creatingDraft.duration);
-                    const draft = { ...creatingDraft, startHHMM: e.target.value, startISO, endISO };
-                    setCreatingDraft(draft);
-                    recalcCreateConflict(draft);
+                    const startLocal = buildLocalISO(creatingDraft.dateOnly, e.target.value);
+                    const endLocal = addMinutesToLocalISO(startLocal, creatingDraft.duration);
+                    setCreatingDraft({ ...creatingDraft, startHHMM: e.target.value, startLocal, endLocal });
                   }}
                   className="w-full rounded-lg border px-3 py-2"
                 >
-                  {timeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {(() => {
+                    const blockedSlots = getBlockedSlots(creatingDraft.bayId);
+                    const durationMins = creatingDraft.duration;
+
+                    console.log("Creating draft for bay:", creatingDraft.bayId, "Duration:", durationMins, "minutes");
+
+                    return timeOptions
+                      .filter(option => {
+                        const [h, m] = option.value.split(":").map(Number);
+                        const startMins = h * 60 + m;
+const allowed = !isSlotBlocked(startMins, durationMins, blockedSlots);
+      if (!allowed) {
+        console.log(`Option ${option.label} (${option.value}) BLOCKED`);
+      }
+      return allowed;                      })
+                      .map(o => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ));
+                  })()}
                 </select>
               </div>
             </div>
@@ -533,58 +529,48 @@ export default function LocationBookingsPage() {
                 value={creatingDraft.duration}
                 onChange={e => {
                   const minutes = Math.max(timeStep, Number(e.target.value) || timeStep);
-                  const endISO = addMinutesToLocalISO(creatingDraft.startISO, minutes);
-                  const draft = { ...creatingDraft, duration: minutes, endISO };
-                  setCreatingDraft(draft);
-                  recalcCreateConflict(draft);
+                  const endLocal = addMinutesToLocalISO(creatingDraft.startLocal, minutes);
+                  setCreatingDraft({ ...creatingDraft, duration: minutes, endLocal });
                 }}
                 className="w-full rounded-lg border px-3 py-2"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <input placeholder="First Name" value={creatingDraft.firstName} onChange={e => setCreatingDraft({ ...creatingDraft, firstName: e.target.value })} className="rounded-lg border px-3 py-2" />
+              <input placeholder="First Name *" value={creatingDraft.firstName} onChange={e => setCreatingDraft({ ...creatingDraft, firstName: e.target.value })} className="rounded-lg border px-3 py-2" />
               <input placeholder="Last Name" value={creatingDraft.lastName} onChange={e => setCreatingDraft({ ...creatingDraft, lastName: e.target.value })} className="rounded-lg border px-3 py-2" />
               <input placeholder="Email (optional)" value={creatingDraft.email} onChange={e => setCreatingDraft({ ...creatingDraft, email: e.target.value })} className="rounded-lg border px-3 py-2" />
               <input placeholder="Phone (optional)" value={creatingDraft.phone} onChange={e => setCreatingDraft({ ...creatingDraft, phone: e.target.value })} className="rounded-lg border px-3 py-2" />
             </div>
 
             <div className="flex justify-end gap-3 pt-3">
-              <button onClick={() => { setCreatingDraft(null); setCreateConflict(null); }} className="rounded-xl border px-4 py-2">Cancel</button>
-              <button onClick={createBooking} disabled={!!createConflict || !creatingDraft.firstName} className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50">Create</button>
+              <button onClick={() => setCreatingDraft(null)} className="rounded-xl border px-4 py-2">Cancel</button>
+              <button
+                onClick={createBooking}
+                disabled={!creatingDraft.firstName.trim()}
+                className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
+              >
+                Create
+              </button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Edit Modal */}
-      <Modal open={!!editing} onClose={() => { setEditing(null); setEditConflict(null); }} title="Edit Booking" wide>
+      {/* Edit Modal - You can add smart dropdown later */}
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit Booking" wide>
         {editing && (
           <div className="space-y-4">
-            {editConflict && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{editConflict}</div>}
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Bay</label>
-                <select
-                  value={editing.bayId}
-                  onChange={e => { const n = { ...editing, bayId: e.target.value }; setEditing(n); recalcEditConflict(n); }}
-                  className="w-full rounded-lg border px-3 py-2"
-                >
+                <select value={editing.bayId} onChange={e => setEditing({ ...editing, bayId: e.target.value })} className="w-full rounded-lg border px-3 py-2">
                   {bays.map(b => <option key={b.id} value={b.id}>Bay {b.number}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                <select
-                  value={editing.startHHMM}
-                  onChange={e => {
-                    const n = { ...editing, startHHMM: e.target.value };
-                    setEditing(n);
-                    recalcEditConflict(n);
-                  }}
-                  className="w-full rounded-lg border px-3 py-2"
-                >
+                <select value={editing.startHHMM} onChange={e => setEditing({ ...editing, startHHMM: e.target.value })} className="w-full rounded-lg border px-3 py-2">
                   {timeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
@@ -597,11 +583,7 @@ export default function LocationBookingsPage() {
                 min={timeStep}
                 step={timeStep}
                 value={editing.duration}
-                onChange={e => {
-                  const n = { ...editing, duration: Math.max(timeStep, Number(e.target.value) || timeStep) };
-                  setEditing(n);
-                  recalcEditConflict(n);
-                }}
+                onChange={e => setEditing({ ...editing, duration: Math.max(timeStep, Number(e.target.value) || timeStep) })}
                 className="w-full rounded-lg border px-3 py-2"
               />
             </div>
@@ -616,8 +598,8 @@ export default function LocationBookingsPage() {
             <div className="flex justify-between pt-4">
               <button onClick={() => deleteBooking(editing.id)} className="text-red-600 font-medium">Delete Booking</button>
               <div className="flex gap-3">
-                <button onClick={() => { setEditing(null); setEditConflict(null); }} className="rounded-xl border px-4 py-2">Cancel</button>
-                <button onClick={saveEdit} disabled={!!editConflict} className="rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50">Save Changes</button>
+                <button onClick={() => setEditing(null)} className="rounded-xl border px-4 py-2">Cancel</button>
+                <button onClick={saveEdit} className="rounded-xl bg-black text-white px-4 py-2">Save Changes</button>
               </div>
             </div>
           </div>

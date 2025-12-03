@@ -1,19 +1,20 @@
-// src/services/booking.service.ts
+// services/booking.service.ts
 import { getPrisma } from "@/lib/db";
 import crypto from "crypto";
-import { fromZonedTime } from "date-fns-tz";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
+import { getAvailableBaysAtExactWindow } from "./availability.service";
 
 type IdentifyBy = "EMAIL" | "PHONE" | "EMAIL_OR_PHONE";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CREATE BOOKING
+// PUBLIC + ADMIN: CREATE BOOKING (unified + now supports admin bay selection)
 // ─────────────────────────────────────────────────────────────────────────────
 export type CreateBookingInput = {
-  startLocal: string;
-  endLocal: string;
+  startLocal: string; // e.g. "2025-12-10T14:30:00"
+  endLocal: string; // e.g. "2025-12-10T15:30:00"
   locationId?: string;
   locationSlug?: string;
   bayId?: string | null;
@@ -44,15 +45,14 @@ export async function createBooking(input: CreateBookingInput) {
     source,
   } = input;
 
-  // 1. Parse local time
+  // 1. Parse local times
   const cleanStart = startLocal.replace(/Z$/i, "").replace(/\.\d+$/, "");
   const cleanEnd = endLocal.replace(/Z$/i, "").replace(/\.\d+$/, "");
   const localStart = new Date(cleanStart);
   const localEnd = new Date(cleanEnd);
   if (isNaN(localStart.getTime()) || isNaN(localEnd.getTime()))
     throw new Error("Invalid date format");
-  if (localEnd <= localStart)
-    throw new Error("End must be after start");
+  if (localEnd <= localStart) throw new Error("End must be after start");
 
   // 2. Resolve location + timezone
   let locationId = locationIdInput;
@@ -71,6 +71,7 @@ export async function createBooking(input: CreateBookingInput) {
     select: {
       id: true,
       name: true,
+      slug: true,
       timezone: true,
       maxActiveBookingsPerGuest: true,
       activeBookingIdentifyBy: true,
@@ -86,8 +87,9 @@ export async function createBooking(input: CreateBookingInput) {
   const startUTC = fromZonedTime(localStart, location.timezone);
   const endUTC = fromZonedTime(localEnd, location.timezone);
 
-  // 3. Resolve bay
+  // 3. Resolve bay — now supports admin picking specific bay
   let finalBayNumber: number;
+
   if (bayId) {
     const bay = await getPrisma().bay.findUnique({
       where: { id: bayId },
@@ -95,26 +97,54 @@ export async function createBooking(input: CreateBookingInput) {
     });
     if (!bay || bay.locationId !== locationId) throw new Error("Invalid bay");
     finalBayNumber = bay.number!;
-  } else if (bayNumberInput != null) {
+  } 
+  else if (bayNumberInput != null) {
+    // Admin (or internal) specifying exact bay number
     const bay = await getPrisma().bay.findUnique({
       where: { locationId_number: { locationId, number: bayNumberInput } },
     });
-    if (!bay) throw new Error("Bay not found");
+    if (!bay) throw new Error(`Bay ${bayNumberInput} not found`);
     finalBayNumber = bay.number!;
-  } else if (source === "PUBLIC") {
-    finalBayNumber = await findAvailableBayForPublic({
-      locationId,
+  } 
+  else if (source === "PUBLIC") {
+    // Public: auto-assign first available
+    if (!location.slug) throw new Error("locationSlug required for public bookings");
+    const avail = await getAvailableBaysAtExactWindow({
+      locationSlug: location.slug,
       startUTC,
       endUTC,
-      partyKind,
-      handedness,
+      kind: partyKind,
+      hand: handedness,
     });
-    if (!finalBayNumber) throw new Error("No eligible bay available");
-  } else {
-    throw new Error("Admin must specify bayId or bayNumber");
+    if (avail.availableCount === 0) {
+      throw new Error("No bay available at this time");
+    }
+    finalBayNumber = avail.freeBayNumbers[0];
+  } 
+  else if (source === "ADMIN") {
+    // Admin must specify bayNumber or bayId
+    throw new Error("Admin booking requires bayNumber or bayId");
+  }
+  else {
+    throw new Error("Invalid source");
   }
 
-  // 4. Conflict check
+  // 4. For ADMIN: if they specified a bay, verify it's actually free and eligible
+  if (source === "ADMIN" && bayNumberInput != null) {
+    const avail = await getAvailableBaysAtExactWindow({
+      locationSlug: location.slug!,
+      startUTC,
+      endUTC,
+      kind: partyKind,
+      hand: handedness,
+    });
+
+    if (!avail.freeBayNumbers.includes(finalBayNumber)) {
+      throw new Error(`Bay ${finalBayNumber} is not available at this time`);
+    }
+  }
+
+  // 5. Final defense-in-depth conflict check (works for both public + admin)
   const conflict = await getPrisma().booking.findFirst({
     where: {
       locationId,
@@ -124,13 +154,13 @@ export async function createBooking(input: CreateBookingInput) {
     },
     select: { firstName: true, lastName: true, start: true, end: true },
   });
+
   if (conflict) {
-    const name = `${conflict.firstName} ${conflict.lastName}`.trim();
-    const time = `${conflict.start.toISOString()}–${conflict.end.toISOString()}`;
-    throw new Error(`Booking overlaps with ${name} (${time})`);
+    const name = `${conflict.firstName} ${conflict.lastName}`.trim() || "Someone";
+    throw new Error(`Bay ${finalBayNumber} is already booked by ${name}`);
   }
 
-  // 5. Guest limits
+  // 6. Guest limits
   await enforceGuestLimits({
     location,
     guestEmail: email?.toLowerCase().trim() ?? null,
@@ -140,7 +170,7 @@ export async function createBooking(input: CreateBookingInput) {
     bayNumber: finalBayNumber,
   });
 
-  // 6. Create booking
+  // 7. Create booking
   const token = crypto.randomBytes(16).toString("hex");
   const booking = await getPrisma().booking.create({
     data: {
@@ -167,14 +197,16 @@ export async function createBooking(input: CreateBookingInput) {
     },
   });
 
-  // 7. Send confirmations
+  // 8. Send confirmations
   await sendConfirmations({
     booking,
     locationName: location.name ?? "",
     notifications: location.notifications,
   });
 
-  const manageUrl = `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/manage/${booking.id}?token=${token}`;
+  const manageUrl = `${
+    process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"
+  }/manage/${booking.id}?token=${token}`;
 
   return {
     id: booking.id,
@@ -191,117 +223,117 @@ export async function createBooking(input: CreateBookingInput) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// UPDATE BOOKING
+// ADMIN-SAFE UPDATE (uses same availability logic)
 // ─────────────────────────────────────────────────────────────────────────────
-export type UpdateBookingInput = {
+export type AdminUpdateBookingInput = {
   bookingId: string;
   startLocal?: string;
   endLocal?: string;
-  bayId?: string | null;
+  bayId?: string;
   firstName?: string;
   lastName?: string;
   email?: string | null;
   phone?: string | null;
 };
 
-export async function updateBooking(input: UpdateBookingInput) {
+export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   const { bookingId, startLocal, endLocal, bayId, firstName, lastName, email, phone } = input;
 
   const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
-    include: { location: { select: { id: true, timezone: true, name: true } } },
+    include: {
+      location: {
+        select: { id: true, slug: true, timezone: true, name: true },
+      },
+    },
   });
   if (!booking) throw new Error("Booking not found");
-  if (booking.canceledAt) throw new Error("Cannot update a canceled booking");
+  if (booking.canceledAt) throw new Error("Cannot update canceled booking");
 
-  const locationId = booking.locationId;
-  const timezone = booking.location.timezone;
+  const location = booking.location;
+  const timezone = location.timezone;
 
-  let startUTC: Date | undefined;
-  let endUTC: Date | undefined;
-  let finalBayNumber: number | undefined = booking.bayNumber;
+  let startUTC = booking.start;
+  let endUTC = booking.end;
+  let finalBayNumber = booking.bayNumber;
 
   if (startLocal && endLocal) {
-    const cleanStart = startLocal.replace(/Z$/i, "").replace(/\.\d+$/, "");
-    const cleanEnd = endLocal.replace(/Z$/i, "").replace(/\.\d+$/, "");
-    const localStart = new Date(cleanStart);
-    const localEnd = new Date(cleanEnd);
+    const localStart = new Date(startLocal.replace(/Z$/i, "").replace(/\.\d+$/, ""));
+    const localEnd = new Date(endLocal.replace(/Z$/i, "").replace(/\.\d+$/, ""));
     if (isNaN(localStart.getTime()) || isNaN(localEnd.getTime()))
       throw new Error("Invalid date format");
-    if (localEnd <= localStart)
-      throw new Error("End must be after start");
+    if (localEnd <= localStart) throw new Error("End must be after start");
+
     startUTC = fromZonedTime(localStart, timezone);
     endUTC = fromZonedTime(localEnd, timezone);
   }
 
-  if (bayId !== undefined) {
-    if (!bayId) throw new Error("bayId cannot be empty");
+  if (bayId) {
     const bay = await getPrisma().bay.findUnique({
       where: { id: bayId },
       select: { number: true, locationId: true },
     });
-    if (!bay || bay.locationId !== locationId)
-      throw new Error("Invalid bay");
+    if (!bay || bay.locationId !== location.id) throw new Error("Invalid bay");
     finalBayNumber = bay.number!;
   }
 
-  if (startUTC || endUTC || finalBayNumber !== booking.bayNumber) {
-    const checkStart = startUTC ?? booking.start;
-    const checkEnd = endUTC ?? booking.end;
-    const checkBay = finalBayNumber ?? booking.bayNumber;
-
-    const conflict = await getPrisma().booking.findFirst({
-      where: {
-        locationId,
-        bayNumber: checkBay,
-        canceledAt: null,
-        id: { not: bookingId },
-        AND: [{ start: { lt: checkEnd } }, { end: { gt: checkStart } }],
-      },
-      select: { firstName: true, lastName: true, start: true, end: true },
+  // Use centralized availability check if time or bay changed
+  if (startUTC !== booking.start || endUTC !== booking.end || finalBayNumber !== booking.bayNumber) {
+    const avail = await getAvailableBaysAtExactWindow({
+      locationSlug: location.slug,
+      startUTC,
+      endUTC,
+      kind: "GROUP", // admin can move to any bay
+      hand: undefined,
     });
-    if (conflict) {
-      const name = `${conflict.firstName} ${conflict.lastName}`.trim();
-      const time = `${conflict.start.toISOString()}–${conflict.end.toISOString()}`;
-      throw new Error(`Updated time overlaps with ${name} (${time})`);
+
+    if (!avail.freeBayNumbers.includes(finalBayNumber)) {
+      throw new Error("Bay not available at this time");
     }
   }
 
-  const updated = await getPrisma().booking.update({
+  // Final overlap check (excluding self)
+  const conflict = await getPrisma().booking.findFirst({
+    where: {
+      locationId: location.id,
+      bayNumber: finalBayNumber,
+      canceledAt: null,
+      id: { not: bookingId },
+      AND: [{ start: { lt: endUTC } }, { end: { gt: startUTC } }],
+    },
+  });
+  if (conflict) {
+    throw new Error("Updated time overlaps with existing booking");
+  }
+
+  return await getPrisma().booking.update({
     where: { id: bookingId },
     data: {
-      ...(startUTC && { start: startUTC }),
-      ...(endUTC && { end: endUTC }),
-      ...(finalBayNumber !== undefined && { bayNumber: finalBayNumber }),
+      ...(startUTC !== booking.start && { start: startUTC }),
+      ...(endUTC !== booking.end && { end: endUTC }),
+      ...(finalBayNumber !== booking.bayNumber && { bayNumber: finalBayNumber }),
       ...(firstName !== undefined && { firstName }),
       ...(lastName !== undefined && { lastName: lastName ?? "" }),
       ...(email !== undefined && { email: email?.toLowerCase().trim() ?? "" }),
       ...(phone !== undefined && { phone: phone?.trim() ?? "" }),
     },
   });
-
-  return updated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CANCEL BOOKING
+// CANCEL & ADMIN DAY VIEW
 // ─────────────────────────────────────────────────────────────────────────────
 export async function cancelBooking(bookingId: string) {
-  const booking = await getPrisma().booking.findUnique({
-    where: { id: bookingId },
-  });
+  const booking = await getPrisma().booking.findUnique({ where: { id: bookingId } });
   if (!booking) throw new Error("Booking not found");
   if (booking.canceledAt) throw new Error("Booking already canceled");
-
   return await getPrisma().booking.update({
     where: { id: bookingId },
     data: { canceledAt: new Date() },
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: Get all bookings for a day (in location timezone)
-// ─────────────────────────────────────────────────────────────────────────────
+// Admin day view
 export type AdminDayBooking = {
   id: string;
   bayId: string | null;
@@ -339,21 +371,15 @@ export async function getBookingsForAdminDay(
       name: true,
       timezone: true,
       minBookingMinutes: true,
-      bays: {
-        select: { id: true, number: true },
-        orderBy: { number: "asc" },
-      },
+      bays: { select: { id: true, number: true }, orderBy: { number: "asc" } },
     },
   });
-
   if (!location) throw new Error("Location not found");
   if (!location.timezone) throw new Error("Location has no timezone");
 
   const tz = location.timezone;
-
   const dayStartLocal = new Date(`${dateISO}T00:00:00`);
   const dayEndLocal = new Date(`${dateISO}T23:59:59.999`);
-
   const dayStartUtc = fromZonedTime(dayStartLocal, tz);
   const dayEndUtc = fromZonedTime(dayEndLocal, tz);
 
@@ -406,50 +432,6 @@ export async function getBookingsForAdminDay(
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
-async function findAvailableBayForPublic({
-  locationId,
-  startUTC,
-  endUTC,
-  partyKind,
-  handedness,
-}: {
-  locationId: string;
-  startUTC: Date;
-  endUTC: Date;
-  partyKind: "SINGLE" | "GROUP";
-  handedness?: "RH" | "LH";
-}) {
-  const bays = await getPrisma().bay.findMany({
-    where: { locationId },
-    select: { number: true, kind: true, handedness: true },
-    orderBy: { number: "asc" },
-  });
-
-  const eligible = bays.filter((b) => {
-    const kind = (b.kind as any) || "GROUP";
-    if (partyKind === "GROUP") return kind === "GROUP";
-    if (kind !== "SINGLE") return false;
-    const h = (b.handedness as "RH" | "LH" | null) || "RH";
-    return h === (handedness || "RH");
-  });
-
-  if (!eligible.length) return null;
-
-  const occupied = await getPrisma().booking.findMany({
-    where: {
-      locationId,
-      canceledAt: null,
-      bayNumber: { in: eligible.map((b) => b.number) },
-      NOT: [{ end: { lte: startUTC } }, { start: { gte: endUTC } }],
-    },
-    select: { bayNumber: true },
-  });
-
-  const taken = new Set(occupied.map((o) => o.bayNumber).filter(Boolean));
-  const free = eligible.find((b) => !taken.has(b.number));
-  return free?.number ?? null;
-}
-
 async function enforceGuestLimits({
   location,
   guestEmail,
@@ -467,7 +449,6 @@ async function enforceGuestLimits({
 }) {
   const identifyBy = (location.activeBookingIdentifyBy as IdentifyBy) || "EMAIL_OR_PHONE";
   const where: any = {};
-
   if (identifyBy === "EMAIL" && guestEmail) where.email = guestEmail;
   else if (identifyBy === "PHONE" && guestPhone) where.phone = guestPhone;
   else if (identifyBy === "EMAIL_OR_PHONE") {
@@ -476,7 +457,6 @@ async function enforceGuestLimits({
     if (guestPhone) ors.push({ phone: guestPhone });
     if (ors.length) where.OR = ors;
   }
-
   if (Object.keys(where).length === 0) return;
 
   if (location.maxActiveBookingsPerGuest) {
@@ -494,7 +474,6 @@ async function enforceGuestLimits({
       select: { start: true, end: true },
       orderBy: { start: "asc" },
     });
-
     let chain = 1;
     let cursor = endUTC;
     while (true) {
@@ -510,7 +489,6 @@ async function enforceGuestLimits({
       chain++;
       cursor = new Date(prev.start);
     }
-
     if (chain > location.maxConsecutiveBookingsPerGuest) {
       throw new Error(`Consecutive booking limit exceeded (${chain} > ${location.maxConsecutiveBookingsPerGuest})`);
     }
@@ -526,7 +504,9 @@ async function sendConfirmations({
   locationName: string;
   notifications: any[];
 }) {
-  const manageUrl = `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/manage/${booking.id}?token=${booking.managementToken}`;
+  const manageUrl = `${
+    process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"
+  }/manage/${booking.id}?token=${booking.managementToken}`;
   const vars = {
     firstName: booking.firstName ?? "",
     lastName: booking.lastName ?? "",
@@ -553,23 +533,58 @@ async function sendConfirmations({
     }
   }
 
-  if (smsTemplate && booking.phone) {
-    const phones = booking.phone.split(/[\s,]+/).map(normalizePhone).filter(Boolean);
-    if (phones.length) {
-      try {
-        const text = renderTemplate(smsTemplate, vars);
-        await sendSms({ from: process.env.OPENPHONE_FROM || "system", to: phones, content: text });
-      } catch (e) {
-        console.error("SMS failed:", e);
-      }
+  console.log("smsTemplate", smsTemplate);
+console.log("booking.phone", booking.phone);
+console.log("  → length:", booking.phone.length);
+console.log("  → code points:", [...booking.phone].map(c => c.charCodeAt(0)));
+console.log("  → JSON:", JSON.stringify(booking.phone));
+
+console.log("normalizePhone is:", normalizePhone);
+console.log("typeof normalizePhone:", typeof normalizePhone);
+
+if (smsTemplate && booking.phone) {
+  const phones = booking.phone
+    .split(',')                    // only real separator = comma
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(normalizePhone)
+    .filter(Boolean);
+
+  console.log("Normalized phones:", phones);
+
+  if (phones.length > 0) {
+    try {
+      const text = renderTemplate(smsTemplate, vars);
+      await sendSms({
+        from: process.env.OPENPHONE_FROM || "system",
+        to: phones,
+        content: text,
+      });
+      console.log(`SMS sent to ${phones.length} number(s)`);
+    } catch (e) {
+      console.error("SMS failed:", e);
     }
+  } else {
+    console.log("No valid phone numbers found in:", booking.phone);
   }
 }
+}
+
 
 function normalizePhone(raw: string): string | null {
+  console.log("normalizePhone called →", raw, "<-");
+  console.log("raw typeof:", typeof raw);
+
   const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
+  console.log("digits →", digits, " length:", digits.length);
+
+  if (digits.length === 10) {
+    console.log("MATCH 10 digits → returning +1...");
+    return `+1${digits}`;
+  }
   if (digits.length === 11 && digits[0] === "1") return `+${digits}`;
-  if (digits.length >= 10 && raw.startsWith("+")) return raw.startsWith("+") ? raw : null;
+  if (digits.length >= 10 && raw.startsWith("+")) return raw;
+
+  console.log("no match → returning null");
   return null;
 }
