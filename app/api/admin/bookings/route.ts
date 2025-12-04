@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const result = await createBooking({
-      startLocal: body.startISO ?? body.start,
-      endLocal: body.endISO ?? body.end,
+      startLocal: body.startLocal ?? body.start,
+      endLocal: body.endLocal ?? body.end,
       locationId: body.locationId,
       locationSlug: body.locationSlug ?? body.slug,
       bayId: body.bayId ?? body.bayID,

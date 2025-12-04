@@ -178,9 +178,6 @@ export async function getAvailability(
     };
   }
 
-  // ── DEBUG: Rich busyByBay logging ──
-  console.log(`\nEligible bays for ${kind}: [${eligibleBayNumbers.join(", ")}]`);
-  console.log(`Total bookings fetched: ${bookings.length}`);
   const busyByBay = new Map<number, { start: Date; end: Date; localStart: string; localEnd: string }[]>();
   for (const num of eligibleBayNumbers) busyByBay.set(num, []);
   for (const b of bookings) {
@@ -193,25 +190,14 @@ export async function getAvailability(
         localStart,
         localEnd,
       });
-      console.log(`Added to bay ${b.bayNumber}: ${localStart} → ${localEnd} (UTC: ${b.start.toISOString()} → ${b.end.toISOString()})`);
-    } else {
-      console.log(`Skipped ineligible bay ${b.bayNumber}: ${localStart} → ${localEnd}`);
     }
   }
-  console.log("\nFinal busy intervals (local time):");
-  for (const [bay, intervals] of busyByBay.entries()) {
-    console.log(`Bay ${bay}:`);
-    if (intervals.length === 0) console.log(" → No bookings");
-    else intervals.forEach(i => console.log(` → ${i.localStart} → ${i.localEnd}`));
-  }
-  // ── End debug ──
 
   const isBayFree = (bayNumber: number, startUTC: Date, endUTC: Date): boolean => {
     const intervals = busyByBay.get(bayNumber) || [];
     const requestedLocalStart = formatInTimeZone(startUTC, tz, "HH:mm");
     const requestedLocalEnd = formatInTimeZone(endUTC, tz, "HH:mm");
     if (intervals.length === 0) {
-      console.log(`FREE (no bookings): Bay ${bayNumber} → ${requestedLocalStart}–${requestedLocalEnd}`);
       return true;
     }
     for (const interval of intervals) {
@@ -219,17 +205,10 @@ export async function getAvailability(
       const existingLocalEnd = formatInTimeZone(interval.end, tz, "HH:mm");
       const overlaps = interval.start < endUTC && interval.end > startUTC;
       if (overlaps) {
-        console.log(
-          `BLOCKED: Bay ${bayNumber} → requested ${requestedLocalStart}–${requestedLocalEnd} overlaps with existing ${existingLocalStart}–${existingLocalEnd}`
-        );
         return false;
       } else {
-        console.log(
-          `NO OVERLAP: requested ${requestedLocalStart}–${requestedLocalEnd} does NOT overlap with existing ${existingLocalStart}–${existingLocalEnd}`
-        );
       }
     }
-    console.log(`FREE: Bay ${bayNumber} → ${requestedLocalStart}–${requestedLocalEnd} (no conflicts after checking all)`);
     return true;
   };
 
@@ -240,9 +219,6 @@ export async function getAvailability(
   let cursorUTC = dayStartUTC;
   while (cursorUTC < dayEndUTC) {
     const startUTC = alignToLocalStep(cursorUTC, STEP_MINUTES, "ceil", tz);
-    console.log('in cursor startLocal', formatInTimeZone(startUTC, tz, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx"));
-    console.log('in cursor startUTC', startUTC);
-
     let activeWindow: { start: Date; end: Date } | undefined;
     if (!location.open24Hours) {
       activeWindow = operatingWindows.find((w) => startUTC >= w.start && startUTC < w.end);
@@ -259,15 +235,9 @@ export async function getAvailability(
         continue;
       }
 
-      // ── DEBUG: Log before filtering ──
-      console.log(`\nCHECKING SLOT: ${formatInTimeZone(startUTC, tz, "HH:mm")} → ${formatInTimeZone(endUTC, tz, "HH:mm")} (${duration}min)`);
       const freeBayNumbers = eligibleBayNumbers
         .filter((n) => isBayFree(n, startUTC, endUTC))
         .sort((a, b) => a - b);
-      // ── DEBUG: Log after filtering ──
-      console.log(
-        `RESULT FOR SLOT: ${freeBayNumbers.length > 0 ? "AVAILABLE" : "BLOCKED"} — ${freeBayNumbers.length} free bay(s): [${freeBayNumbers.join(", ")}]`
-      );
 
       if (freeBayNumbers.length > 0) {
         const timeStr = formatInTimeZone(startUTC, tz, "HH:mm");

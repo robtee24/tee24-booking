@@ -268,8 +268,8 @@ export default function LocationBookingsPage() {
   const deleteBooking = async (id: string) => {
     if (!confirm("Delete this booking?")) return;
     try {
-      await fetch("/api/admin/bookings/delete", {
-        method: "POST",
+      await fetch("/api/admin/bookings", {
+        method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
