@@ -59,7 +59,8 @@ export async function createBay(
   if (name !== undefined && name !== null && name !== "" && !/^\d+$/.test(name.trim())) {
     throw new Error("Bay name must contain only digits (0–9) or be empty");
   }
-  const cleanName = name === null || name === "" ? null : name.trim();
+
+  const cleanName = typeof name === "string" && name.trim() !== "" ? name.trim() : null;
 
   // Validate + enforce business rules
   let finalKind: "SINGLE" | "GROUP" = kind;
