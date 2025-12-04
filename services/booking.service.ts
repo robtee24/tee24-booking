@@ -533,43 +533,30 @@ async function sendConfirmations({
     }
   }
 
-  console.log("smsTemplate", smsTemplate);
-console.log("booking.phone", booking.phone);
-console.log("  → length:", booking.phone.length);
-console.log("  → code points:", [...booking.phone].map(c => c.charCodeAt(0)));
-console.log("  → JSON:", JSON.stringify(booking.phone));
+  if (smsTemplate && booking.phone) {
+    const phones = booking.phone
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .map(normalizePhone)
+      .filter(Boolean);
 
-console.log("normalizePhone is:", normalizePhone);
-console.log("typeof normalizePhone:", typeof normalizePhone);
-
-if (smsTemplate && booking.phone) {
-  const phones = booking.phone
-    .split(',')                    // only real separator = comma
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(normalizePhone)
-    .filter(Boolean);
-
-  console.log("Normalized phones:", phones);
-
-  if (phones.length > 0) {
-    try {
-      const text = renderTemplate(smsTemplate, vars);
-      await sendSms({
-        from: process.env.OPENPHONE_FROM || "system",
-        to: phones,
-        content: text,
-      });
-      console.log(`SMS sent to ${phones.length} number(s)`);
-    } catch (e) {
-      console.error("SMS failed:", e);
+    if (phones.length > 0) {
+      try {
+        const text = renderTemplate(smsTemplate, vars);
+        await sendSms({
+          from: process.env.OPENPHONE_FROM || "system",
+          to: phones,
+          content: text,
+        });
+      } catch (e) {
+        console.error("SMS failed:", e);
+      }
+    } else {
+      console.log("No valid phone numbers found in:", booking.phone);
     }
-  } else {
-    console.log("No valid phone numbers found in:", booking.phone);
   }
 }
-}
-
 
 function normalizePhone(raw: string): string | null {
   console.log("normalizePhone called →", raw, "<-");
