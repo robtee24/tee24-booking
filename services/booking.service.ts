@@ -250,7 +250,7 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   if (!booking) throw new Error("Booking not found");
   if (booking.canceledAt) throw new Error("Cannot update canceled booking");
 
-  const location = booking.location;
+  const location = booking.Location;
   const timezone = location.timezone;
 
   let startUTC = booking.start;
