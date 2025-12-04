@@ -187,7 +187,7 @@ export default function BookPage() {
 
   // Filter past times
   const availableStartTimes = useMemo(() => {
-    if (!availability?.startTimes?.[duration]) return [];
+    if (!availability?.startTimes) return [];
 
     if (![30, 60, 90, 120].includes(duration)) return [];
 
@@ -198,7 +198,7 @@ export default function BookPage() {
       const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       return times.filter((t) => t >= cutoff);
     }
-    
+
     return times;
   }, [availability, duration, date, todayYMD]);
 
