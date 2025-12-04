@@ -188,12 +188,17 @@ export default function BookPage() {
   // Filter past times
   const availableStartTimes = useMemo(() => {
     if (!availability?.startTimes?.[duration]) return [];
-    let times = availability.startTimes[duration];
+
+    if (![30, 60, 90, 120].includes(duration)) return [];
+
+   const times = availability.startTimes[duration as 30 | 60 | 90 | 120];
+
     if (date === todayYMD) {
       const now = new Date();
       const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      times = times.filter((t) => t >= cutoff);
+      return times.filter((t) => t >= cutoff);
     }
+    
     return times;
   }, [availability, duration, date, todayYMD]);
 
