@@ -242,7 +242,7 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     include: {
-      location: {
+      Location: {
         select: { id: true, slug: true, timezone: true, name: true },
       },
     },
