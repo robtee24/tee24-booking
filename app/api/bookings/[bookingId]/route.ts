@@ -18,7 +18,7 @@ export async function GET(
   const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     include: {
-      location: {
+      Location: {
         select: { name: true, slug: true, timezone: true },
       },
     },
