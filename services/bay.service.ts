@@ -1,6 +1,6 @@
 // services/bay.service.ts
 import { getPrisma } from "@/lib/db";
-import { startOfDay, endOfDay } from "date-fns-tz";
+import { startOfDay, endOfDay } from "date-fns";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
