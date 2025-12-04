@@ -1,6 +1,6 @@
 // app/api/admin/bookings/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { updateBooking, cancelBooking } from "@/services/booking.service";
+import { adminUpdateBooking, cancelBooking } from "@/services/booking.service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json();
 
-    const updated = await updateBooking({
+    const updated = await adminUpdateBooking({
       bookingId: id,
       startLocal: body.startISO,
       endLocal: body.endISO,
