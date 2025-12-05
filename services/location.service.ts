@@ -41,6 +41,8 @@ async function getLocationWithBays(slug: string) {
           kind: true,
           handedness: true,
           capacity: true,
+          disabled: true,
+          
         },
         orderBy: { number: "asc" },
       },
