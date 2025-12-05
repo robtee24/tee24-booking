@@ -1,46 +1,13 @@
 // services/bay.service.ts
 import { getPrisma } from "@/lib/db";
 import { startOfDay, endOfDay } from "date-fns";
+import type {
+  BayInfo,
+  CreateBayInput,
+  UpdateBayInput,
+  BaySchedule,
+} from "@/types/bay";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-export type BayInfo = {
-  id: string;
-  number: number;
-  name: string | null;
-  kind: "SINGLE" | "GROUP";
-  handedness: "RH" | "LH" | null;
-  capacity: number;
-};
-
-export type CreateBayInput = {
-  number: number;
-  name?: string | null;
-  kind: "SINGLE" | "GROUP";
-  handedness?: "RH" | "LH" | null;
-  capacity?: number;
-};
-
-export type UpdateBayInput = Partial<CreateBayInput> & { bayId: string };
-
-export type BayScheduleBooking = {
-  id: string;
-  start: string; // ISO
-  end: string;   // ISO
-  firstName: string | null;
-  lastName: string | null;
-};
-
-export type BaySchedule = {
-  bay: {
-    id: string;
-    number: number;
-    name: string | null;
-  };
-  dateISO: string; // YYYY-MM-DD in America/New_York
-  bookings: BayScheduleBooking[];
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE bay (admin)
@@ -49,7 +16,7 @@ export async function createBay(
   locationId: string,
   input: CreateBayInput
 ): Promise<BayInfo> {
-  const { number, name, kind, handedness, capacity } = input;
+  const { number, name, kind, handedness, capacity, disabled = false } = input;
 
   if (number <= 0 || !Number.isInteger(number)) {
     throw new Error("Bay number must be a positive integer");
@@ -59,7 +26,6 @@ export async function createBay(
   if (name !== undefined && name !== null && name !== "" && !/^\d+$/.test(name.trim())) {
     throw new Error("Bay name must contain only digits (0–9) or be empty");
   }
-
   const cleanName = typeof name === "string" && name.trim() !== "" ? name.trim() : null;
 
   // Validate + enforce business rules
@@ -96,6 +62,7 @@ export async function createBay(
         kind: finalKind,
         handedness: finalHandedness,
         capacity: finalCapacity,
+        disabled,
       },
       select: {
         id: true,
@@ -104,6 +71,7 @@ export async function createBay(
         kind: true,
         handedness: true,
         capacity: true,
+        disabled: true,
       },
     });
 
@@ -120,9 +88,16 @@ export async function updateBay(
 ): Promise<BayInfo> {
   const existing = await getPrisma().bay.findFirst({
     where: { id: bayId, locationId },
-    select: { id: true, number: true, kind: true, handedness: true, capacity: true, name: true },
+    select: {
+      id: true,
+      number: true,
+      kind: true,
+      handedness: true,
+      capacity: true,
+      name: true,
+      disabled: true,
+    },
   });
-
   if (!existing) throw new Error("Bay not found");
 
   const data: any = {};
@@ -153,21 +128,27 @@ export async function updateBay(
   }
 
   // kind + handedness + capacity rules
-  const nextKind = (input.kind ?? existing.kind) as "SINGLE" | "GROUP";
-
-  if (nextKind === "SINGLE") {
-    const h = input.handedness ?? existing.handedness;
-    if (!h || !["RH", "LH"].includes(h as string)) {
-      throw new Error("Handedness (RH or LH) is required for SINGLE bays");
+  if (input.kind !== undefined || input.handedness !== undefined || input.capacity !== undefined) {
+    const nextKind = (input.kind ?? existing.kind) as "SINGLE" | "GROUP";
+    if (nextKind === "SINGLE") {
+      const h = input.handedness ?? existing.handedness;
+      if (!h || !["RH", "LH"].includes(h as string)) {
+        throw new Error("Handedness (RH or LH) is required for SINGLE bays");
+      }
+      data.kind = "SINGLE";
+      data.handedness = h;
+      data.capacity = 1;
+    } else {
+      data.kind = "GROUP";
+      data.handedness = null;
+      const cap = input.capacity ?? existing.capacity ?? 4;
+      data.capacity = cap >= 2 ? cap : 4;
     }
-    data.kind = "SINGLE";
-    data.handedness = h;
-    data.capacity = 1;
-  } else {
-    data.kind = "GROUP";
-    data.handedness = null;
-    const cap = input.capacity ?? existing.capacity ?? 4;
-    data.capacity = cap >= 2 ? cap : 4;
+  }
+
+  // disabled toggle
+  if (input.disabled !== undefined) {
+    data.disabled = input.disabled;
   }
 
   if (Object.keys(data).length === 0) {
@@ -184,6 +165,7 @@ export async function updateBay(
       kind: true,
       handedness: true,
       capacity: true,
+      disabled: true,
     },
   });
 
@@ -191,14 +173,13 @@ export async function updateBay(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DELETE bay (admin) — blocks if future bookings exist
+// DELETE bay (admin)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function deleteBay(locationId: string, bayId: string): Promise<void> {
   const bay = await getPrisma().bay.findFirst({
     where: { id: bayId, locationId },
     select: { id: true, number: true },
   });
-
   if (!bay) throw new Error("Bay not found");
 
   const now = new Date();
@@ -234,20 +215,20 @@ export async function getBaysByLocationId(locationId: string): Promise<BayInfo[]
       kind: true,
       handedness: true,
       capacity: true,
+      disabled: true,
     },
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NEW: Public bay schedule for a specific day
+// Public bay schedule
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getBaySchedule(
   bayId: string,
-  dateISO?: string // YYYY-MM-DD in America/New_York, defaults to today
+  dateISO?: string
 ): Promise<BaySchedule> {
   const todayNY = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const targetDate = dateISO && /^\d{4}-\d{2}-\d{2}$/.test(dateISO) ? dateISO : todayNY;
-
   const start = startOfDay(new Date(`${targetDate}T00:00:00-05:00`));
   const end = endOfDay(new Date(`${targetDate}T23:59:59-05:00`));
 
@@ -258,10 +239,12 @@ export async function getBaySchedule(
       number: true,
       name: true,
       locationId: true,
+      disabled: true,
     },
   });
 
   if (!bay) throw new Error("Bay not found");
+  if (bay.disabled) throw new Error("This bay is currently disabled");
 
   const bookings = await getPrisma().booking.findMany({
     where: {

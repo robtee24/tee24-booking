@@ -365,9 +365,17 @@ export async function getBookingsForAdminDay(
       name: true,
       timezone: true,
       minBookingMinutes: true,
-      bays: { select: { id: true, number: true }, orderBy: { number: "asc" } },
+      bays: {
+        select: {
+          id: true,
+          number: true,
+          disabled: true,
+        },
+        orderBy: { number: "asc" },
+      },
     },
   });
+
   if (!location) throw new Error("Location not found");
   if (!location.timezone) throw new Error("Location has no timezone");
 
@@ -418,7 +426,11 @@ export async function getBookingsForAdminDay(
     locationName: location.name ?? "",
     timezone: location.timezone,
     minBookingMinutes: location.minBookingMinutes ?? 60,
-    bays: location.bays.map((b) => ({ id: b.id, number: b.number })),
+    bays: location.bays.map((b) => ({
+      id: b.id,
+      number: b.number,
+      disabled: b.disabled,
+    })),
     bookings: formatted,
   };
 }

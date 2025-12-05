@@ -1,32 +1,12 @@
 // app/api/admin/locations/[slug]/bays/route.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { createBay, getBaysByLocationId } from "@/services/bay.service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Helpers
-function parseIntSafe(v: any) {
-  const n = Math.floor(Number(v));
-  return Number.isFinite(n) ? n : NaN;
-}
-function isDigits(s: unknown) {
-  return typeof s === "string" && /^\d+$/.test(s.trim());
-}
-function toKind(v: any): "SINGLE" | "GROUP" | null {
-  if (v === "SINGLE" || v === "GROUP") return v;
-  return null;
-}
-function toHanded(v: any): "RH" | "LH" | null {
-  if (v === "RH" || v === "LH") return v;
-  return null;
-}
-
-/**
- * GET /api/admin/locations/[slug]/bays
- * Lists all bays for a location.
- * Next 16: context.params is a Promise<{ slug: string }>
- */
+/* ---------------- GET: List all bays ---------------- */
 export async function GET(
   _req: NextRequest,
   context: { params: Promise<{ slug: string }> }
@@ -42,18 +22,7 @@ export async function GET(
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    const bays = await getPrisma().bay.findMany({
-      where: { locationId: location.id },
-      orderBy: { number: "asc" },
-      select: {
-        id: true,
-        number: true,
-        name: true,
-        kind: true,        // 'SINGLE' | 'GROUP'
-        handedness: true,  // 'RH' | 'LH' | null
-        capacity: true,    // int
-      },
-    });
+    const bays = await getBaysByLocationId(location.id);
 
     return NextResponse.json({ location, bays });
   } catch (e: any) {
@@ -62,19 +31,7 @@ export async function GET(
   }
 }
 
-/**
- * POST /api/admin/locations/[slug]/bays
- * Body:
- *   {
- *     number: Int (required, >0),
- *     name?: String (digits only or omitted/null/""),
- *     kind: "SINGLE" | "GROUP" (required),
- *     handedness?: "RH" | "LH"  (required for SINGLE; ignored for GROUP),
- *     capacity?: Int            (>=2 for GROUP; forced to 1 for SINGLE)
- *   }
- *
- * Next 16: context.params is a Promise<{ slug: string }>
- */
+/* ---------------- POST: Create new bay ---------------- */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ slug: string }> }
@@ -90,81 +47,38 @@ export async function POST(
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    const body = await request.json().catch(() => ({} as any));
+    const body = await request.json();
 
-    // number
-    const number = parseIntSafe(body.number);
-    if (!Number.isFinite(number) || number <= 0) {
-      return NextResponse.json({ error: "Invalid bay number" }, { status: 400 });
-    }
+    // Map frontend payload
+    const input: Parameters<typeof createBay>[1] = {
+      number: Number(body.number),
+      name: body.name?.toString().trim() || null,
+      kind: body.kind === "SINGLE" || body.kind === "GROUP" ? body.kind : "GROUP",
+      disabled: Boolean(body.disabled),
+    };
 
-    // name (optional, digits-only)
-    let name: string | null = null;
-    if (body.name !== undefined && body.name !== null && body.name !== "") {
-      if (!isDigits(body.name)) {
-        return NextResponse.json(
-          { error: "Bay name must be numeric only (digits 0–9)." },
-          { status: 400 }
-        );
+    if (input.kind === "SINGLE") {
+      if (!body.handedness || !["RH", "LH"].includes(body.handedness)) {
+        return NextResponse.json({ error: "Handedness required for SINGLE bay" }, { status: 400 });
       }
-      name = String(body.name).trim();
-    }
-
-    // kind
-    const kind = toKind(body.kind) ?? "GROUP"; // default to GROUP if not provided
-    // handedness / capacity per rules
-    let handedness: "RH" | "LH" | null = null;
-    let capacity: number;
-
-    if (kind === "SINGLE") {
-      const h = toHanded(body.handedness);
-      if (!h) {
-        return NextResponse.json(
-          { error: "Handedness is required for SINGLE bays (RH or LH)." },
-          { status: 400 }
-        );
-      }
-      handedness = h;
-      capacity = 1; // enforce
+      input.handedness = body.handedness;
     } else {
-      // GROUP
-      const capRaw = parseIntSafe(body.capacity);
-      capacity = Number.isFinite(capRaw) ? capRaw : 4;
-      if (capacity < 2) capacity = 2;
-      handedness = null; // ignore
+      input.capacity = body.capacity ? Math.max(2, Number(body.capacity)) : 4;
     }
 
-    const bay = await getPrisma().bay.create({
-      data: {
-        locationId: location.id,
-        number,
-        name,
-        kind,
-        handedness,
-        capacity,
-      },
-      select: {
-        id: true,
-        number: true,
-        name: true,
-        kind: true,
-        handedness: true,
-        capacity: true,
-      },
-    });
+    const bay = await createBay(location.id, input);
 
     return NextResponse.json({ ok: true, bay });
   } catch (e: any) {
     console.error("POST bay error", e);
+
     if (e?.code === "P2002") {
-      return NextResponse.json(
-        { error: "That bay number already exists for this location." },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: "Bay number already exists" }, { status: 409 });
     }
+    if (e?.message?.includes?.("must be")) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
-
-
-

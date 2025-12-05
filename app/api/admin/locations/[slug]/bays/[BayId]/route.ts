@@ -5,7 +5,7 @@ import { updateBay, deleteBay } from "@/services/bay.service";
 
 export const dynamic = "force-dynamic";
 
-/* ---------------- PATCH: Update bay ---------------- */
+/* ---------------- PATCH: Update bay (now supports disabled) ---------------- */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; BayId: string }> }
@@ -23,30 +23,37 @@ export async function PATCH(
 
     const body = await req.json();
 
-    const bay = await updateBay(location.id, {
+    // Build update input – only pass fields that were actually sent
+    const updateInput: Parameters<typeof updateBay>[1] = {
       bayId: BayId,
-      number: body.number,
-      name: body.name ?? undefined,
-      kind: body.kind,
-      handedness: body.handedness ?? undefined,
-      capacity: body.capacity,
-    });
+    };
+
+    if (body.number !== undefined) updateInput.number = body.number;
+    if (body.name !== undefined) updateInput.name = body.name;
+    if (body.kind !== undefined) updateInput.kind = body.kind;
+    if (body.handedness !== undefined) updateInput.handedness = body.handedness;
+    if (body.capacity !== undefined) updateInput.capacity = body.capacity;
+    if (body.disabled !== undefined) updateInput.disabled = body.disabled;
+
+    const bay = await updateBay(location.id, updateInput);
 
     return NextResponse.json({ ok: true, bay });
   } catch (err: any) {
     console.error("PATCH bay error:", err);
 
-    const status =
-      err.message.includes("already exists") ? 409 :
-      err.message.includes("required") || err.message.includes("Invalid") ? 400 :
-      err.message.includes("not found") ? 404 :
-      500;
+    const status = err.message.includes("already exists")
+      ? 409
+      : err.message.includes("required") || err.message.includes("Invalid")
+      ? 400
+      : err.message.includes("not found")
+      ? 404
+      : 500;
 
     return NextResponse.json({ error: err.message || "Server error" }, { status });
   }
 }
 
-/* ---------------- DELETE: Remove bay (blocks if future bookings) ---------------- */
+/* ---------------- DELETE: Remove bay (unchanged) ---------------- */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ slug: string; BayId: string }> }
@@ -68,10 +75,11 @@ export async function DELETE(
   } catch (err: any) {
     console.error("DELETE bay error:", err);
 
-    const status =
-      err.message.includes("future booking") ? 409 :
-      err.message.includes("not found") ? 404 :
-      500;
+    const status = err.message.includes("future booking")
+      ? 409
+      : err.message.includes("not found")
+      ? 404
+      : 500;
 
     return NextResponse.json({ error: err.message || "Server error" }, { status });
   }

@@ -34,42 +34,41 @@ enum Handedness {
  * =========================
  */
 model Location {
-  id                               String   @id @default(uuid())
-  name                             String
-  slug                             String   @unique
-  disabled                         Boolean  @default(false)
-  bookingNote                      String?
-  passAccessUrl                    String?
+  id                          String    @id @default(uuid())
+  name                        String
+  slug                        String    @unique
+  disabled                    Boolean   @default(false)
+  bookingNote                 String?
+  passAccessUrl               String?
+  open24Hours                 Boolean   @default(false)
+  hours                       Json      // init to [] in app if null
+  timezone                    String    @default("America/New_York")
+  minBookingMinutes           Int       @default(60)
+  maxBookingMinutes           Int       @default(120)
+  maxActiveBookingsPerGuest   Int       @default(2)
+  activeBookingIdentifyBy     String    @default("either")
+  activeBookingWindowHours    Int       @default(24)
+  maxConsecutiveBookingsPerGuest Int    @default(2)
 
-  open24Hours                      Boolean  @default(false)
-  hours                            Json     // init to [] in app if null
-  timezone                         String   @default("America/New_York")
-  minBookingMinutes                Int      @default(60)
-  maxBookingMinutes                Int      @default(120)
-  maxActiveBookingsPerGuest        Int      @default(2)
-  activeBookingIdentifyBy          String   @default("either")
-  activeBookingWindowHours         Int      @default(24)
-  maxConsecutiveBookingsPerGuest   Int      @default(2)
+  bays         Bay[]
+  bookings     Booking[]
+  adminLinks   AdminLocation[]
+  notifications Notification[]
 
-  bays                             Bay[]
-  bookings                         Booking[]
-  adminLinks                       AdminLocation[]
-  notifications                    Notification[]
-
-  createdAt                        DateTime @default(now())
-  updatedAt                        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Bay {
-  id          String   @id @default(uuid())
-  number      Int
-  name        String?
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-
-  kind        BayKind     @default(GROUP)
-  handedness  Handedness? // only set when kind = SINGLE
-  capacity    Int         @default(4)
+  id           String      @id @default(uuid())
+  number       Int
+  name         String?
+  locationId   String
+  location     Location    @relation(fields: [locationId], references: [id])
+  kind         BayKind     @default(GROUP)
+  handedness   Handedness? // only set when kind = SINGLE
+  capacity     Int         @default(4)
+  disabled     Boolean     @default(false)
 
   @@unique([locationId, number])
   @@index([locationId])
@@ -88,8 +87,8 @@ model Booking {
   managementToken String    @unique @default(uuid())
   canceledAt      DateTime?
 
-  createdAt       DateTime  @default(now())
-  Location        Location  @relation(fields: [locationId], references: [id])
+  createdAt DateTime @default(now())
+  Location  Location  @relation(fields: [locationId], references: [id])
 
   @@index([locationId, bayNumber, start])
   @@index([locationId, start, end])
@@ -98,24 +97,24 @@ model Booking {
 
 // --- Admins & Access Control ---
 model Admin {
-  id        String   @id @default(cuid())
-  phone     String   @unique
+  id        String    @id @default(cuid())
+  phone     String    @unique
   name      String?
   role      AdminRole @default(SCOPED)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   locations AdminLocation[]
 }
 
 model AdminLocation {
-  id         String   @id @default(cuid())
-  adminId    String
-  locationId String
-  createdAt  DateTime @default(now())
+  id          String    @id @default(cuid())
+  adminId     String
+  locationId  String
+  createdAt   DateTime  @default(now())
 
-  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  location  Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  admin    Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@unique([adminId, locationId])
 }
@@ -126,28 +125,28 @@ model AdminLocation {
  * =========================
  */
 model Notification {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  kind        String   @default("NOTIFICATION")  // TEXT + CHECK('CONFIRMATION', 'NOTIFICATION')
-  channel     String   @default("EMAIL")        // TEXT + CHECK('EMAIL', 'TEXT')
-  hoursBefore Int      @default(0)
-  template    String
-  enabled     Boolean  @default(true)
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String @id @default(cuid())
+  locationId   String
+  location     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  kind         String   @default("NOTIFICATION")
+  channel      String   @default("EMAIL")
+  hoursBefore  Int      @default(0)
+  template     String
+  enabled      Boolean  @default(true)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@unique([locationId, kind, channel, hoursBefore])
   @@index([locationId, kind, channel])
 }
 
 model NotificationLog {
-  id             String   @id @default(cuid())
+  id             String @id @default(cuid())
   bookingId      String
   notificationId String
-  channel        String   // TEXT + CHECK('EMAIL', 'TEXT')
-  status         String   // "SENT" | "FAILED"
+  channel        String
+  status         String
   providerId     String?
   error          String?
   sentAt         DateTime @default(now())

@@ -1,15 +1,14 @@
 // app/admin/locations/[slug]/bookings/components/BookingGrid.tsx
 "use client";
-
 import { TimeGutter } from "./TimeGutter";
 import { BayColumn } from "./BayColumn";
-
+import { BayHeader } from "./BayHeader";
 import type { Bay } from "@/types/bay";
 import type { AdminBooking } from "@/types/admin-booking";
 
 type BookingGridProps = {
   visibleBays: Bay[];
-  bookings: AdminBooking[] | undefined;   // ← allow undefined during loading
+  bookings: AdminBooking[] | undefined;
   locationTimezone: string;
   date: Date;
   timeStep: number;
@@ -40,7 +39,6 @@ export function BookingGrid({
   onBookingClick,
   onDeleteBooking,
 }: BookingGridProps) {
-  // Nothing to render
   if (visibleBays.length === 0) return null;
 
   const bookingsByBay = visibleBays.map((bay) => ({
@@ -61,12 +59,7 @@ export function BookingGrid({
           style={{ gridTemplateColumns: columnTemplate }}
         >
           <div className="px-3 py-2 text-right text-gray-500">Time</div>
-          {visibleBays.map((bay) => (
-            <div key={bay.id} className="px-3 py-2 truncate">
-              Bay {bay.number}
-              {bay.name && <span className="ml-1 text-gray-500">({bay.name})</span>}
-            </div>
-          ))}
+          <BayHeader bays={visibleBays} />
         </div>
       </div>
 
@@ -76,7 +69,6 @@ export function BookingGrid({
         style={{ gridTemplateColumns: columnTemplate }}
       >
         <TimeGutter pxPerMin={pxPerMin} totalHeight={totalHeight} />
-
         {bookingsByBay.map(({ bay, bookings: bayBookings }) => (
           <BayColumn
             key={bay.id}
