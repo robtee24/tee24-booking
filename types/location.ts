@@ -1,5 +1,23 @@
 // types/location.ts
+
 import type { BayInfo, BaySummary } from "./bay";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Precise type for location hours
+// ─────────────────────────────────────────────────────────────────────────────
+export type DayHours = {
+  open: string;     // e.g. "09:00"
+  close: string;    // e.g. "22:00"
+  enabled: boolean;
+}[];
+
+export type LocationHours = Partial<Record<
+  "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday",
+  DayHours
+>>;
+
+// If you ever support multiple sessions per day (e.g. lunch break), this scales perfectly.
+// Otherwise, you can simplify to just one { open, close, enabled } object per day.
 
 /**
  * Core location fields shared across public/admin
@@ -9,13 +27,10 @@ export type LocationBase = {
   name: string;
   slug: string;
   disabled: boolean;
-
   bookingNote: string;
   passAccessUrl: string | null;
-
   open24Hours: boolean;
-  hours: Record<string, any>;
-
+  hours: LocationHours;
   timezone: string;
   minBookingMinutes: number;
   maxBookingMinutes: number;
@@ -23,33 +38,23 @@ export type LocationBase = {
   activeBookingIdentifyBy: "email" | "phone" | "either";
   activeBookingWindowHours: number;
   maxConsecutiveBookingsPerGuest: number;
-
   createdAt: Date;
   updatedAt: Date;
 };
 
-/**
- * Public response — safe for booking UI and public pages
- */
 export type PublicLocationInfo = Omit<LocationBase, "disabled" | "createdAt" | "updatedAt"> & {
   bayNumbers: number[];
+};
+
+export type AdminLocationDetails = LocationBase & {
+  bayNumbers: number[];
+  bays: BayInfo[];
 };
 
 export type AdminLocationWithBays = AdminLocationDetails & {
   bays: BayInfo[];
 };
 
-/**
- * Full admin details — everything an admin needs
- */
-export type AdminLocationDetails = LocationBase & {
-  bayNumbers: number[];
-  bays: BayInfo[];
-};
-
-/**
- * List item — used in sidebars, dropdowns, admin tables
- */
 export type LocationListItem = {
   id: string;
   name: string;
@@ -57,9 +62,6 @@ export type LocationListItem = {
   disabled: boolean;
 };
 
-/**
- * Input types
- */
 export type CreateLocationInput = {
   name: string;
   slug: string;
@@ -78,5 +80,5 @@ export type UpdateLocationSettingsInput = {
     "id" | "slug" | "disabled" | "createdAt" | "updatedAt" | "hours"
   >
 > & {
-  hours?: Record<string, any>;
+  hours?: LocationHours;
 };
