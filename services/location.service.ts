@@ -63,7 +63,7 @@ async function getLocationWithBays(slug: string) {
     minBookingMinutes: location.minBookingMinutes ?? 60,
     maxBookingMinutes: location.maxBookingMinutes ?? 120,
     maxActiveBookingsPerGuest: location.maxActiveBookingsPerGuest ?? 2,
-    activeBookingIdentifyBy: location.activeBookingIdentifyBy ?? "either",
+    activeBookingIdentifyBy: (location.activeBookingIdentifyBy ?? "either") as "phone" | "email" | "either",
     activeBookingWindowHours: location.activeBookingWindowHours ?? 24,
     maxConsecutiveBookingsPerGuest: location.maxConsecutiveBookingsPerGuest ?? 2,
     createdAt: location.createdAt,
