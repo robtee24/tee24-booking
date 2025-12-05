@@ -5,7 +5,7 @@ import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
-import { getAvailableBaysAtExactWindow } from "./availability.service";
+import { getAvailableBaysAtExactWindow, isSpecificBayAvailableAtExactWindow } from "./availability.service";
 
 type IdentifyBy = "EMAIL" | "PHONE" | "EMAIL_OR_PHONE";
 
@@ -131,15 +131,14 @@ export async function createBooking(input: CreateBookingInput) {
 
   // 4. For ADMIN: if they specified a bay, verify it's actually free and eligible
   if (source === "ADMIN" && bayNumberInput != null) {
-    const avail = await getAvailableBaysAtExactWindow({
-      locationSlug: location.slug!,
+    const isFree = await isSpecificBayAvailableAtExactWindow({
+      locationId,
+      bayNumber: finalBayNumber,
       startUTC,
       endUTC,
-      kind: partyKind,
-      hand: handedness,
     });
 
-    if (!avail.freeBayNumbers.includes(finalBayNumber)) {
+    if (!isFree) {
       throw new Error(`Bay ${finalBayNumber} is not available at this time`);
     }
   }
@@ -150,7 +149,8 @@ export async function createBooking(input: CreateBookingInput) {
       locationId,
       bayNumber: finalBayNumber,
       canceledAt: null,
-      AND: [{ start: { lt: endUTC } }, { end: { gt: startUTC } }],
+      start: { lt: endUTC }, 
+      end: { gt: startUTC },
     },
     select: { firstName: true, lastName: true, start: true, end: true },
   });
@@ -273,17 +273,17 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
     if (!bay || bay.locationId !== location.id) throw new Error("Invalid bay");
     finalBayNumber = bay.number!;
   }
-  // Use centralized availability check if time or bay changed
+  // Use direct bay availability check when time or bay changed
   if (startUTC !== booking.start || endUTC !== booking.end || finalBayNumber !== booking.bayNumber) {
-    const avail = await getAvailableBaysAtExactWindow({
-      locationSlug: location.slug,
+    const isFree = await isSpecificBayAvailableAtExactWindow({
+      locationId: location.id,
+      bayNumber: finalBayNumber,
       startUTC,
       endUTC,
-      kind: "GROUP", // admin can move to any bay
-      hand: undefined,
-      ignoreBookingId: bookingId,
+      ignoreBookingId: bookingId,   // ignore self for moves
     });
-    if (!avail.freeBayNumbers.includes(finalBayNumber)) {
+
+    if (!isFree) {
       throw new Error("Bay not available at this time");
     }
   }

@@ -36,6 +36,30 @@ function alignToLocalStep(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Used ONLY by admin to check if a specific bay is free at an exact window */
+// ─────────────────────────────────────────────────────────────────────────────
+export async function isSpecificBayAvailableAtExactWindow(params: {
+  locationId: string;
+  bayNumber: number;
+  startUTC: Date;
+  endUTC: Date;
+  ignoreBookingId?: string;   // for updates/moves
+}): Promise<boolean> {
+  const overlapping = await getPrisma().booking.findFirst({
+    where: {
+      locationId: params.locationId,
+      bayNumber: params.bayNumber,
+      canceledAt: null,
+      ...(params.ignoreBookingId && { id: { not: params.ignoreBookingId } }),
+      start: { lt: params.endUTC },
+      end: { gt: params.startUTC },
+    },
+  });
+
+  return !overlapping;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exact window check (used when creating a booking)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getAvailableBaysAtExactWindow(
@@ -83,7 +107,8 @@ export async function getAvailableBaysAtExactWindow(
       where: {
         locationId: location.id,
         canceledAt: null,
-        OR: [{ start: { lt: endUTC } }, { end: { gt: startUTC } }],
+        start: { lt: endUTC },
+        end: { gt: startUTC },
         ...(ignoreBookingId ? { id: { not: ignoreBookingId } } : {}),
       },
       select: { bayNumber: true, start: true, end: true },
@@ -108,6 +133,15 @@ export async function getAvailableBaysAtExactWindow(
   };
 
   const freeBayNumbers = eligibleBayNumbers.filter(isBayFree).sort((a, b) => a - b);
+
+  if (process.env.NODE_ENV !== "production" || process.env.DEBUG_AVAILABILITY) {
+    const busyBays = eligibleBayNumbers.filter(n => !freeBayNumbers.includes(n));
+    console.log("  Eligible bay numbers:", eligibleBayNumbers);
+    console.log("  Free bay numbers:", freeBayNumbers);
+    console.log("  Busy bay numbers:", busyBays);
+    console.log("  Final result → availableCount:", freeBayNumbers.length);
+    console.log("────────────────────────────────────");
+    }
 
   return { availableCount: freeBayNumbers.length, freeBayNumbers };
 }
