@@ -1,19 +1,33 @@
 // app/admin/locations/[slug]/bookings/page.tsx
 "use client";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams } from "next/navigation";
-// Shared types
+
 import type { AdminDayView, AdminBooking } from "@/types/admin-booking";
 import type { Bay } from "@/types/bay";
+
 import { EditBookingModal } from "./components/EditBookingModal";
 import { CreateBookingModal } from "./components/CreateBookingModal";
 import { BookingHeader } from "./components/BookingHeader";
 import { BookingGrid } from "./components/BookingGrid";
+import { BayPagination } from "./components/BayPagination";
+
+import { cn } from "@/lib/utils";
+
 // ──────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const startOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
 function buildTimeOptions(step: number) {
   const opts: { label: string; value: string }[] = [];
   for (let m = 0; m < 24 * 60; m += step) {
@@ -27,34 +41,52 @@ function buildTimeOptions(step: number) {
   }
   return opts;
 }
+
 function buildLocalISO(dateOnly: string, hhmm: string): string {
   return `${dateOnly}T${hhmm}:00`;
 }
+
 function addMinutesToLocalISO(localISO: string, minutes: number): string {
   const [datePart, timePart] = localISO.split("T");
   const [h, m] = timePart.split(":").map(Number);
-  const base = new Date(`${datePart}T${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`);
+  const base = new Date(
+    `${datePart}T${h.toString().padStart(2, "0")}:${m
+      .toString()
+      .padStart(2, "0")}:00`
+  );
   const result = new Date(base.getTime() + minutes * 60 * 1000);
-  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}T${String(result.getHours()).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(result.getDate()).padStart(2, "0")}T${String(
+    result.getHours()
+  ).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
 }
+
 const DRAG_KEY = "admin-booking-drag";
+
 // ──────────────────────────────────────────────────────────────
 // Main Component
 // ──────────────────────────────────────────────────────────────
 export default function LocationBookingsPage() {
   const params = useParams() as { slug?: string };
   const slug = params?.slug?.toString() ?? "";
+
   const [date, setDate] = useState<Date>(() => startOfDay(new Date()));
   const [data, setData] = useState<AdminDayView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
-  const [page, setPage] = useState(0);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(0);
+  const baysPerPage = 10;
+
   const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
-  const maxVisible = 10;
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   // ───── Load Data ─────
   const load = useCallback(async () => {
     if (!slug) {
@@ -65,40 +97,51 @@ export default function LocationBookingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/bookings/day?locationSlug=${slug}&date=${fmtDate(date)}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/admin/bookings/day?locationSlug=${slug}&date=${fmtDate(date)}`,
+        { cache: "no-store" }
+      );
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || "Failed to load bookings");
       }
       const json: AdminDayView = await res.json();
       setData(json);
+      // Reset to first page when data changes (new day or location)
+      setCurrentPage(0);
     } catch (e: any) {
       setError(e.message || "Failed to load data");
     } finally {
       setLoading(false);
     }
   }, [slug, date]);
+
   useEffect(() => {
     load();
   }, [load]);
+
   // ───── Derived Data ─────
-  const bays = useMemo(() => (data?.bays || []).sort((a, b) => a.number - b.number), [data?.bays]);
+  const bays = useMemo(
+    () => (data?.bays || []).sort((a, b) => a.number - b.number),
+    [data?.bays]
+  );
+
+  const totalPages = Math.ceil(bays.length / baysPerPage) || 1;
+  const visibleBays = useMemo(() => {
+    const start = currentPage * baysPerPage;
+    return bays.slice(start, start + baysPerPage);
+  }, [bays, currentPage, baysPerPage]);
+
   const bookings = data?.bookings;
   const locationTimezone = data?.timezone ?? "UTC";
   const timeStep = Math.max(5, data?.minBookingMinutes || 60);
   const timeOptions = useMemo(() => buildTimeOptions(timeStep), [timeStep]);
-  const totalPages = Math.ceil(bays.length / maxVisible) || 1;
-  const safePage = Math.min(page, totalPages - 1);
-  const visibleBays = useMemo(
-    () => bays.slice(safePage * maxVisible, (safePage + 1) * maxVisible),
-    [bays, safePage]
-  );
+
   // ───── Navigation ─────
-  const goPrev = () => setDate(d => new Date(d.getTime() - 86400000));
-  const goNext = () => setDate(d => new Date(d.getTime() + 86400000));
+  const goPrev = () => setDate((d) => new Date(d.getTime() - 86400000));
+  const goNext = () => setDate((d) => new Date(d.getTime() + 86400000));
   const goToday = () => setDate(startOfDay(new Date()));
+
   // ───── API Helpers ─────
   const apiFetch = async (url: string, options: RequestInit) => {
     const res = await fetch(url, options);
@@ -111,11 +154,13 @@ export default function LocationBookingsPage() {
     }
     return res.status === 204 ? null : res.json();
   };
-  // ───── Create Booking (POST /api/admin/bookings) ─────
+
+  // ───── CRUD Handlers ─────
   const createBooking = async () => {
     if (!creatingDraft || !creatingDraft.firstName.trim()) return;
-    const bayNumber = bays.find(b => b.id === creatingDraft.bayId)?.number;
+    const bayNumber = bays.find((b) => b.id === creatingDraft.bayId)?.number;
     if (!bayNumber) return alert("Invalid bay");
+
     try {
       await apiFetch("/api/admin/bookings", {
         method: "POST",
@@ -137,16 +182,19 @@ export default function LocationBookingsPage() {
       alert("Create failed: " + err.message);
     }
   };
-  // ───── Update Booking (PATCH /api/admin/bookings/[id]) ─────
-  const updateBooking = async (id: string, updates: {
-    bayId?: string;
-    startLocal?: string;
-    endLocal?: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string | null;
-    phone?: string | null;
-  }) => {
+
+  const updateBooking = async (
+    id: string,
+    updates: {
+      bayId?: string;
+      startLocal?: string;
+      endLocal?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string | null;
+      phone?: string | null;
+    }
+  ) => {
     try {
       await apiFetch(`/api/admin/bookings/${id}`, {
         method: "PATCH",
@@ -163,7 +211,7 @@ export default function LocationBookingsPage() {
       throw err;
     }
   };
-  // ───── Delete Booking (DELETE /api/admin/bookings/[id]) ─────
+
   const deleteBooking = async (id: string) => {
     if (!confirm("Delete this booking?")) return;
     try {
@@ -173,15 +221,19 @@ export default function LocationBookingsPage() {
       alert("Delete failed: " + err.message);
     }
   };
-  // ───── Add Booking Modal ─────
+
   const handleAddBooking = () => {
     const defaultBay = visibleBays[0]?.id || bays[0]?.id || "";
     const selectedDate = fmtDate(date);
     const now = new Date();
     const roundedMinutes = Math.floor(now.getMinutes() / timeStep) * timeStep;
-    const fallbackHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(roundedMinutes).padStart(2, "0")}`;
+    const fallbackHHMM = `${String(now.getHours()).padStart(
+      2,
+      "0"
+    )}:${String(roundedMinutes).padStart(2, "0")}`;
     const startLocal = buildLocalISO(selectedDate, fallbackHHMM);
     const endLocal = addMinutesToLocalISO(startLocal, timeStep);
+
     setCreatingDraft({
       bayId: defaultBay,
       dateOnly: selectedDate,
@@ -195,7 +247,7 @@ export default function LocationBookingsPage() {
       phone: "",
     });
   };
-  // ───── Save Edit Modal ─────
+
   const saveEdit = async () => {
     if (!editing) return;
     const startLocal = buildLocalISO(editing.dateOnly, editing.startHHMM);
@@ -212,13 +264,19 @@ export default function LocationBookingsPage() {
       });
       setEditing(null);
     } catch {
-      // Error already shown in updateBooking
+      // error already shown
     }
   };
-  // ───── Drag & Drop Handlers ─────
+
+  // ───── Drag & Drop ─────
   const onBookingDragStart = (e: React.DragEvent, bk: AdminBooking) => {
-    const duration = Math.round((new Date(bk.end).getTime() - new Date(bk.start).getTime()) / 60000);
-    e.dataTransfer.setData(DRAG_KEY, JSON.stringify({ id: bk.id, durationMinutes: duration }));
+    const duration = Math.round(
+      (new Date(bk.end).getTime() - new Date(bk.start).getTime()) / 60000
+    );
+    e.dataTransfer.setData(
+      DRAG_KEY,
+      JSON.stringify({ id: bk.id, durationMinutes: duration })
+    );
     const crt = document.createElement("div");
     crt.style.cssText =
       "padding:6px 10px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; font-size:12px; box-shadow:0 4px 12px rgba(0,0,0,0.15);";
@@ -227,9 +285,11 @@ export default function LocationBookingsPage() {
     e.dataTransfer.setDragImage(crt, 0, 0);
     setTimeout(() => document.body.removeChild(crt), 0);
   };
+
   const onBayDragOver = (e: React.DragEvent) => {
     if (e.dataTransfer.types.includes(DRAG_KEY)) e.preventDefault();
   };
+
   const onBayDrop = async (e: React.DragEvent, bay: Bay) => {
     e.preventDefault();
     const payload = e.dataTransfer.getData(DRAG_KEY);
@@ -237,6 +297,7 @@ export default function LocationBookingsPage() {
     const { id, durationMinutes } = JSON.parse(payload);
     const col = bayRefs.current[bay.id];
     if (!col) return;
+
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const minutesRaw = Math.round(y / pxPerMin);
@@ -247,6 +308,7 @@ export default function LocationBookingsPage() {
     const dateOnly = fmtDate(date);
     const newStartLocal = buildLocalISO(dateOnly, hhmm);
     const newEndLocal = addMinutesToLocalISO(newStartLocal, durationMinutes);
+
     try {
       await updateBooking(id, {
         bayId: bay.id,
@@ -254,43 +316,47 @@ export default function LocationBookingsPage() {
         endLocal: newEndLocal,
       });
     } catch {
-      // Error already alerted
+      // error already alerted
     }
   };
-  // ───── Click to Edit ─────
+
   const onBookingClick = (bk: AdminBooking, bay: Bay) => {
-    // NEW: Extract local dateOnly and startHHMM in the location's timezone
-    // Assuming bk.start is a UTC ISO string (common for API data)
     const startDateUTC = new Date(bk.start);
 
-    // Formatter for date (YYYY-MM-DD local)
-    const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    const dateFormatter = new Intl.DateTimeFormat("en-US", {
       timeZone: locationTimezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     });
     const dateParts = dateFormatter.formatToParts(startDateUTC);
-    const year = dateParts.find((p) => p.type === 'year')?.value || '';
-    const month = dateParts.find((p) => p.type === 'month')?.value || '';
-    const day = dateParts.find((p) => p.type === 'day')?.value || '';
+    const year =
+      dateParts.find((p) => p.type === "year")?.value || "";
+    const month =
+      dateParts.find((p) => p.type === "month")?.value || "";
+    const day = dateParts.find((p) => p.type === "day")?.value || "";
     const dateOnly = `${year}-${month}-${day}`;
 
-    // Formatter for time (HH:mm local, 24-hour)
-    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+    const timeFormatter = new Intl.DateTimeFormat("en-US", {
       timeZone: locationTimezone,
-      hour: '2-digit',
-      minute: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
       hour12: false,
     });
     const timeParts = timeFormatter.formatToParts(startDateUTC);
-    const hour = timeParts.find((p) => p.type === 'hour')?.value.padStart(2, '0') || '00';
-    const minute = timeParts.find((p) => p.type === 'minute')?.value.padStart(2, '0') || '00';
+    const hour =
+      timeParts.find((p) => p.type === "hour")?.value.padStart(2, "0") ||
+      "00";
+    const minute =
+      timeParts.find((p) => p.type === "minute")?.value.padStart(2, "0") ||
+      "00";
     const startHHMM = `${hour}:${minute}`;
 
     const duration = Math.max(
       timeStep,
-      Math.round((new Date(bk.end).getTime() - startDateUTC.getTime()) / 60000)
+      Math.round(
+        (new Date(bk.end).getTime() - startDateUTC.getTime()) / 60000
+      )
     );
 
     setEditing({
@@ -305,7 +371,8 @@ export default function LocationBookingsPage() {
       phone: bk.phone || "",
     });
   };
-  // ───── Color Palette ─────
+
+  // ───── Palette ─────
   const palette = [
     ["bg-blue-100", "border-blue-300", "text-blue-900"],
     ["bg-emerald-100", "border-emerald-300", "text-emerald-900"],
@@ -315,6 +382,7 @@ export default function LocationBookingsPage() {
     ["bg-indigo-100", "border-indigo-300", "text-indigo-900"],
     ["bg-teal-100", "border-teal-300", "text-teal-900"],
   ];
+
   // ───── Render ─────
   return (
     <div className="p-6 space-y-6 min-h-screen bg-gray-50">
@@ -326,16 +394,19 @@ export default function LocationBookingsPage() {
         onAddBooking={handleAddBooking}
         disabled={loading}
       />
-      {/* Error */}
+
       {error && (
         <div className="max-w-2xl mx-auto rounded-xl border border-red-200 bg-red-50 p-6 text-center">
           <p className="text-red-800 font-medium">{error}</p>
-          <button onClick={load} className="mt-3 text-sm underline text-red-700 hover:text-red-900">
+          <button
+            onClick={load}
+            className="mt-3 text-sm underline text-red-700 hover:text-red-900"
+          >
             Try again
           </button>
         </div>
       )}
-      {/* Loading */}
+
       {loading && (
         <div className="max-w-7xl mx-auto">
           <div className="animate-pulse">
@@ -349,9 +420,21 @@ export default function LocationBookingsPage() {
           </div>
         </div>
       )}
-      {/* Main Grid */}
+
       {!loading && !error && data && bays.length > 0 && (
         <>
+        {/* Top Pagination – sticky so it's always accessible */}
+        <div className="sticky top-0 z-10 -mt-4 mb-4 bg-gray-50 pt-4">
+          <BayPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalBays={bays.length}
+            baysPerPage={baysPerPage}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+
+        <div className="space-y-6">
           <BookingGrid
             visibleBays={visibleBays}
             bookings={bookings}
@@ -368,6 +451,7 @@ export default function LocationBookingsPage() {
             onBookingClick={onBookingClick}
             onDeleteBooking={deleteBooking}
           />
+
           <CreateBookingModal
             open={!!creatingDraft}
             onClose={() => setCreatingDraft(null)}
@@ -378,10 +462,13 @@ export default function LocationBookingsPage() {
             getBlockedSlots={() => []}
             isSlotBlocked={() => false}
             onUpdateDraft={(updates) =>
-              setCreatingDraft((prev: any) => (prev ? { ...prev, ...updates } : null))
+              setCreatingDraft((prev: any) =>
+                prev ? { ...prev, ...updates } : null
+              )
             }
             onCreate={createBooking}
           />
+
           <EditBookingModal
             open={!!editing}
             onClose={() => setEditing(null)}
@@ -392,16 +479,23 @@ export default function LocationBookingsPage() {
             onSave={saveEdit}
             onDelete={deleteBooking}
             onUpdateField={(updates) =>
-              setEditing((prev: any) => (prev ? { ...prev, ...updates } : null))
+              setEditing((prev: any) =>
+                prev ? { ...prev, ...updates } : null
+              )
             }
           />
+        </div>
         </>
       )}
-      {/* No Bays */}
+
       {!loading && !error && data && bays.length === 0 && (
         <div className="text-center py-20 text-gray-500">
-          <p className="text-xl font-medium">No bays configured for this location</p>
-          <p className="mt-2">Add bays in location settings to start accepting bookings.</p>
+          <p className="text-xl font-medium">
+            No bays configured for this location
+          </p>
+          <p className="mt-2">
+            Add bays in location settings to start accepting bookings.
+          </p>
         </div>
       )}
     </div>
