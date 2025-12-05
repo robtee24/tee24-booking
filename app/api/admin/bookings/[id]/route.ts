@@ -4,33 +4,33 @@ import { adminUpdateBooking, cancelBooking } from "@/services/booking.service";
 
 export const dynamic = "force-dynamic";
 
-// UPDATE booking (PATCH)
+// PATCH /api/admin/bookings/[id] – Update booking (time, bay, customer info)
 export async function PATCH(req: NextRequest) {
   try {
-    const { pathname } = req.nextUrl;
-    const id = pathname.split("/").pop();
+    const id = req.nextUrl.pathname.split("/").pop();
 
-    if (!id) return new NextResponse("Missing booking ID", { status: 400 });
+    if (!id || id === "[id]") {
+      return new NextResponse("Invalid or missing booking ID", { status: 400 });
+    }
 
     const body = await req.json();
 
     const updated = await adminUpdateBooking({
       bookingId: id,
-      startLocal: body.startISO,
-      endLocal: body.endISO,
-      bayId: body.bayId ?? undefined,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email,
-      phone: body.phone,
+      startLocal: body.startLocal,
+      endLocal: body.endLocal,
+      bayId: body.bayId,
+      firstName: body.firstName?.trim(),
+      lastName: body.lastName?.trim() || undefined,
+      email: body.email?.trim() || null,
+      phone: body.phone?.trim() || null,
     });
 
     return NextResponse.json(updated);
   } catch (err: any) {
-    console.error("Update booking error:", err);
+    console.error("[PATCH /api/admin/bookings/[id]] Error:", err);
 
-    // Preserve helpful conflict messages
-    if (err.message.includes("overlaps")) {
+    if (err.message?.toLowerCase().includes("overlap") || err.message?.toLowerCase().includes("conflict")) {
       return new NextResponse(err.message, { status: 409 });
     }
 
@@ -38,19 +38,19 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// CANCEL booking (DELETE)
+// DELETE /api/admin/bookings/[id] – Cancel booking
 export async function DELETE(req: NextRequest) {
   try {
-    const { pathname } = req.nextUrl;
-    const id = pathname.split("/").pop();
+    const id = req.nextUrl.pathname.split("/").pop();
 
-    if (!id) return new NextResponse("Missing booking ID", { status: 400 });
+    if (!id || id === "[id]") {
+      return new NextResponse("Invalid or missing booking ID", { status: 400 });
+    }
 
     await cancelBooking(id);
-
     return new NextResponse(null, { status: 204 });
   } catch (err: any) {
-    console.error("Cancel booking error:", err);
+    console.error("[DELETE /api/admin/bookings/[id]] Error:", err);
     return new NextResponse(err.message || "Failed to cancel booking", { status: 400 });
   }
 }

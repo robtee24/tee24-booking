@@ -26,7 +26,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, locations });
   } catch (err: any) {
-    console.error("GET /admin/locations error:", err);
+    console.error("GET /api/admin/locations error:", err);
     return NextResponse.json(
       { ok: false, error: "Server error" },
       { status: 500 }
@@ -48,31 +48,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, slug } = body;
 
-    if (!name || !slug) {
+    if (!name || !slug || typeof name !== "string" || typeof slug !== "string") {
       return NextResponse.json(
-        { ok: false, error: "name and slug are required" },
+        { ok: false, error: "name and slug are required and must be strings" },
         { status: 400 }
       );
     }
 
     const location = await createLocation({ name, slug });
 
-    return NextResponse.json(
-      { ok: true, location },
-      { status: 201 }
-    );
+    return NextResponse.json({ ok: true, location }, { status: 201 });
   } catch (err: any) {
-    console.error("POST /admin/locations error:", err);
+    console.error("POST /api/admin/locations error:", err);
 
-    // Friendly error mapping
-    const status =
-      err.message.includes("Forbidden") ? 403 :
-      err.message.includes("exists") ? 409 :
-      err.message.includes("invalid") ? 400 :
-      500;
+    const message = err.message.toLowerCase();
+    const status = message.includes("slug already exists")
+      ? 409
+      : message.includes("invalid")
+      ? 400
+      : 500;
 
     return NextResponse.json(
-      { ok: false, error: err.message || "Server error" },
+      { ok: false, error: err.message || "Failed to create location" },
       { status }
     );
   }

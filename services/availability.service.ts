@@ -45,26 +45,22 @@ export async function getAvailableBaysAtExactWindow(
     endUTC: Date;
     kind: "SINGLE" | "GROUP";
     hand?: "RH" | "LH";
+    ignoreBookingId?: string;
   }
 ): Promise<AvailableBaysResult> {
-  const { locationSlug, startUTC, endUTC, kind, hand } = req;
+  const { locationSlug, startUTC, endUTC, kind, hand, ignoreBookingId } = req;
   if (endUTC <= startUTC) return { availableCount: 0, freeBayNumbers: [] };
-
   const location = await getPrisma().location.findUnique({
     where: { slug: locationSlug },
     select: { id: true, timezone: true, open24Hours: true, hours: true },
   });
   if (!location || !location.timezone) return { availableCount: 0, freeBayNumbers: [] };
-
   const tz = location.timezone;
-
   // Get local date for startUTC to build windows around the correct local day
   const localDatePart = formatInTimeZone(startUTC, tz, "yyyy-MM-dd");
   const localMidnightLocal = parse(`${localDatePart} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());
   const localMidnightUTC = fromZonedTime(localMidnightLocal, tz);
-
   const operatingWindows = buildOperatingWindows(localMidnightUTC, location, tz);
-
   if (
     !location.open24Hours &&
     (
@@ -74,7 +70,6 @@ export async function getAvailableBaysAtExactWindow(
   ) {
     return { availableCount: 0, freeBayNumbers: [] };
   }
-
   const [bays, bookings] = await Promise.all([
     getPrisma().bay.findMany({
       where: { locationId: location.id },
@@ -85,14 +80,13 @@ export async function getAvailableBaysAtExactWindow(
         locationId: location.id,
         canceledAt: null,
         OR: [{ start: { lt: endUTC } }, { end: { gt: startUTC } }],
+        ...(ignoreBookingId ? { id: { not: ignoreBookingId } } : {}),
       },
       select: { bayNumber: true, start: true, end: true },
     }),
   ]);
-
   const eligibleBayNumbers = getEligibleBayNumbers(bays, kind, hand);
   if (eligibleBayNumbers.length === 0) return { availableCount: 0, freeBayNumbers: [] };
-
   const busyByBay = new Map<number, { start: Date; end: Date }[]>();
   for (const num of eligibleBayNumbers) busyByBay.set(num, []);
   for (const b of bookings) {
@@ -100,12 +94,10 @@ export async function getAvailableBaysAtExactWindow(
       busyByBay.get(b.bayNumber)!.push({ start: b.start, end: b.end });
     }
   }
-
   const isBayFree = (bayNumber: number): boolean => {
     const intervals = busyByBay.get(bayNumber)!;
     return !intervals.some((i) => i.start < endUTC && i.end > startUTC);
   };
-
   const freeBayNumbers = eligibleBayNumbers.filter(isBayFree).sort((a, b) => a - b);
   return { availableCount: freeBayNumbers.length, freeBayNumbers };
 }

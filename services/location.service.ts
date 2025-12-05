@@ -1,34 +1,86 @@
 // services/location.service.ts
 import { getPrisma } from "@/lib/db";
+import type {
+  LocationListItem,
+  PublicLocationInfo,
+  AdminLocationDetails,
+  CreateLocationInput,
+} from "@/types/location";
+import type { BayInfo } from "@/types/bay";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// INTERNAL: Single source of truth for location + bays
 // ─────────────────────────────────────────────────────────────────────────────
-export type LocationListItem = {
-  id: string;
-  name: string;
-  slug: string;
-  disabled: boolean;
-};
+async function getLocationWithBays(slug: string) {
+  const location = await getPrisma().location.findUnique({
+    where: { slug },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      disabled: true,
+      bookingNote: true,
+      passAccessUrl: true,
+      open24Hours: true,
+      hours: true,
+      timezone: true,
+      minBookingMinutes: true,
+      maxBookingMinutes: true,
+      maxActiveBookingsPerGuest: true,
+      activeBookingIdentifyBy: true,
+      activeBookingWindowHours: true,
+      maxConsecutiveBookingsPerGuest: true,
+      createdAt: true,
+      updatedAt: true,
 
-export type PublicLocationInfo = {
-  id: string;
-  name: string;
-  slug: string;
-  bookingNote: string;
-  minBookingMinutes: number;
-  maxBookingMinutes: number | null;
-  bayNumbers: number[];
-  passAccessUrl: string | null;
-  timezone: string;
-};
+      bays: {
+        select: {
+          id: true,
+          number: true,
+          name: true,
+          kind: true,
+          handedness: true,
+          capacity: true,
+        },
+        orderBy: { number: "asc" },
+      },
+    },
+  });
 
-export type BayInfo = {
-  number: number;
-  kind: "SINGLE" | "GROUP" | null;
-  handedness: "RH" | "LH" | null;
-  capacity: number | null;
-};
+  if (!location) throw new Error("Location not found");
+
+  const base = {
+    id: location.id,
+    name: location.name,
+    slug: location.slug,
+    disabled: location.disabled ?? false,
+    bookingNote: location.bookingNote ?? "",
+    passAccessUrl: location.passAccessUrl ?? null,
+    open24Hours: location.open24Hours,
+    hours: location.hours ?? {},
+    timezone: location.timezone ?? "America/New_York",
+    minBookingMinutes: location.minBookingMinutes ?? 60,
+    maxBookingMinutes: location.maxBookingMinutes ?? 120,
+    maxActiveBookingsPerGuest: location.maxActiveBookingsPerGuest ?? 2,
+    activeBookingIdentifyBy: location.activeBookingIdentifyBy ?? "either",
+    activeBookingWindowHours: location.activeBookingWindowHours ?? 24,
+    maxConsecutiveBookingsPerGuest: location.maxConsecutiveBookingsPerGuest ?? 2,
+    createdAt: location.createdAt,
+    updatedAt: location.updatedAt,
+  };
+
+  const bayNumbers = location.bays.map((b) => b.number);
+  const bays: BayInfo[] = location.bays.map((b) => ({
+    id: b.id,
+    number: b.number,
+    name: b.name ?? null,
+    kind: b.kind,
+    handedness: b.handedness,
+    capacity: b.capacity,
+  }));
+
+  return { ...base, bayNumbers, bays };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET: Admin list (filtered by role/slugs)
@@ -47,44 +99,51 @@ export async function getAdminLocations({
 
   const locations = await getPrisma().location.findMany({
     where,
-    select: { id: true, name: true, slug: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      disabled: true,
+    },
     orderBy: { name: "asc" },
   });
 
-  return locations.map((l) => ({ ...l, disabled: false }));
+  return locations.map((l) => ({
+    id: l.id,
+    name: l.name,
+    slug: l.slug,
+    disabled: l.disabled ?? false,
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET: Public location info by slug
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getPublicLocationInfo(slug: string): Promise<PublicLocationInfo> {
-  const location = await getPrisma().location.findUnique({
-    where: { slug },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      bookingNote: true,
-      minBookingMinutes: true,
-      maxBookingMinutes: true,
-      passAccessUrl: true,
-      timezone: true,
-      bays: { select: { number: true }, orderBy: { number: "asc" } },
-    },
-  });
+  const data = await getLocationWithBays(slug);
 
-  if (!location) throw new Error("Location not found");
+  const {
+    disabled,
+    createdAt,
+    updatedAt,
+    bays,
+    ...publicFields
+  } = data;
 
   return {
-    id: location.id,
-    name: location.name,
-    slug: location.slug,
-    bookingNote: location.bookingNote ?? "",
-    minBookingMinutes: location.minBookingMinutes ?? 60,
-    maxBookingMinutes: location.maxBookingMinutes ?? null,
-    bayNumbers: location.bays.map((b) => b.number),
-    passAccessUrl: location.passAccessUrl ?? null,
-    timezone: location.timezone ?? "America/New_York",
+    ...publicFields,
+    bayNumbers: data.bayNumbers,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET: Full admin location details by slug
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getAdminLocationDetails(slug: string): Promise<AdminLocationDetails> {
+  const data = await getLocationWithBays(slug);
+  return {
+    ...data,
+    // data already contains everything needed
   };
 }
 
@@ -92,48 +151,27 @@ export async function getPublicLocationInfo(slug: string): Promise<PublicLocatio
 // GET: All bays for a location (public — used by booking UI)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getLocationBays(slug: string): Promise<BayInfo[]> {
-  const location = await getPrisma().location.findUnique({
-    where: { slug },
-    select: { id: true },
-  });
-
-  if (!location) throw new Error("Location not found");
-
-  const bays = await getPrisma().bay.findMany({
-    where: { locationId: location.id },
-    select: {
-      number: true,
-      kind: true,
-      handedness: true,
-      capacity: true,
-    },
-    orderBy: { number: "asc" },
-  });
-
-  return bays.map((b) => ({
-    number: b.number,
-    kind: b.kind as "SINGLE" | "GROUP" | null,
-    handedness: b.handedness as "RH" | "LH" | null,
-    capacity: b.capacity,
-  }));
+  const data = await getLocationWithBays(slug);
+  return data.bays;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST: Create new location — DEFAULT TIMEZONE = NEW YORK
+// POST: Create new location
 // ─────────────────────────────────────────────────────────────────────────────
-export async function createLocation({
-  name,
-  slug,
-}: {
-  name: string;
-  slug: string;
-}): Promise<LocationListItem> {
-  const cleanName = name.trim();
-  const cleanSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+export async function createLocation(input: CreateLocationInput): Promise<LocationListItem> {
+  const cleanName = input.name.trim();
+  const cleanSlug = input.slug
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 
   if (!cleanName || !cleanSlug) throw new Error("Invalid name or slug");
 
-  const exists = await getPrisma().location.findUnique({ where: { slug: cleanSlug } });
+  const exists = await getPrisma().location.findUnique({
+    where: { slug: cleanSlug },
+  });
   if (exists) throw new Error("Slug already exists");
 
   return await getPrisma().$transaction(async (tx) => {
@@ -144,6 +182,8 @@ export async function createLocation({
         bookingNote: "",
         hours: {},
         timezone: "America/New_York",
+        minBookingMinutes: 60,
+        maxBookingMinutes: 120,
       },
       select: { id: true, name: true, slug: true },
     });
@@ -178,27 +218,13 @@ export async function createLocation({
       ],
     });
 
-    return { ...loc, disabled: false };
+    return {
+      id: loc.id,
+      name: loc.name,
+      slug: loc.slug,
+      disabled: false,
+    };
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET: Single location by slug (admin — no auth check here)
-// ─────────────────────────────────────────────────────────────────────────────
-export async function getAdminLocationBySlug(slug: string): Promise<LocationListItem & { name: string }> {
-  const location = await getPrisma().location.findUnique({
-    where: { slug },
-    select: { id: true, slug: true, name: true, disabled: true },
-  });
-
-  if (!location) throw new Error("Location not found");
-
-  return {
-    id: location.id,
-    slug: location.slug,
-    name: location.name,
-    disabled: location.disabled ?? false,
-  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,17 +236,17 @@ export async function updateLocationDisabled({
 }: {
   slug: string;
   disabled: boolean;
-}): Promise<LocationListItem & { name: string }> {
+}): Promise<LocationListItem> {
   const location = await getPrisma().location.update({
     where: { slug },
     data: { disabled },
-    select: { id: true, slug: true, name: true, disabled: true },
+    select: { id: true, name: true, slug: true, disabled: true },
   });
 
   return {
     id: location.id,
-    slug: location.slug,
     name: location.name,
+    slug: location.slug,
     disabled: location.disabled ?? false,
   };
 }

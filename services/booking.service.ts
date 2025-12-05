@@ -236,9 +236,11 @@ export type AdminUpdateBookingInput = {
   phone?: string | null;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN-SAFE UPDATE (uses same availability logic)
+// ─────────────────────────────────────────────────────────────────────────────
 export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   const { bookingId, startLocal, endLocal, bayId, firstName, lastName, email, phone } = input;
-
   const booking = await getPrisma().booking.findUnique({
     where: { id: bookingId },
     include: {
@@ -249,25 +251,20 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   });
   if (!booking) throw new Error("Booking not found");
   if (booking.canceledAt) throw new Error("Cannot update canceled booking");
-
   const location = booking.Location;
   const timezone = location.timezone;
-
   let startUTC = booking.start;
   let endUTC = booking.end;
   let finalBayNumber = booking.bayNumber;
-
   if (startLocal && endLocal) {
-    const localStart = new Date(startLocal.replace(/Z$/i, "").replace(/\.\d+$/, ""));
-    const localEnd = new Date(endLocal.replace(/Z$/i, "").replace(/\.\d+$/, ""));
+    const localStart = new Date(startLocal.replace(/Z$$ /i, "").replace(/\.\d+ $$/, ""));
+    const localEnd = new Date(endLocal.replace(/Z$$ /i, "").replace(/\.\d+ $$/, ""));
     if (isNaN(localStart.getTime()) || isNaN(localEnd.getTime()))
       throw new Error("Invalid date format");
     if (localEnd <= localStart) throw new Error("End must be after start");
-
     startUTC = fromZonedTime(localStart, timezone);
     endUTC = fromZonedTime(localEnd, timezone);
   }
-
   if (bayId) {
     const bay = await getPrisma().bay.findUnique({
       where: { id: bayId },
@@ -276,7 +273,6 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
     if (!bay || bay.locationId !== location.id) throw new Error("Invalid bay");
     finalBayNumber = bay.number!;
   }
-
   // Use centralized availability check if time or bay changed
   if (startUTC !== booking.start || endUTC !== booking.end || finalBayNumber !== booking.bayNumber) {
     const avail = await getAvailableBaysAtExactWindow({
@@ -285,13 +281,12 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
       endUTC,
       kind: "GROUP", // admin can move to any bay
       hand: undefined,
+      ignoreBookingId: bookingId,
     });
-
     if (!avail.freeBayNumbers.includes(finalBayNumber)) {
       throw new Error("Bay not available at this time");
     }
   }
-
   // Final overlap check (excluding self)
   const conflict = await getPrisma().booking.findFirst({
     where: {
@@ -305,7 +300,6 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   if (conflict) {
     throw new Error("Updated time overlaps with existing booking");
   }
-
   return await getPrisma().booking.update({
     where: { id: bookingId },
     data: {
