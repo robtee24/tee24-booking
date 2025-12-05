@@ -3,7 +3,7 @@
 
 import React from "react";
 import { Modal } from "@/components/ui/Modal";
-import type { Bay } from "@/types/admin-booking";
+import type { Bay } from "@/types/bay";
 
 type EditBookingModalProps = {
   open: boolean;
