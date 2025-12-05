@@ -1,5 +1,6 @@
 // app/admin/locations/[slug]/bookings/components/BayColumn.tsx
 "use client";
+
 import type { Bay } from "@/types/bay";
 import type { AdminBooking } from "@/types/admin-booking";
 import { BookingBlock } from "./BookingBlock";
@@ -54,8 +55,8 @@ export function BayColumn({
       }}
       className={`
         relative border-l transition-all duration-300
-        ${isDisabled 
-          ? "bg-gray-100 border-gray-300" 
+        ${isDisabled
+          ? "bg-gray-100 border-gray-300"
           : "bg-white border-gray-200"
         }
       `}
@@ -69,7 +70,7 @@ export function BayColumn({
         onBayDrop(e, bay);
       }}
     >
-      {/* Subtle diagonal stripes only when disabled */}
+      {/* Subtle diagonal stripes when bay is disabled */}
       {isDisabled && (
         <div
           className="absolute inset-0 opacity-30 pointer-events-none"
@@ -85,7 +86,7 @@ export function BayColumn({
         />
       )}
 
-      {/* Grid lines — faded when disabled */}
+      {/* Horizontal grid lines */}
       <GridLines
         timeStep={timeStep}
         pxPerMin={pxPerMin}
@@ -98,6 +99,7 @@ export function BayColumn({
         {bookings.map((booking, idx) => {
           const position = getBookingPosition(booking);
           if (!position) return null;
+
           const { top, height } = position;
 
           return (
@@ -108,13 +110,14 @@ export function BayColumn({
               top={top}
               height={height}
               palette={palette[idx % palette.length]}
+              locationTimezone={locationTimezone}
               onDragStart={onBookingDragStart}
               onClick={() => onBookingClick(booking, bay)}
               onDelete={() => onDeleteBooking(booking.id)}
             />
           );
         })}
-      </div>      
+      </div>
     </div>
   );
 }

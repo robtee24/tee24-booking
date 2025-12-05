@@ -1,5 +1,8 @@
 // app/admin/locations/[slug]/bookings/components/BookingBlock.tsx
+"use client";
+
 import type { AdminBooking } from "@/types/admin-booking";
+import type { Bay } from "@/types/bay";
 import { DeleteButton } from "./DeleteButton";
 import { formatTimeRange } from "@/lib/time-utils";
 
@@ -9,6 +12,7 @@ type BookingBlockProps = {
   top: number;
   height: number;
   palette: string[];
+  locationTimezone: string;
   onDragStart: (e: React.DragEvent, booking: AdminBooking) => void;
   onClick: () => void;
   onDelete: () => void;
@@ -20,20 +24,22 @@ export function BookingBlock({
   top,
   height,
   palette,
+  locationTimezone,
   onDragStart,
   onClick,
   onDelete,
 }: BookingBlockProps) {
   const [bg, br, tx] = palette;
 
-  const timeLabel = formatTimeRange(bk.start, bk.end, bay.timezone);
+  // Use the location timezone
+  const timeLabel = formatTimeRange(bk.start, bk.end, locationTimezone);
 
   return (
     <div
       className={`absolute left-0 right-0 border-y shadow-sm px-2 py-1 cursor-grab active:cursor-grabbing group ${bg} ${br} ${tx} transition-all hover:z-10`}
       style={{
-        top,
-        height,
+        top: `${top}px`,
+        height: `${height}px`,
         minHeight: Math.max(height, 28),
       }}
       draggable
@@ -44,7 +50,13 @@ export function BookingBlock({
         <div className="text-[11px] leading-none font-medium truncate">
           {bk.firstName} {bk.lastName} — {timeLabel}
         </div>
-        <DeleteButton onClick={(e) => { e.stopPropagation(); onDelete(); }} />
+
+        <DeleteButton
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        />
       </div>
     </div>
   );
