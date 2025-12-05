@@ -5,6 +5,7 @@ import type {
   PublicLocationInfo,
   AdminLocationDetails,
   CreateLocationInput,
+  LocationHours,
 } from "@/types/location";
 import type { BayInfo } from "@/types/bay";
 
@@ -32,7 +33,6 @@ async function getLocationWithBays(slug: string) {
       maxConsecutiveBookingsPerGuest: true,
       createdAt: true,
       updatedAt: true,
-
       bays: {
         select: {
           id: true,
@@ -42,7 +42,6 @@ async function getLocationWithBays(slug: string) {
           handedness: true,
           capacity: true,
           disabled: true,
-          
         },
         orderBy: { number: "asc" },
       },
@@ -59,7 +58,7 @@ async function getLocationWithBays(slug: string) {
     bookingNote: location.bookingNote ?? "",
     passAccessUrl: location.passAccessUrl ?? null,
     open24Hours: location.open24Hours,
-    hours: location.hours ?? {},
+    hours: (location.hours ?? {}) as LocationHours,
     timezone: location.timezone ?? "America/New_York",
     minBookingMinutes: location.minBookingMinutes ?? 60,
     maxBookingMinutes: location.maxBookingMinutes ?? 120,
@@ -125,13 +124,7 @@ export async function getAdminLocations({
 export async function getPublicLocationInfo(slug: string): Promise<PublicLocationInfo> {
   const data = await getLocationWithBays(slug);
 
-  const {
-    disabled,
-    createdAt,
-    updatedAt,
-    bays,
-    ...publicFields
-  } = data;
+  const { disabled, createdAt, updatedAt, bays, ...publicFields } = data;
 
   return {
     ...publicFields,
@@ -146,7 +139,6 @@ export async function getAdminLocationDetails(slug: string): Promise<AdminLocati
   const data = await getLocationWithBays(slug);
   return {
     ...data,
-    // data already contains everything needed
   };
 }
 
@@ -183,7 +175,7 @@ export async function createLocation(input: CreateLocationInput): Promise<Locati
         name: cleanName,
         slug: cleanSlug,
         bookingNote: "",
-        hours: {},
+        hours: {} satisfies LocationHours, // explicit empty object
         timezone: "America/New_York",
         minBookingMinutes: 60,
         maxBookingMinutes: 120,
