@@ -1,8 +1,8 @@
 // app/admin/locations/[slug]/bookings/components/BookingHeader.tsx
 "use client";
-
-import React from "react";
+import React from "react';
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type BookingHeaderProps = {
   date: Date;
@@ -10,6 +10,7 @@ type BookingHeaderProps = {
   onNext: () => void;
   onToday: () => void;
   onAddBooking: () => void;
+  disabled?: boolean;
 };
 
 export function BookingHeader({
@@ -18,6 +19,7 @@ export function BookingHeader({
   onNext,
   onToday,
   onAddBooking,
+  disabled = false,
 }: BookingHeaderProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
@@ -25,7 +27,13 @@ export function BookingHeader({
       <div className="flex items-center gap-2">
         <button
           onClick={onPrev}
-          className="rounded-xl border p-2 hover:bg-gray-50 transition"
+          disabled={disabled}
+          className={cn(
+            "rounded-xl border p-2 transition",
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "hover:bg-gray-50"
+          )}
           aria-label="Previous day"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -42,7 +50,13 @@ export function BookingHeader({
 
         <button
           onClick={onNext}
-          className="rounded-xl border p-2 hover:bg-gray-50 transition"
+          disabled={disabled}
+          className={cn(
+            "rounded-xl border p-2 transition",
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "hover:bg-gray-50"
+          )}
           aria-label="Next day"
         >
           <ChevronRight className="h-5 w-5" />
@@ -50,7 +64,13 @@ export function BookingHeader({
 
         <button
           onClick={onToday}
-          className="rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition"
+          disabled={disabled}
+          className={cn(
+            "rounded-xl border px-4 py-2.5 text-sm font-medium transition",
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "hover:bg-gray-50"
+          )}
         >
           Today
         </button>
@@ -59,7 +79,13 @@ export function BookingHeader({
       {/* Add Booking Button */}
       <button
         onClick={onAddBooking}
-        className="inline-flex items-center gap-2 rounded-xl border bg-white px-5 py-2.5 font-medium hover:bg-gray-50 transition shadow-sm"
+        disabled={disabled}
+        className={cn(
+          "inline-flex items-center gap-2 rounded-xl border bg-white px-5 py-2.5 font-medium shadow-sm transition",
+          disabled
+            ? "cursor-not-allowed opacity-50"
+            : "hover:bg-gray-50"
+        )}
       >
         <Plus className="h-4 w-4" />
         Add Booking
