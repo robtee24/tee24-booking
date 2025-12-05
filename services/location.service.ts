@@ -79,6 +79,7 @@ async function getLocationWithBays(slug: string) {
     kind: b.kind,
     handedness: b.handedness,
     capacity: b.capacity,
+    disabled: b.disabled ?? false,
   }));
 
   return { ...base, bayNumbers, bays };
