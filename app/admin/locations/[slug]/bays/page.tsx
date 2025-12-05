@@ -1,4 +1,7 @@
+// app/admin/locations/[slug]/bays/page.tsx
+
 'use client';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import type { BayInfo } from '@/types/bay';
@@ -31,13 +34,17 @@ function getOrigin() {
   return process.env.NEXT_PUBLIC_BASE_URL || '';
 }
 
-async function copyToClipboard(text: string) {
+async function copyToClipboard(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
       return true;
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
+
+  // Fallback for older browsers / non-secure contexts
   try {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -45,9 +52,9 @@ async function copyToClipboard(text: string) {
     ta.style.left = '-9999px';
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    const success = document.execCommand('copy');
     document.body.removeChild(ta);
-    return true;
+    return success;
   } catch {
     return false;
   }
@@ -83,7 +90,6 @@ export default function BaysAdminPage() {
     disabled: boolean;
   };
   const [editing, setEditing] = useState<Record<string, EditForm>>({});
-
   const [qrBay, setQrBay] = useState<{ id: string; url: string; label: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -143,7 +149,11 @@ export default function BaysAdminPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json())?.error || 'Create failed');
-      setNewNumber(''); setNewName(''); setNewKind('GROUP'); setNewCapacity('4'); setNewDisabled(false);
+      setNewNumber('');
+      setNewName('');
+      setNewKind('GROUP');
+      setNewCapacity('4');
+      setNewDisabled(false);
       await load();
     } catch (e: any) {
       alert(e?.message || 'Create failed');
@@ -258,7 +268,10 @@ export default function BaysAdminPage() {
             </a>
             <button
               className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50"
-              onClick={async () => copyToClipboard(scheduleUrl) && showCopied('schedule')}
+              onClick={async () => {
+                await copyToClipboard(scheduleUrl);
+                showCopied('schedule');
+              }}
             >
               {copiedKey === 'schedule' ? 'Copied!' : 'Copy'}
             </button>
@@ -272,15 +285,32 @@ export default function BaysAdminPage() {
         <form onSubmit={handleAdd} className="grid grid-cols-1 gap-4 sm:grid-cols-6 sm:items-end">
           <div>
             <label className="block text-xs font-medium">Bay #</label>
-            <input type="number" min={1} required className="mt-1 w-full rounded border px-2 py-2" value={newNumber} onChange={(e) => setNewNumber(onlyDigits(e.target.value))} />
+            <input
+              type="number"
+              min={1}
+              required
+              className="mt-1 w-full rounded border px-2 py-2"
+              value={newNumber}
+              onChange={(e) => setNewNumber(onlyDigits(e.target.value))}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium">Display Name</label>
-            <input type="text" className="mt-1 w-full rounded border px-2 py-2" value={newName} onChange={(e) => setNewName(onlyDigits(e.target.value))} placeholder="e.g. 4" />
+            <input
+              type="text"
+              className="mt-1 w-full rounded border px-2 py-2"
+              value={newName}
+              onChange={(e) => setNewName(onlyDigits(e.target.value))}
+              placeholder="e.g. 4"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium">Kind</label>
-            <select className="mt-1 w-full rounded border px-2 py-2" value={newKind} onChange={(e) => setNewKind(e.target.value as any)}>
+            <select
+              className="mt-1 w-full rounded border px-2 py-2"
+              value={newKind}
+              onChange={(e) => setNewKind(e.target.value as any)}
+            >
               <option value="SINGLE">SINGLE</option>
               <option value="GROUP">GROUP</option>
             </select>
@@ -288,7 +318,11 @@ export default function BaysAdminPage() {
           {newKind === 'SINGLE' ? (
             <div>
               <label className="block text-xs font-medium">Handedness</label>
-              <select className="mt-1 w-full rounded border px-2 py-2" value={newHandedness} onChange={(e) => setNewHandedness(e.target.value as any)}>
+              <select
+                className="mt-1 w-full rounded border px-2 py-2"
+                value={newHandedness}
+                onChange={(e) => setNewHandedness(e.target.value as any)}
+              >
                 <option value="RH">RH</option>
                 <option value="LH">LH</option>
               </select>
@@ -296,17 +330,31 @@ export default function BaysAdminPage() {
           ) : (
             <div>
               <label className="block text-xs font-medium">Capacity</label>
-              <input type="number" min={2} className="mt-1 w-full rounded border px-2 py-2" value={newCapacity} onChange={(e) => setNewCapacity(onlyDigits(e.target.value))} />
+              <input
+                type="number"
+                min={2}
+                className="mt-1 w-full rounded border px-2 py-2"
+                value={newCapacity}
+                onChange={(e) => setNewCapacity(onlyDigits(e.target.value))}
+              />
             </div>
           )}
           <div className="flex items-center">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={newDisabled} onChange={(e) => setNewDisabled(e.target.checked)} className="h-4 w-4 rounded" />
+              <input
+                type="checkbox"
+                checked={newDisabled}
+                onChange={(e) => setNewDisabled(e.target.checked)}
+                className="h-4 w-4 rounded"
+              />
               <span className="text-sm">Start disabled</span>
             </label>
           </div>
           <div className="sm:col-span-6">
-            <button type="submit" className="rounded bg-black px-5 py-2.5 text-sm font-medium text-white hover:opacity-90">
+            <button
+              type="submit"
+              className="rounded bg-black px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
+            >
               Add Bay
             </button>
           </div>
@@ -323,7 +371,9 @@ export default function BaysAdminPage() {
         </div>
 
         {state === 'loading' && <p className="text-sm text-gray-600">Loading…</p>}
-        {state === 'error' && <p className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">{errorMsg}</p>}
+        {state === 'error' && (
+          <p className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">{errorMsg}</p>
+        )}
         {state === 'ready' && bays.length === 0 && <p className="text-sm text-gray-600">No bays yet.</p>}
 
         {state === 'ready' && bays.length > 0 && (
@@ -365,34 +415,66 @@ export default function BaysAdminPage() {
                         {/* Number */}
                         <td className="p-2 font-mono">
                           {isEditing ? (
-                            <input type="number" min={1} className="w-16 rounded border px-2 py-1" value={form.number} onChange={(e) => setEditing((p) => ({ ...p, [b.id]: { ...p[b.id], number: onlyDigits(e.target.value) } }))} />
+                            <input
+                              type="number"
+                              min={1}
+                              className="w-16 rounded border px-2 py-1"
+                              value={form.number}
+                              onChange={(e) =>
+                                setEditing((p) => ({
+                                  ...p,
+                                  [b.id]: { ...p[b.id], number: onlyDigits(e.target.value) },
+                                }))
+                              }
+                            />
                           ) : (
                             b.number
                           )}
                         </td>
+
                         {/* Display Name */}
                         <td className="p-2 font-mono">
                           {isEditing ? (
-                            <input type="text" className="w-24 rounded border px-2 py-1" value={form.name} onChange={(e) => setEditing((p) => ({ ...p, [b.id]: { ...p[b.id], name: onlyDigits(e.target.value) } }))} />
+                            <input
+                              type="text"
+                              className="w-24 rounded border px-2 py-1"
+                              value={form.name}
+                              onChange={(e) =>
+                                setEditing((p) => ({
+                                  ...p,
+                                  [b.id]: { ...p[b.id], name: onlyDigits(e.target.value) },
+                                }))
+                              }
+                            />
                           ) : (
                             b.name ?? '—'
                           )}
                         </td>
+
                         {/* Kind */}
                         <td className="p-2">
                           {isEditing ? (
-                            <select className="w-full rounded border px-2 py-1" value={form.kind} onChange={(e) => {
-                              const k = e.target.value as 'SINGLE' | 'GROUP';
-                              setEditing((p) => ({
-                                ...p,
-                                [b.id]: {
-                                  ...p[b.id],
-                                  kind: k,
-                                  handedness: k === 'SINGLE' ? (p[b.id].handedness || 'RH') : '',
-                                  capacity: k === 'SINGLE' ? '1' : (Number(p[b.id].capacity) < 2 ? '4' : p[b.id].capacity),
-                                },
-                              }));
-                            }}>
+                            <select
+                              className="w-full rounded border px-2 py-1"
+                              value={form.kind}
+                              onChange={(e) => {
+                                const k = e.target.value as 'SINGLE' | 'GROUP';
+                                setEditing((p) => ({
+                                  ...p,
+                                  [b.id]: {
+                                    ...p[b.id],
+                                    kind: k,
+                                    handedness: k === 'SINGLE' ? (p[b.id].handedness || 'RH') : '',
+                                    capacity:
+                                      k === 'SINGLE'
+                                        ? '1'
+                                        : Number(p[b.id].capacity) < 2
+                                          ? '4'
+                                          : p[b.id].capacity,
+                                  },
+                                }));
+                              }}
+                            >
                               <option value="SINGLE">SINGLE</option>
                               <option value="GROUP">GROUP</option>
                             </select>
@@ -400,29 +482,58 @@ export default function BaysAdminPage() {
                             b.kind
                           )}
                         </td>
+
                         {/* Handedness */}
                         <td className="p-2 text-center">
-                          {b.kind === 'GROUP' ? '—' : isEditing ? (
+                          {b.kind === 'GROUP' ? (
+                            '—'
+                          ) : isEditing ? (
                             form.kind === 'SINGLE' ? (
-                              <select className="w-20 rounded border px-2 py-1" value={form.handedness} onChange={(e) => setEditing((p) => ({ ...p, [b.id]: { ...p[b.id], handedness: e.target.value as 'RH' | 'LH' } }))}>
+                              <select
+                                className="w-20 rounded border px-2 py-1"
+                                value={form.handedness}
+                                onChange={(e) =>
+                                  setEditing((p) => ({
+                                    ...p,
+                                    [b.id]: { ...p[b.id], handedness: e.target.value as 'RH' | 'LH' },
+                                  }))
+                                }
+                              >
                                 <option value="RH">RH</option>
                                 <option value="LH">LH</option>
                               </select>
-                            ) : '—'
+                            ) : (
+                              '—'
+                            )
                           ) : (
                             b.handedness ?? '—'
                           )}
                         </td>
+
                         {/* Capacity */}
                         <td className="p-2 text-center">
                           {isEditing ? (
-                            form.kind === 'SINGLE' ? '1' : (
-                              <input type="number" min={2} className="w-16 rounded border px-2 py-1" value={form.capacity} onChange={(e) => setEditing((p) => ({ ...p, [b.id]: { ...p[b.id], capacity: onlyDigits(e.target.value) } }))} />
+                            form.kind === 'SINGLE' ? (
+                              '1'
+                            ) : (
+                              <input
+                                type="number"
+                                min={2}
+                                className="w-16 rounded border px-2 py-1"
+                                value={form.capacity}
+                                onChange={(e) =>
+                                  setEditing((p) => ({
+                                    ...p,
+                                    [b.id]: { ...p[b.id], capacity: onlyDigits(e.target.value) },
+                                  }))
+                                }
+                              />
                             )
                           ) : (
                             b.capacity
                           )}
                         </td>
+
                         {/* Status / Disable Toggle */}
                         <td className="p-2">
                           {isEditing ? (
@@ -430,54 +541,87 @@ export default function BaysAdminPage() {
                               <input
                                 type="checkbox"
                                 checked={form?.disabled ?? false}
-                                onChange={(e) => setEditing((p) => ({ ...p, [b.id]: { ...p[b.id], disabled: e.target.checked } }))}
+                                onChange={(e) =>
+                                  setEditing((p) => ({
+                                    ...p,
+                                    [b.id]: { ...p[b.id], disabled: e.target.checked },
+                                  }))
+                                }
                                 className="h-4 w-4 rounded"
                               />
                               <span className="text-sm">Disabled</span>
                             </label>
                           ) : (
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${b.disabled ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                b.disabled ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                              }`}
+                            >
                               {b.disabled ? 'Disabled' : 'Active'}
                             </span>
                           )}
                         </td>
+
                         {/* Public Link */}
                         <td className="p-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <a href={url} target="_blank" rel="noreferrer" className="max-w-xs truncate text-blue-600 underline">
                               {url}
                             </a>
-                            <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={async () => copyToClipboard(url) && showCopied(copyKey)}>
+                            <button
+                              className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                              onClick={async () => {
+                                await copyToClipboard(url);
+                                showCopied(copyKey);
+                              }}
+                            >
                               {copiedKey === copyKey ? 'Copied!' : 'Copy'}
                             </button>
-                            <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => setQrBay({ id: b.id, url, label })}>
+                            <button
+                              className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                              onClick={() => setQrBay({ id: b.id, url, label })}
+                            >
                               QR
                             </button>
                           </div>
                         </td>
+
                         {/* Actions */}
                         <td className="p-2 text-right">
                           {!isEditing ? (
                             <>
-                              <button className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50 mr-1" onClick={() => beginEdit(b)}>
+                              <button
+                                className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50 mr-1"
+                                onClick={() => beginEdit(b)}
+                              >
                                 Edit
                               </button>
-                              <button className="rounded border border-red-400 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50" onClick={() => deleteBay(b)}>
+                              <button
+                                className="rounded border border-red-400 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                                onClick={() => deleteBay(b)}
+                              >
                                 Delete
                               </button>
                             </>
                           ) : (
                             <>
-                              <button className="rounded bg-black px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 mr-1" onClick={() => saveEdit(b)}>
+                              <button
+                                className="rounded bg-black px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 mr-1"
+                                onClick={() => saveEdit(b)}
+                              >
                                 Save
                               </button>
-                              <button className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50" onClick={() => cancelEdit(b.id)}>
+                              <button
+                                className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50"
+                                onClick={() => cancelEdit(b.id)}
+                              >
                                 Cancel
                               </button>
                             </>
                           )}
                         </td>
                       </tr>
+
                       {/* ID Row */}
                       <tr className="border-b bg-gray-50/30 text-xs">
                         <td colSpan={8} className="p-2 text-gray-600">
@@ -507,7 +651,13 @@ export default function BaysAdminPage() {
               />
               <div className="w-full truncate text-center text-xs text-gray-600">{qrBay.url}</div>
               <div className="flex gap-2">
-                <button className="rounded border px-4 py-2 text-sm hover:bg-gray-50" onClick={async () => copyToClipboard(qrBay.url) && showCopied('qr')}>
+                <button
+                  className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+                  onClick={async () => {
+                    await copyToClipboard(qrBay.url);
+                    showCopied('qr');
+                  }}
+                >
                   {copiedKey === 'qr' ? 'Copied!' : 'Copy'}
                 </button>
                 <button
