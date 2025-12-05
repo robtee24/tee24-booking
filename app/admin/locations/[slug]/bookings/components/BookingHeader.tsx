@@ -1,6 +1,6 @@
 // app/admin/locations/[slug]/bookings/components/BookingHeader.tsx
 "use client";
-import React from "react';
+import React from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
