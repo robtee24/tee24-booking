@@ -1,7 +1,7 @@
 // app/admin/locations/[slug]/bookings/components/CreateBookingModal.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import type { Bay } from "@/types/bay";
 
@@ -29,7 +29,7 @@ type CreateBookingModalProps = {
   timeOptions: TimeOption[];
   onUpdateDraft: (updates: Partial<CreateBookingDraft>) => void;
   onCreate: () => Promise<void>;
-  getBlockedSlots: (bayId: string) => { startMins: number; endMins: number }[];
+  getBlockedSlots: (bayId: string, dateOnly: string) => { startMins: number; endMins: number }[];
   isSlotBlocked: (startMins: number, durationMins: number, blockedSlots: any[]) => boolean;
 };
 
@@ -47,7 +47,31 @@ export function CreateBookingModal({
 }: CreateBookingModalProps) {
   if (!draft) return null;
 
-  const blockedSlots = getBlockedSlots(draft.bayId);
+  // Local state for the selected date in the modal
+  const [selectedDateOnly, setSelectedDateOnly] = useState(draft.dateOnly);
+
+  // Sync external draft.dateOnly → internal state (e.g. when modal re-opens)
+  useEffect(() => {
+    setSelectedDateOnly(draft.dateOnly);
+  }, [draft.dateOnly]);
+
+  // When user changes the date → update draft with new date + recalculate start/end
+  const handleDateChange = (newDate: string) => {
+    setSelectedDateOnly(newDate);
+
+    const newStartLocal = `${newDate}T${draft.startHHMM}:00`;
+    const newEndLocal = addMinutesToLocalISO(newStartLocal, draft.duration);
+
+    onUpdateDraft({
+      dateOnly: newDate,
+      startLocal: newStartLocal,
+      endLocal: newEndLocal,
+    });
+  };
+
+  // Recalculate blocked slots for the currently selected date + bay
+  const blockedSlots = getBlockedSlots(draft.bayId, selectedDateOnly);
+
   const availableTimeOptions = timeOptions.filter((option) => {
     const [h, m] = option.value.split(":").map(Number);
     const startMins = h * 60 + m;
@@ -55,38 +79,47 @@ export function CreateBookingModal({
   });
 
   const handleStartTimeChange = (startHHMM: string) => {
-    const startLocal = `${draft.dateOnly}T${startHHMM}:00`;
+    const startLocal = `${selectedDateOnly}T${startHHMM}:00`;
     const endLocal = addMinutesToLocalISO(startLocal, draft.duration);
     onUpdateDraft({ startHHMM, startLocal, endLocal });
   };
 
   const handleDurationChange = (minutes: number) => {
-    const normalized = Math.max(timeStep, minutes);
+    const normalized = Math.max(timeStep, minutes || timeStep);
     const endLocal = addMinutesToLocalISO(draft.startLocal, normalized);
     onUpdateDraft({ duration: normalized, endLocal });
   };
 
   function addMinutesToLocalISO(localISO: string, minutes: number): string {
-    // Ensure we treat the input as local time as local, not UTC
     const localDateStr = localISO.replace("T", " ").slice(0, 16);
     const date = new Date(localDateStr);
     date.setMinutes(date.getMinutes() + minutes);
-
-    // Format back to YYYY-MM-DDTHH:mm:00
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, "0");
     const dd = String(date.getDate()).padStart(2, "0");
     const hh = String(date.getHours()).padStart(2, "0");
     const mmm = String(date.getMinutes()).padStart(2, "0");
-
     return `${yyyy}-${mm}-${dd}T${hh}:${mmm}:00`;
   }
 
   return (
     <Modal open={open} onClose={onClose} title="Create Booking">
       <div className="space-y-5">
-        {/* Bay + Start Time */}
+        {/* Date + Bay */}
         <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Date <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="date"
+              value={selectedDateOnly}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              required
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Bay
@@ -103,7 +136,10 @@ export function CreateBookingModal({
               ))}
             </select>
           </div>
+        </div>
 
+        {/* Start Time + Duration */}
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Start Time
@@ -111,7 +147,7 @@ export function CreateBookingModal({
             <select
               value={draft.startHHMM}
               onChange={(e) => handleStartTimeChange(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="w-full rounded-lg border px-2 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
             >
               {availableTimeOptions.length === 0 ? (
                 <option disabled>No available slots</option>
@@ -129,21 +165,20 @@ export function CreateBookingModal({
               </p>
             )}
           </div>
-        </div>
 
-        {/* Duration */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Duration (minutes)
-          </label>
-          <input
-            type="number"
-            min={timeStep}
-            step={timeStep}
-            value={draft.duration}
-            onChange={(e) => handleDurationChange(Number(e.target.value) || timeStep)}
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Duration (minutes)
+            </label>
+            <input
+              type="number"
+              min={timeStep}
+              step={timeStep}
+              value={draft.duration}
+              onChange={(e) => handleDurationChange(Number(e.target.value))}
+              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+            />
+          </div>
         </div>
 
         {/* Customer Info */}

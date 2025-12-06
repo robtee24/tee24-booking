@@ -9,16 +9,13 @@ import React, {
   useState,
 } from "react";
 import { useParams } from "next/navigation";
-
 import type { AdminDayView, AdminBooking } from "@/types/admin-booking";
 import type { Bay } from "@/types/bay";
-
 import { EditBookingModal } from "./components/EditBookingModal";
 import { CreateBookingModal } from "./components/CreateBookingModal";
 import { BookingHeader } from "./components/BookingHeader";
 import { BookingGrid } from "./components/BookingGrid";
 import { BayPagination } from "./components/BayPagination";
-
 import { cn } from "@/lib/utils";
 
 // ──────────────────────────────────────────────────────────────
@@ -49,18 +46,9 @@ function buildLocalISO(dateOnly: string, hhmm: string): string {
 function addMinutesToLocalISO(localISO: string, minutes: number): string {
   const [datePart, timePart] = localISO.split("T");
   const [h, m] = timePart.split(":").map(Number);
-  const base = new Date(
-    `${datePart}T${h.toString().padStart(2, "0")}:${m
-      .toString()
-      .padStart(2, "0")}:00`
-  );
+  const base = new Date(`${datePart}T${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`);
   const result = new Date(base.getTime() + minutes * 60 * 1000);
-  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(result.getDate()).padStart(2, "0")}T${String(
-    result.getHours()
-  ).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}T${String(result.getHours()).padStart(2, "0")}:${String(result.getMinutes()).padStart(2, "0")}:00`;
 }
 
 const DRAG_KEY = "admin-booking-drag";
@@ -76,13 +64,12 @@ export default function LocationBookingsPage() {
   const [data, setData] = useState<AdminDayView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
 
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(0);
   const baysPerPage = 10;
-
   const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -107,7 +94,6 @@ export default function LocationBookingsPage() {
       }
       const json: AdminDayView = await res.json();
       setData(json);
-      // Reset to first page when data changes (new day or location)
       setCurrentPage(0);
     } catch (e: any) {
       setError(e.message || "Failed to load data");
@@ -155,9 +141,41 @@ export default function LocationBookingsPage() {
     return res.status === 204 ? null : res.json();
   };
 
+  // ───── Blocked Slots Helper ─────
+  const getBlockedSlots = useCallback(
+    (bayId: string, dateOnly: string) => {
+      if (!bookings) return [];
+      return bookings
+        .filter((b) => {
+          const bookingDate = fmtDate(new Date(b.start));
+          return b.bayId === bayId && bookingDate === dateOnly;
+        })
+        .map((b) => {
+          const start = new Date(b.start);
+          const end = new Date(b.end);
+          const startMins = start.getHours() * 60 + start.getMinutes();
+          const endMins = end.getHours() * 60 + end.getMinutes();
+          return { startMins, endMins };
+        });
+    },
+    [bookings]
+  );
+
+  const isSlotBlocked = (
+    startMins: number,
+    durationMins: number,
+    blockedSlots: { startMins: number; endMins: number }[]
+  ) => {
+    const endMins = startMins + durationMins;
+    return blockedSlots.some(
+      (slot) => startMins < slot.endMins && endMins > slot.startMins
+    );
+  };
+
   // ───── CRUD Handlers ─────
   const createBooking = async () => {
     if (!creatingDraft || !creatingDraft.firstName.trim()) return;
+
     const bayNumber = bays.find((b) => b.id === creatingDraft.bayId)?.number;
     if (!bayNumber) return alert("Invalid bay");
 
@@ -227,10 +245,7 @@ export default function LocationBookingsPage() {
     const selectedDate = fmtDate(date);
     const now = new Date();
     const roundedMinutes = Math.floor(now.getMinutes() / timeStep) * timeStep;
-    const fallbackHHMM = `${String(now.getHours()).padStart(
-      2,
-      "0"
-    )}:${String(roundedMinutes).padStart(2, "0")}`;
+    const fallbackHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(roundedMinutes).padStart(2, "0")}`;
     const startLocal = buildLocalISO(selectedDate, fallbackHHMM);
     const endLocal = addMinutesToLocalISO(startLocal, timeStep);
 
@@ -250,8 +265,11 @@ export default function LocationBookingsPage() {
 
   const saveEdit = async () => {
     if (!editing) return;
+
+    // Use the updated dateOnly from editing state (can be different from current view!)
     const startLocal = buildLocalISO(editing.dateOnly, editing.startHHMM);
     const endLocal = addMinutesToLocalISO(startLocal, editing.duration);
+
     try {
       await updateBooking(editing.id, {
         bayId: editing.bayId,
@@ -295,9 +313,9 @@ export default function LocationBookingsPage() {
     const payload = e.dataTransfer.getData(DRAG_KEY);
     if (!payload) return;
     const { id, durationMinutes } = JSON.parse(payload);
+
     const col = bayRefs.current[bay.id];
     if (!col) return;
-
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const minutesRaw = Math.round(y / pxPerMin);
@@ -315,14 +333,11 @@ export default function LocationBookingsPage() {
         startLocal: newStartLocal,
         endLocal: newEndLocal,
       });
-    } catch {
-      // error already alerted
-    }
+    } catch {}
   };
 
   const onBookingClick = (bk: AdminBooking, bay: Bay) => {
     const startDateUTC = new Date(bk.start);
-
     const dateFormatter = new Intl.DateTimeFormat("en-US", {
       timeZone: locationTimezone,
       year: "numeric",
@@ -330,10 +345,8 @@ export default function LocationBookingsPage() {
       day: "2-digit",
     });
     const dateParts = dateFormatter.formatToParts(startDateUTC);
-    const year =
-      dateParts.find((p) => p.type === "year")?.value || "";
-    const month =
-      dateParts.find((p) => p.type === "month")?.value || "";
+    const year = dateParts.find((p) => p.type === "year")?.value || "";
+    const month = dateParts.find((p) => p.type === "month")?.value || "";
     const day = dateParts.find((p) => p.type === "day")?.value || "";
     const dateOnly = `${year}-${month}-${day}`;
 
@@ -344,19 +357,13 @@ export default function LocationBookingsPage() {
       hour12: false,
     });
     const timeParts = timeFormatter.formatToParts(startDateUTC);
-    const hour =
-      timeParts.find((p) => p.type === "hour")?.value.padStart(2, "0") ||
-      "00";
-    const minute =
-      timeParts.find((p) => p.type === "minute")?.value.padStart(2, "0") ||
-      "00";
+    const hour = timeParts.find((p) => p.type === "hour")?.value.padStart(2, "0") || "00";
+    const minute = timeParts.find((p) => p.type === "minute")?.value.padStart(2, "0") || "00";
     const startHHMM = `${hour}:${minute}`;
 
     const duration = Math.max(
       timeStep,
-      Math.round(
-        (new Date(bk.end).getTime() - startDateUTC.getTime()) / 60000
-      )
+      Math.round((new Date(bk.end).getTime() - startDateUTC.getTime()) / 60000)
     );
 
     setEditing({
@@ -423,68 +430,65 @@ export default function LocationBookingsPage() {
 
       {!loading && !error && data && bays.length > 0 && (
         <>
-        {/* Top Pagination – sticky so it's always accessible */}
-        <div className="sticky top-0 z-10 -mt-4 mb-4 bg-gray-50 pt-4">
-          <BayPagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalBays={bays.length}
-            baysPerPage={baysPerPage}
-            onPageChange={setCurrentPage}
-          />
-        </div>
+          <div className="sticky top-0 z-10 -mt-4 mb-4 bg-gray-50 pt-4">
+            <BayPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalBays={bays.length}
+              baysPerPage={baysPerPage}
+              onPageChange={setCurrentPage}
+            />
+          </div>
 
-        <div className="space-y-6">
-          <BookingGrid
-            visibleBays={visibleBays}
-            bookings={bookings}
-            locationTimezone={locationTimezone}
-            date={date}
-            timeStep={timeStep}
-            pxPerMin={pxPerMin}
-            totalHeight={totalHeight}
-            palette={palette}
-            bayRefs={bayRefs}
-            onBookingDragStart={onBookingDragStart}
-            onBayDragOver={onBayDragOver}
-            onBayDrop={onBayDrop}
-            onBookingClick={onBookingClick}
-            onDeleteBooking={deleteBooking}
-          />
+          <div className="space-y-6">
+            <BookingGrid
+              visibleBays={visibleBays}
+              bookings={bookings}
+              locationTimezone={locationTimezone}
+              date={date}
+              timeStep={timeStep}
+              pxPerMin={pxPerMin}
+              totalHeight={totalHeight}
+              palette={palette}
+              bayRefs={bayRefs}
+              onBookingDragStart={onBookingDragStart}
+              onBayDragOver={onBayDragOver}
+              onBayDrop={onBayDrop}
+              onBookingClick={onBookingClick}
+              onDeleteBooking={deleteBooking}
+            />
 
-          <CreateBookingModal
-            open={!!creatingDraft}
-            onClose={() => setCreatingDraft(null)}
-            draft={creatingDraft}
-            bays={bays}
-            timeStep={timeStep}
-            timeOptions={timeOptions}
-            getBlockedSlots={() => []}
-            isSlotBlocked={() => false}
-            onUpdateDraft={(updates) =>
-              setCreatingDraft((prev: any) =>
-                prev ? { ...prev, ...updates } : null
-              )
-            }
-            onCreate={createBooking}
-          />
+            {/* CREATE MODAL */}
+            <CreateBookingModal
+              open={!!creatingDraft}
+              onClose={() => setCreatingDraft(null)}
+              draft={creatingDraft}
+              bays={bays}
+              timeStep={timeStep}
+              timeOptions={timeOptions}
+              getBlockedSlots={getBlockedSlots}
+              isSlotBlocked={isSlotBlocked}
+              onUpdateDraft={(updates) =>
+                setCreatingDraft((prev: any) => (prev ? { ...prev, ...updates } : null))
+              }
+              onCreate={createBooking}
+            />
 
-          <EditBookingModal
-            open={!!editing}
-            onClose={() => setEditing(null)}
-            editing={editing}
-            bays={bays}
-            timeStep={timeStep}
-            timeOptions={timeOptions}
-            onSave={saveEdit}
-            onDelete={deleteBooking}
-            onUpdateField={(updates) =>
-              setEditing((prev: any) =>
-                prev ? { ...prev, ...updates } : null
-              )
-            }
-          />
-        </div>
+            {/* EDIT MODAL */}
+            <EditBookingModal
+              open={!!editing}
+              onClose={() => setEditing(null)}
+              editing={editing}
+              bays={bays}
+              timeStep={timeStep}
+              timeOptions={timeOptions}
+              onSave={saveEdit}
+              onDelete={deleteBooking}
+              onUpdateField={(updates) =>
+                setEditing((prev: any) => (prev ? { ...prev, ...updates } : null))
+              }
+            />
+          </div>
         </>
       )}
 
