@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { fromZonedTime } from "date-fns-tz";
-import { addMinutes } from "date-fns";
 import { AvailabilityResult } from "@/types/availability";
 
 function formatPhone(value: string): string {
@@ -25,15 +24,14 @@ async function fetchAvailability(
   locationSlug: string,
   date: string,
   partyKind: "SINGLE" | "GROUP",
-  handedness: "RH" | "LH" | "",
-  includeFreeBays: boolean = false
+  handedness: "RH" | "LH" | ""
 ): Promise<AvailabilityResult> {
   const params = new URLSearchParams({
     locationSlug,
     date,
     kind: partyKind,
     includeSlots: "true",
-    ...(includeFreeBays && { includeFreeBays: "true" }),
+    includeFreeBays: "true",
   });
   if (partyKind === "SINGLE" && handedness) params.set("hand", handedness);
 
@@ -81,13 +79,12 @@ export default function BookPage() {
   const [duration, setDuration] = useState<number>(60);
   const [startTime, setStartTime] = useState<string>("");
   const [selectedBay, setSelectedBay] = useState<number | null>(null);
+  const [preferSpecificBay, setPreferSpecificBay] = useState(false); // Toggle for manual selection
 
   const [locationName, setLocationName] = useState("");
   const [locationTz, setLocationTz] = useState<string>("");
   const [adminNote, setAdminNote] = useState("");
   const [passUrl, setPassUrl] = useState<string | null>(null);
-
-  // Dynamic duration limits from location
   const [minDuration, setMinDuration] = useState<number>(30);
   const [maxDuration, setMaxDuration] = useState<number>(120);
 
@@ -105,11 +102,10 @@ export default function BookPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<any>(null);
 
-  // Load location info + duration limits
+  // Load location info
   useEffect(() => {
     if (!locationSlug) return;
     let cancelled = false;
-
     (async () => {
       try {
         const info = await fetchLocationInfo(locationSlug);
@@ -125,51 +121,35 @@ export default function BookPage() {
         if (!cancelled) setLocationName(locationSlug);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [locationSlug]);
 
-  // Generate allowed durations (30-minute increments within min/max)
+  // Allowed durations
   const allowedDurations = useMemo(() => {
     const durations: number[] = [];
     const start = Math.max(minDuration, 30);
-    const end = maxDuration;
-
-    for (let d = start; d <= end; d += 30) {
-      durations.push(d);
-    }
-
-    // Fallback if somehow empty
+    for (let d = start; d <= maxDuration; d += 30) durations.push(d);
     return durations.length > 0 ? durations : [60];
   }, [minDuration, maxDuration]);
 
-  // Clamp duration if it becomes invalid after location load
   useEffect(() => {
-    if (duration < minDuration || duration > maxDuration || !allowedDurations.includes(duration)) {
-      const closest = allowedDurations.reduce((prev, curr) =>
-        Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
+    if (!allowedDurations.includes(duration)) {
+      const closest = allowedDurations.reduce((a, b) =>
+        Math.abs(b - duration) < Math.abs(a - duration) ? b : a
       );
       setDuration(closest);
       setStartTime("");
       setSelectedBay(null);
     }
-  }, [duration, minDuration, maxDuration, allowedDurations]);
+  }, [duration, allowedDurations]);
 
-  // Load availability
+  // Load availability — always with free bays
   const loadAvailability = async () => {
     if (!locationSlug || !date) return;
     setLoading(true);
     setError("");
     try {
-      const data = await fetchAvailability(
-        locationSlug,
-        date,
-        partyKind,
-        partyKind === "SINGLE" ? handedness : "",
-        isAdminMode
-      );
+      const data = await fetchAvailability(locationSlug, date, partyKind, partyKind === "SINGLE" ? handedness : "");
       setAvailability(data);
       setStartTime("");
       setSelectedBay(null);
@@ -183,66 +163,72 @@ export default function BookPage() {
 
   useEffect(() => {
     loadAvailability();
-  }, [locationSlug, date, partyKind, handedness, isAdminMode]);
+  }, [locationSlug, date, partyKind, handedness]);
 
-  // Filter past times
+  // Available start times
   const availableStartTimes = useMemo(() => {
     if (!availability?.startTimes) return [];
-
     if (![30, 60, 90, 120].includes(duration)) return [];
-
-   const times = availability.startTimes[duration as 30 | 60 | 90 | 120];
-
+    const times = availability.startTimes[duration as 30 | 60 | 90 | 120];
     if (date === todayYMD) {
       const now = new Date();
       const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      return times.filter((t) => t >= cutoff);
+      return times.filter(t => t >= cutoff);
     }
-
     return times;
   }, [availability, duration, date, todayYMD]);
 
-  // Free bays for admin
+  // Free bays for selected time — works for everyone
   const freeBaysAtSelectedTime = useMemo(() => {
-    if (!isAdminMode || !startTime || !availability?.freeBaysBySlot || !locationTz) return [];
+    if (!startTime || !availability?.freeBaysBySlot || !locationTz) return [];
     const startLocal = new Date(`${date}T${startTime}:00`);
     const startUTC = fromZonedTime(startLocal, locationTz).toISOString();
     const key = `${startUTC}|${duration}`;
     return availability.freeBaysBySlot[key] || [];
-  }, [isAdminMode, startTime, availability?.freeBaysBySlot, date, duration, locationTz]);
+  }, [startTime, availability?.freeBaysBySlot, date, duration, locationTz]);
 
-  // Public bay count
-  const baysAvailableAtTime = useMemo(() => {
-    if (isAdminMode) return freeBaysAtSelectedTime.length;
-    if (!startTime || !availability?.slots || !locationTz) return 0;
+  // Auto-assign first bay when user doesn't care
+  useEffect(() => {
+    if (freeBaysAtSelectedTime.length > 0) {
+      if (!preferSpecificBay) {
+        setSelectedBay(freeBaysAtSelectedTime[0]);
+      } else if (selectedBay && !freeBaysAtSelectedTime.includes(selectedBay)) {
+        setSelectedBay(null);
+      }
+    }
+  }, [freeBaysAtSelectedTime, preferSpecificBay]);
 
-    const startLocal = new Date(`${date}T${startTime}:00`);
-    const endLocal = addMinutes(startLocal, duration);
-    const startUTC = fromZonedTime(startLocal, locationTz).toISOString();
-    const endUTC = fromZonedTime(endLocal, locationTz).toISOString();
+  // Accurate bay count for display
+  const baysAvailableAtTime = freeBaysAtSelectedTime.length;
 
-    const slot = availability.slots?.find((s) => s.start === startUTC && s.end === endUTC);
-    return slot?.availableCount || 0;
-  }, [isAdminMode, freeBaysAtSelectedTime.length, startTime, availability?.slots, date, duration, locationTz]);
-
-  // Submit booking
   const onSubmit = async () => {
     setSubmitting(true);
     setError("");
     if (!isValidEmail(email)) return setEmailErr("Valid email required");
     if (!isValidPhone(phone)) return setPhoneErr("10 digits required");
+    if (!selectedBay) {
+      setError("No bay available. Please try another time.");
+      setSubmitting(false);
+      return;
+    }
 
     try {
+      // Build local datetime strings (no timezone conversion yet)
       const [year, month, day] = date.split("-");
       const [hour, minute] = startTime.split(":");
-      const startISO = `${year}-${month}-${day}T${hour}:${minute}:00`;
-      const endDate = new Date(new Date(startISO).getTime() + duration * 60 * 1000);
-      const endISO = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${String(endDate.getDate()).padStart(2, "0")}T${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}:00`;
+
+      const startLocal = `${year}-${month}-${day}T${hour}:${minute}:00`;
+      const endLocal = new Date(
+        new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() + duration * 60 * 1000
+      );
+
+      // Format endLocal as YYYY-MM-DDTHH:mm:00 in local time
+      const endLocalStr = `${endLocal.getFullYear()}-${String(endLocal.getMonth() + 1).padStart(2, "0")}-${String(endLocal.getDate()).padStart(2, "0")}T${String(endLocal.getHours()).padStart(2, "0")}:${String(endLocal.getMinutes()).padStart(2, "0")}:00`;
 
       const payload: any = {
         locationSlug,
-        startISO,
-        endISO,
+        startISO: startLocal,
+        endISO: endLocalStr,
         firstName,
         lastName,
         phone,
@@ -250,12 +236,8 @@ export default function BookPage() {
         partyKind,
         handedness: partyKind === "SINGLE" ? handedness : undefined,
         source: isAdminMode ? "ADMIN" : "PUBLIC",
+        bayNumber: selectedBay,
       };
-
-      if (isAdminMode) {
-        if (!selectedBay) throw new Error("Please select a bay");
-        payload.bayNumber = selectedBay;
-      }
 
       const { booking } = await createBooking(payload);
       setConfirmed(booking);
@@ -276,7 +258,7 @@ export default function BookPage() {
       )}
       {isAdminMode && (
         <div className="mb-4 p-3 bg-purple-100 border border-purple-300 rounded-lg text-purple-900 text-sm">
-          Admin Mode Active — You are booking a specific bay
+          Admin Mode Active
         </div>
       )}
 
@@ -323,26 +305,15 @@ export default function BookPage() {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Date</label>
-                <input
-                  type="date"
-                  min={todayYMD}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                />
+                <input type="date" min={todayYMD} value={date} onChange={e => setDate(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Playing As</label>
-                  <select
-                    value={partyKind}
-                    onChange={(e) => {
-                      setPartyKind(e.target.value as any);
-                      setStartTime("");
-                    }}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                  >
+                  <select value={partyKind} onChange={e => { setPartyKind(e.target.value as any); setStartTime(""); }}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3">
                     <option value="GROUP">Group</option>
                     <option value="SINGLE">Single</option>
                   </select>
@@ -350,14 +321,8 @@ export default function BookPage() {
                 {partyKind === "SINGLE" && (
                   <div>
                     <label className="block text-sm font-medium mb-2">Handedness</label>
-                    <select
-                      value={handedness}
-                      onChange={(e) => {
-                        setHandedness(e.target.value as any);
-                        setStartTime("");
-                      }}
-                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                    >
+                    <select value={handedness} onChange={e => { setHandedness(e.target.value as any); setStartTime(""); }}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3">
                       <option value="RH">Right-handed</option>
                       <option value="LH">Left-handed</option>
                     </select>
@@ -370,20 +335,9 @@ export default function BookPage() {
                   Duration ({minDuration}–{maxDuration} min)
                 </label>
                 <div className="grid grid-cols-4 gap-3">
-                  {allowedDurations.map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => {
-                        setDuration(d);
-                        setStartTime("");
-                        setSelectedBay(null);
-                      }}
-                      className={`rounded-lg border py-3 text-sm font-medium transition ${
-                        duration === d
-                          ? "bg-black text-white border-black"
-                          : "border-gray-300 hover:border-gray-500"
-                      }`}
-                    >
+                  {allowedDurations.map(d => (
+                    <button key={d} onClick={() => { setDuration(d); setStartTime(""); setSelectedBay(null); }}
+                      className={`rounded-lg border py-3 text-sm font-medium transition ${duration === d ? "bg-black text-white border-black" : "border-gray-300 hover:border-gray-500"}`}>
                       {d} min
                     </button>
                   ))}
@@ -394,55 +348,64 @@ export default function BookPage() {
                 <label className="block text-sm font-medium mb-2">
                   Start Time {baysAvailableAtTime > 0 && `(${baysAvailableAtTime} bay${baysAvailableAtTime > 1 ? "s" : ""} free)`}
                 </label>
-                <select
-                  value={startTime}
-                  onChange={(e) => {
-                    setStartTime(e.target.value);
-                    setSelectedBay(null);
-                  }}
+                <select value={startTime} onChange={e => { setStartTime(e.target.value); setSelectedBay(null); }}
                   disabled={loading || availableStartTimes.length === 0}
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 disabled:opacity-50"
-                >
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 disabled:opacity-50">
                   <option value="">
                     {loading ? "Loading…" : availableStartTimes.length ? "Select a time" : "No times available"}
                   </option>
-                  {availableStartTimes.map((time) => {
+                  {availableStartTimes.map(time => {
                     const dateObj = new Date(`${date}T${time}:00`);
                     const label = dateObj.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-                    return (
-                      <option key={time} value={time}>
-                        {label}
-                      </option>
-                    );
+                    return <option key={time} value={time}>{label}</option>;
                   })}
                 </select>
               </div>
 
-              {isAdminMode && freeBaysAtSelectedTime.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium mb-2">Select Bay</label>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                    {freeBaysAtSelectedTime.map((bay) => (
-                      <button
-                        key={bay}
-                        onClick={() => setSelectedBay(bay)}
-                        className={`rounded-lg border py-3 text-sm font-medium transition ${
-                          selectedBay === bay
-                            ? "bg-black text-white border-black"
-                            : "border-gray-300 hover:border-gray-500"
-                        }`}
-                      >
-                        Bay {bay}
-                      </button>
-                    ))}
+              {/* Bay Selection with Smart Toggle */}
+              {freeBaysAtSelectedTime.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Choose a specific bay?</label>
+                    <button
+                      type="button"
+                      onClick={() => setPreferSpecificBay(!preferSpecificBay)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${preferSpecificBay ? "bg-black" : "bg-gray-300"}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${preferSpecificBay ? "translate-x-6" : "translate-x-1"}`} />
+                    </button>
                   </div>
-                  {!selectedBay && <p className="text-sm text-red-600 mt-2">Please select a bay</p>}
+
+                  {!preferSpecificBay ? (
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-800">
+                      <strong>We'll assign you Bay {freeBaysAtSelectedTime[0]}</strong>
+                      <br />
+                      <span className="text-green-700">Best available</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                        {freeBaysAtSelectedTime.map(bay => (
+                          <button
+                            key={bay}
+                            onClick={() => setSelectedBay(bay)}
+                            className={`rounded-lg border py-3 text-sm font-medium transition ${
+                              selectedBay === bay ? "bg-black text-white border-black" : "border-gray-300 hover:border-gray-500"
+                            }`}
+                          >
+                            Bay {bay}
+                          </button>
+                        ))}
+                      </div>
+                      {!selectedBay && <p className="text-sm text-red-600 mt-2">Please select a bay</p>}
+                    </div>
+                  )}
                 </div>
               )}
 
               <button
                 onClick={() => setStep(2)}
-                disabled={!startTime || (isAdminMode && !selectedBay)}
+                disabled={!startTime || (preferSpecificBay && !selectedBay)}
                 className="w-full bg-black text-white py-4 rounded-xl font-medium disabled:opacity-40"
               >
                 Continue to Contact
@@ -453,62 +416,43 @@ export default function BookPage() {
               <div className="text-lg font-medium mb-4">
                 {date} • {new Date(`${date}T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
                 {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
+                  hour: "numeric", minute: "2-digit",
                 })}{" "}
                 ({duration} min)
-                {isAdminMode && selectedBay && ` • Bay ${selectedBay}`}
+                {selectedBay && ` • Bay ${selectedBay}`}
+                {!preferSpecificBay && selectedBay && (
+                  <span className="text-green-700 text-sm block mt-1">Auto-assigned</span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">First Name</label>
-                  <input
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                    placeholder="Jane"
-                  />
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Jane" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Last Name</label>
-                  <input
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                    placeholder="Doe"
-                  />
+                  <input value={lastName} onChange={e => setLastName(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Doe" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Phone</label>
-                <input
-                  value={phone}
-                  onChange={(e) => {
-                    setPhone(formatPhone(e.target.value));
-                    phoneErr && setPhoneErr("");
-                  }}
+                <input value={phone} onChange={e => { setPhone(formatPhone(e.target.value)); phoneErr && setPhoneErr(""); }}
                   onBlur={() => !isValidPhone(phone) && setPhoneErr("10 digits required")}
                   className={`w-full rounded-xl border px-4 py-3 ${phoneErr ? "border-red-500" : "border-gray-300"}`}
-                  placeholder="(555) 123-4567"
-                />
+                  placeholder="(555) 123-4567" />
                 {phoneErr && <p className="text-red-600 text-sm mt-1">{phoneErr}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    emailErr && setEmailErr("");
-                  }}
+                <input type="email" value={email} onChange={e => { setEmail(e.target.value); emailErr && setEmailErr(""); }}
                   onBlur={() => !isValidEmail(email) && setEmailErr("Valid email required")}
                   className={`w-full rounded-xl border px-4 py-3 ${emailErr ? "border-red-500" : "border-gray-300"}`}
-                  placeholder="jane@example.com"
-                />
+                  placeholder="jane@example.com" />
                 {emailErr && <p className="text-red-600 text-sm mt-1">{emailErr}</p>}
               </div>
 
@@ -516,11 +460,9 @@ export default function BookPage() {
                 <button onClick={() => setStep(1)} className="flex-1 border border-black py-4 rounded-xl">
                   Back
                 </button>
-                <button
-                  onClick={onSubmit}
+                <button onClick={onSubmit}
                   disabled={submitting || !firstName || !lastName || !phone || !email || !!emailErr || !!phoneErr}
-                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium"
-                >
+                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium">
                   {submitting ? "Booking…" : "Confirm & Book"}
                 </button>
               </div>

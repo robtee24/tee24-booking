@@ -136,12 +136,7 @@ export async function getAvailableBaysAtExactWindow(
 
   if (process.env.NODE_ENV !== "production" || process.env.DEBUG_AVAILABILITY) {
     const busyBays = eligibleBayNumbers.filter(n => !freeBayNumbers.includes(n));
-    console.log("  Eligible bay numbers:", eligibleBayNumbers);
-    console.log("  Free bay numbers:", freeBayNumbers);
-    console.log("  Busy bay numbers:", busyBays);
-    console.log("  Final result → availableCount:", freeBayNumbers.length);
-    console.log("────────────────────────────────────");
-    }
+  }
 
   return { availableCount: freeBayNumbers.length, freeBayNumbers };
 }
@@ -260,7 +255,9 @@ export async function getAvailability(
           startTimes[duration].push(timeStr);
         }
         if (includeSlots && slots) {
+          const key = `${startUTC.toISOString()}|${duration}`;
           slots.push({
+            slotKey: key,
             start: startUTC.toISOString(),
             end: endUTC.toISOString(),
             availableCount: freeBayNumbers.length,

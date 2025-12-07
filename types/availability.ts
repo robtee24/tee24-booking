@@ -1,5 +1,6 @@
 // types/availability.ts
 export type TimeSlot = {
+  slotKey: string;
   start: string; // ISO UTC e.g. "2025-12-10T14:00:00.000Z"
   end: string;   // ISO UTC
   availableCount: number;

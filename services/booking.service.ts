@@ -565,19 +565,13 @@ async function sendConfirmations({
 }
 
 function normalizePhone(raw: string): string | null {
-  console.log("normalizePhone called →", raw, "<-");
-  console.log("raw typeof:", typeof raw);
-
   const digits = raw.replace(/\D/g, "");
-  console.log("digits →", digits, " length:", digits.length);
 
   if (digits.length === 10) {
-    console.log("MATCH 10 digits → returning +1...");
     return `+1${digits}`;
   }
   if (digits.length === 11 && digits[0] === "1") return `+${digits}`;
   if (digits.length >= 10 && raw.startsWith("+")) return raw;
 
-  console.log("no match → returning null");
   return null;
 }
