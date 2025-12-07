@@ -158,6 +158,7 @@ async function sendAllUnsent(): Promise<Array<{
   const [bookings, notifications] = await Promise.all([
     getPrisma().booking.findMany({
       where: { id: { in: bookingIds } },
+      canceledAt: null,
       select: {
         id: true,
         start: true,
@@ -401,6 +402,7 @@ async function findDueNotifications(
     const bookings = await getPrisma().booking.findMany({
       where: {
         locationId,
+        canceledAt: null,
         ...(onlyBookingId ? { id: onlyBookingId } : {}),
         start: { gte: broadStart, lte: broadEnd },
       },
