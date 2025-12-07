@@ -6,6 +6,7 @@ import type { Bay } from "./bay";
  */
 export type AdminBooking = {
   id: string;
+  bayId: string;
   bayNumber: number;
   start: string;     // ISO UTC
   end: string;       // ISO UTC
