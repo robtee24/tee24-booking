@@ -157,8 +157,10 @@ async function sendAllUnsent(): Promise<Array<{
 
   const [bookings, notifications] = await Promise.all([
     getPrisma().booking.findMany({
-      where: { id: { in: bookingIds } },
-      canceledAt: null,
+      where: {
+        id: { in: bookingIds },
+        canceledAt: null,
+      },
       select: {
         id: true,
         start: true,
