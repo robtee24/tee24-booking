@@ -1,8 +1,11 @@
 // app/book/[locationSlug]/page.tsx
 "use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { fromZonedTime } from "date-fns-tz";
+import OtpFlow from "@/components/OtpFlow";
+import { toE164 } from "@/lib/phone";
 import { AvailabilityResult } from "@/types/availability";
 
 function formatPhone(value: string): string {
@@ -79,7 +82,7 @@ export default function BookPage() {
   const [duration, setDuration] = useState<number>(60);
   const [startTime, setStartTime] = useState<string>("");
   const [selectedBay, setSelectedBay] = useState<number | null>(null);
-  const [preferSpecificBay, setPreferSpecificBay] = useState(false); // Toggle for manual selection
+  const [preferSpecificBay, setPreferSpecificBay] = useState(false);
 
   const [locationName, setLocationName] = useState("");
   const [locationTz, setLocationTz] = useState<string>("");
@@ -91,8 +94,8 @@ export default function BookPage() {
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<1 | 2>(1);
 
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -101,6 +104,9 @@ export default function BookPage() {
   const [phoneErr, setPhoneErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<any>(null);
+
+  // Track verified phone
+  const [verifiedPhone, setVerifiedPhone] = useState<string>("");
 
   // Load location info
   useEffect(() => {
@@ -143,7 +149,7 @@ export default function BookPage() {
     }
   }, [duration, allowedDurations]);
 
-  // Load availability — always with free bays
+  // Load availability
   const loadAvailability = async () => {
     if (!locationSlug || !date) return;
     setLoading(true);
@@ -165,20 +171,18 @@ export default function BookPage() {
     loadAvailability();
   }, [locationSlug, date, partyKind, handedness]);
 
-  // Available start times
+  // Available times & bays
   const availableStartTimes = useMemo(() => {
     if (!availability?.startTimes) return [];
-    if (![30, 60, 90, 120].includes(duration)) return [];
-    const times = availability.startTimes[duration as 30 | 60 | 90 | 120];
+    const times = availability.startTimes[duration as 30 | 60 | 90 | 120] || [];
     if (date === todayYMD) {
       const now = new Date();
       const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      return times.filter(t => t >= cutoff);
+      return times.filter((t) => t >= cutoff);
     }
     return times;
   }, [availability, duration, date, todayYMD]);
 
-  // Free bays for selected time — works for everyone
   const freeBaysAtSelectedTime = useMemo(() => {
     if (!startTime || !availability?.freeBaysBySlot || !locationTz) return [];
     const startLocal = new Date(`${date}T${startTime}:00`);
@@ -187,7 +191,6 @@ export default function BookPage() {
     return availability.freeBaysBySlot[key] || [];
   }, [startTime, availability?.freeBaysBySlot, date, duration, locationTz]);
 
-  // Auto-assign first bay when user doesn't care
   useEffect(() => {
     if (freeBaysAtSelectedTime.length > 0) {
       if (!preferSpecificBay) {
@@ -198,19 +201,37 @@ export default function BookPage() {
     }
   }, [freeBaysAtSelectedTime, preferSpecificBay]);
 
-  // Accurate bay count for display
   const baysAvailableAtTime = freeBaysAtSelectedTime.length;
 
-  const onSubmit = async () => {
-    setSubmitting(true);
+  // Move to verification step and SEND CODE IMMEDIATELY
+  const goToVerification = () => {
+    setEmailErr("");
+    setPhoneErr("");
     setError("");
+
     if (!isValidEmail(email)) return setEmailErr("Valid email required");
     if (!isValidPhone(phone)) return setPhoneErr("10 digits required");
-    if (!selectedBay) {
-      setError("No bay available. Please try another time.");
-      setSubmitting(false);
-      return;
-    }
+
+    const normalized = toE164(phone);
+    if (!normalized) return setPhoneErr("Invalid phone number");
+
+    setVerifiedPhone("");
+    setStep(3);
+
+    // Automatically send the first OTP when entering step 3
+    fetch("/api/bookings/otp/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: normalized }),
+    }).catch(console.error);
+  };
+
+  // Final booking after OTP success
+  const finalizeBooking = async (phone: string) => {
+    if (!phone) { return };
+
+    setSubmitting(true);
+    setError("");
 
     try {
       // Build local datetime strings (no timezone conversion yet)
@@ -241,6 +262,7 @@ export default function BookPage() {
 
       const { booking } = await createBooking(payload);
       setConfirmed(booking);
+      setStep(4);
       void loadAvailability();
     } catch (e: any) {
       setError(e.message || "Booking failed");
@@ -263,6 +285,7 @@ export default function BookPage() {
       )}
 
       {confirmed ? (
+        /* CONFIRMED STATE */
         <div className="space-y-6">
           <h1 className="text-3xl font-bold">Booking Confirmed!</h1>
           <p className="text-gray-600">Confirmation sent to {confirmed.email}</p>
@@ -294,14 +317,18 @@ export default function BookPage() {
           <h1 className="text-3xl font-bold mb-2">
             Book a Bay <span className="text-gray-600 font-normal">({locationName || locationSlug})</span>
           </h1>
+
           {error && <div className="mb-4 p-4 bg-red-50 border border-red-300 rounded-lg text-red-700">{error}</div>}
 
+          {/* Progress Bar */}
           <div className="flex gap-2 mb-8">
             <div className={`h-2 flex-1 rounded-full ${step >= 1 ? "bg-black" : "bg-gray-300"}`} />
             <div className={`h-2 flex-1 rounded-full ${step >= 2 ? "bg-black" : "bg-gray-300"}`} />
+            <div className={`h-2 flex-1 rounded-full ${step >= 3 ? "bg-black" : "bg-gray-300"}`} />
           </div>
 
-          {step === 1 ? (
+          {/* STEP 1: Select Time & Bay */}
+          {step === 1 && (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Date</label>
@@ -411,48 +438,51 @@ export default function BookPage() {
                 Continue to Contact
               </button>
             </div>
-          ) : (
+          )}
+
+          {/* STEP 2: Contact Info */}
+          {step === 2 && (
             <div className="space-y-6">
               <div className="text-lg font-medium mb-4">
                 {date} • {new Date(`${date}T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
-                {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], {
-                  hour: "numeric", minute: "2-digit",
-                })}{" "}
+                {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{" "}
                 ({duration} min)
                 {selectedBay && ` • Bay ${selectedBay}`}
-                {!preferSpecificBay && selectedBay && (
-                  <span className="text-green-700 text-sm block mt-1">Auto-assigned</span>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">First Name</label>
-                  <input value={firstName} onChange={e => setFirstName(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Jane" />
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Jane" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Last Name</label>
-                  <input value={lastName} onChange={e => setLastName(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Doe" />
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Doe" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Phone</label>
-                <input value={phone} onChange={e => { setPhone(formatPhone(e.target.value)); phoneErr && setPhoneErr(""); }}
+                <input
+                  value={phone}
+                  onChange={(e) => { setPhone(formatPhone(e.target.value)); phoneErr && setPhoneErr(""); }}
                   onBlur={() => !isValidPhone(phone) && setPhoneErr("10 digits required")}
                   className={`w-full rounded-xl border px-4 py-3 ${phoneErr ? "border-red-500" : "border-gray-300"}`}
-                  placeholder="(555) 123-4567" />
+                  placeholder="(555) 123-4567"
+                />
                 {phoneErr && <p className="text-red-600 text-sm mt-1">{phoneErr}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Email</label>
-                <input type="email" value={email} onChange={e => { setEmail(e.target.value); emailErr && setEmailErr(""); }}
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); emailErr && setEmailErr(""); }}
                   onBlur={() => !isValidEmail(email) && setEmailErr("Valid email required")}
                   className={`w-full rounded-xl border px-4 py-3 ${emailErr ? "border-red-500" : "border-gray-300"}`}
-                  placeholder="jane@example.com" />
+                  placeholder="jane@example.com"
+                />
                 {emailErr && <p className="text-red-600 text-sm mt-1">{emailErr}</p>}
               </div>
 
@@ -460,10 +490,47 @@ export default function BookPage() {
                 <button onClick={() => setStep(1)} className="flex-1 border border-black py-4 rounded-xl">
                   Back
                 </button>
-                <button onClick={onSubmit}
-                  disabled={submitting || !firstName || !lastName || !phone || !email || !!emailErr || !!phoneErr}
-                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium">
-                  {submitting ? "Booking…" : "Confirm & Book"}
+                <button
+                  onClick={goToVerification}
+                  disabled={!firstName || !lastName || !phone || !email || !!emailErr || !!phoneErr}
+                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium"
+                >
+                  Confirm Booking
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Phone Verification */}
+          {step === 3 && (
+            <div className="grid min-h-[70vh] place-items-center py-12">
+              <div className="w-full max-w-sm">
+                <div className="text-center mb-10">
+                  <h2 className="text-2xl font-bold">Verify Your Phone</h2>
+                  <p className="mt-3 text-lg text-neutral-600">
+                    We sent a 6-digit code to<br />
+                    <strong className="text-black">{phone}</strong>
+                  </p>
+                </div>
+
+                <OtpFlow
+                  title=""
+                  subtitle=""
+                  initialPhone={toE164(phone)}
+                  startEndpoint="/api/bookings/otp/start"
+                  verifyEndpoint="/api/bookings/otp/verify"
+                  sendButtonText="Resend Code"
+                  onSuccess={() => {
+                    setVerifiedPhone(toE164(phone));
+                    finalizeBooking(toE164(phone));
+                  }}
+                />
+
+                <button
+                  onClick={() => setStep(2)}
+                  className="mt-8 w-full border border-gray-400 py-3 rounded-xl text-sm font-medium hover:bg-gray-50"
+                >
+                  ← Change Phone Number
                 </button>
               </div>
             </div>
