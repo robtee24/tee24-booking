@@ -506,7 +506,7 @@ export default function BookPage() {
             <div className="grid min-h-[70vh] place-items-center py-12">
               <div className="w-full max-w-sm">
                 <div className="text-center mb-10">
-                  <h2 className="text-2xl font-bold">Verify Your Phone</h2>
+                  <h2 className="text-2xl font-bold">Verify Your Phone Number to Confirm Booking</h2>
                   <p className="mt-3 text-lg text-neutral-600">
                     We sent a 6-digit code to<br />
                     <strong className="text-black">{phone}</strong>
