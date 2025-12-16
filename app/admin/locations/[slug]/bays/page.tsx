@@ -19,8 +19,11 @@ function ymd(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-function buildBayViewUrl(origin: string, bayId: string, dateISO: string) {
-  const params = new URLSearchParams({ id: bayId, d: dateISO });
+function buildBayViewUrl(origin: string, bayId: string, dateISO?: string) {
+  const params = new URLSearchParams({ id: bayId });
+  if (dateISO) {
+    params.append('d', dateISO);
+  }
   return `${origin}/bay?${params.toString()}`;
 }
 
@@ -95,7 +98,6 @@ export default function BaysAdminPage() {
 
   const origin = useMemo(getOrigin, []);
   const viewOrigin = process.env.NEXT_PUBLIC_BASE_URL || origin;
-  const todayISO = useMemo(() => ymd(new Date()), []);
 
   async function load() {
     if (!locationSlug) return;
@@ -405,7 +407,7 @@ export default function BaysAdminPage() {
                 {bays.map((b) => {
                   const isEditing = !!editing[b.id];
                   const form = editing[b.id];
-                  const url = buildBayViewUrl(viewOrigin, b.id, todayISO);
+                  const url = buildBayViewUrl(viewOrigin, b.id);
                   const label = `Bay ${b.number}${b.name ? ` (${b.name})` : ''}`;
                   const copyKey = `copy-${b.id}`;
 
