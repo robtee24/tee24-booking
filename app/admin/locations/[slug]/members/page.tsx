@@ -59,7 +59,7 @@ export default function MembersPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMembers = useCallback(async (s: string, status: string, p: number) => {
     if (!slug) return;
