@@ -49,6 +49,7 @@ function extractAllFields(body: any) {
     gender: findField(body, "gender", "Gender"),
     membershipType: findField(body, "membershipType", "membership_title", "membership", "plan", "membership_name", "membershipName"),
     membershipStartDate: findField(body, "membershipStartDate", "start_date", "startDate", "membership_start_date"),
+    joinDate: findField(body, "joinDate", "join_date", "joinedAt", "joined"),
     signupFee: findField(body, "signupFee", "signup_fee", "signupCost"),
     membershipFees: findField(body, "membershipFees", "membership_fees", "membershipAmount"),
     membershipRecurrence: findField(body, "membershipRecurrence", "membership_recurrence", "recurrence"),
@@ -145,6 +146,7 @@ async function handleNewMember(body: any, locationSlug: string, statusOverride: 
       status: memberStatus,
       membershipType: fields.membershipType || undefined,
       membershipStartDate: parseDate(fields.membershipStartDate) ?? undefined,
+      joinDate: parseDate(fields.joinDate) ?? undefined,
       signupFee: fields.signupFee || undefined,
       membershipFees: fields.membershipFees || undefined,
       membershipRecurrence: fields.membershipRecurrence || undefined,
@@ -164,6 +166,7 @@ async function handleNewMember(body: any, locationSlug: string, statusOverride: 
       status: memberStatus,
       membershipType: fields.membershipType || null,
       membershipStartDate: parseDate(fields.membershipStartDate),
+      joinDate: parseDate(fields.joinDate),
       signupFee: fields.signupFee || null,
       membershipFees: fields.membershipFees || null,
       membershipRecurrence: fields.membershipRecurrence || null,
@@ -217,6 +220,7 @@ async function handleStatusChange(body: any, locationSlug: string, statusOverrid
   if (fields.gender) data.gender = fields.gender;
   if (fields.membershipType) data.membershipType = fields.membershipType;
   if (fields.membershipStartDate) data.membershipStartDate = parseDate(fields.membershipStartDate);
+  if (fields.joinDate) data.joinDate = parseDate(fields.joinDate);
   if (fields.signupFee) data.signupFee = fields.signupFee;
   if (fields.membershipFees) data.membershipFees = fields.membershipFees;
   if (fields.membershipRecurrence) data.membershipRecurrence = fields.membershipRecurrence;

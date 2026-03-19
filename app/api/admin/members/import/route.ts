@@ -114,17 +114,29 @@ export async function POST(req: NextRequest) {
       const firstName = findField(row, "firstname", "first", "fname");
       const lastName = findField(row, "lastname", "last", "lname");
       const phone = findField(row, "phone", "phonenumber", "mobile", "cell");
-      const statusRaw = findField(row, "status", "memberstatus", "type", "membertype");
+      const statusRaw = findField(row, "status", "memberstatus");
+      const typeRaw = findField(row, "type");
       const membershipType = findField(row, "membership", "membershiptype", "plan", "membershipplan");
       const joinDateRaw = findField(row, "joindate", "joined", "startdate", "datejoined", "createddate");
       const gymDeskId = findField(row, "id", "memberid", "gymdeskid");
+      const dobRaw = findField(row, "dateofbirth", "dob", "birthday");
+      const gender = findField(row, "gender");
 
-      const status = normalizeStatus(statusRaw);
-      let joinDate: Date | null = null;
-      if (joinDateRaw) {
-        const d = new Date(joinDateRaw);
-        if (!isNaN(d.getTime())) joinDate = d;
+      let status = normalizeStatus(statusRaw);
+      if (status === "ACTIVE" && typeRaw.toLowerCase() === "visitor") {
+        status = "VISITOR";
       }
+
+      function parseDateField(raw: string): Date | null {
+        if (!raw) return null;
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      const joinDate = parseDateField(joinDateRaw);
+      const dob = parseDateField(dobRaw);
+
+      const fullName = firstName && lastName ? `${firstName} ${lastName}` : null;
 
       try {
         const existing = await getPrisma().member.findUnique({
@@ -137,7 +149,10 @@ export async function POST(req: NextRequest) {
             data: {
               firstName: firstName || existing.firstName,
               lastName: lastName || existing.lastName,
+              fullName: fullName || existing.fullName,
               phone: phone || existing.phone,
+              dob: dob ?? existing.dob,
+              gender: gender || existing.gender,
               status,
               membershipType: membershipType || existing.membershipType,
               joinDate: joinDate ?? existing.joinDate,
@@ -153,7 +168,10 @@ export async function POST(req: NextRequest) {
               email,
               firstName,
               lastName,
+              fullName,
               phone,
+              dob,
+              gender: gender || null,
               status,
               membershipType: membershipType || null,
               joinDate,

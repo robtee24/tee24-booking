@@ -75,6 +75,9 @@ export default function MembersPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ ok: boolean; total: number; created: number; updated: number; skipped: number } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMembers = useCallback(async (s: string, status: string, p: number) => {
@@ -111,17 +114,78 @@ export default function MembersPage() {
     setPage(1);
   }
 
+  async function handleCSVUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !slug) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('locationSlug', slug);
+      const res = await fetch('/api/admin/members/import', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Import failed');
+      setImportResult(json);
+      fetchMembers(search, statusFilter, page);
+    } catch (err: any) {
+      setError(err?.message ?? 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
   const colCount = 6;
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-        <p className="text-sm text-gray-600">
-          Gymdesk members synced via webhook
-          {data ? ` · ${data.total} total` : ''}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Members</h1>
+          <p className="text-sm text-gray-600">
+            Gymdesk members synced via webhook
+            {data ? ` · ${data.total} total` : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input ref={fileRef} type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
+          <button
+            type="button"
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-apple-fill-secondary disabled:opacity-50"
+          >
+            {importing ? (
+              <>
+                <svg className="h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Importing…
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                Import CSV
+              </>
+            )}
+          </button>
+        </div>
       </header>
+
+      {importResult && (
+        <div className={`rounded-lg border px-4 py-3 text-sm ${importResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
+          <div className="flex items-center justify-between">
+            <span>
+              Import complete — <strong>{importResult.created}</strong> created, <strong>{importResult.updated}</strong> updated, <strong>{importResult.skipped}</strong> skipped ({importResult.total} rows)
+            </span>
+            <button type="button" onClick={() => setImportResult(null)} className="ml-4 text-current opacity-60 hover:opacity-100">✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
@@ -219,6 +283,7 @@ export default function MembersPage() {
                             <DetailField label="Gender" value={m.gender} />
                             <DetailField label="Status" value={m.status} />
                             <DetailField label="Membership Type" value={m.membershipType} />
+                            <DetailField label="Joined" value={formatDate(m.joinDate)} />
                             <DetailField label="Membership Start" value={formatDate(m.membershipStartDate)} />
                             <DetailField label="Signup Fee" value={m.signupFee} />
                             <DetailField label="Membership Fees" value={m.membershipFees} />
