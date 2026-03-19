@@ -130,10 +130,19 @@ function BayCalendarPage() {
     if (!isTodayNY) return;
     const el = containerRef.current;
     if (!el) return;
-    const now = new Date();
-    const minutes = now.getHours() * 60 + now.getMinutes();
-    const topPx = (minutes / (24 * 60)) * DAY_PX;
-    el.scrollTo({ top: Math.max(0, topPx - 60), behavior: "instant" as ScrollBehavior });
+    const scrollToNow = () => {
+      const now = new Date();
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      const topPx = (minutes / (24 * 60)) * DAY_PX;
+      const gridRect = el.getBoundingClientRect();
+      const scrollTarget = window.scrollY + gridRect.top + topPx - 120;
+      window.scrollTo({ top: Math.max(0, scrollTarget), behavior: "instant" as ScrollBehavior });
+    };
+    if (typeof requestAnimationFrame !== "undefined") {
+      requestAnimationFrame(scrollToNow);
+    } else {
+      setTimeout(scrollToNow, 0);
+    }
   }, [isTodayNY, data?.dateISO]);
 
   const colorClasses = [
@@ -161,8 +170,8 @@ function BayCalendarPage() {
   }
 
   return (
-    <div className="min-h-screen bg-apple-bg flex flex-col">
-      <main className="flex-1 flex flex-col px-[5%] sm:px-[10%] pt-6 pb-0">
+    <div className="min-h-screen bg-apple-bg">
+      <div className="px-[5%] sm:px-[10%] pt-6 pb-24">
         <div className="pb-2 text-apple-2xl font-semibold tracking-tight text-apple-text">
           {data ? data.locationName : "Loading…"}
         </div>
@@ -181,8 +190,8 @@ function BayCalendarPage() {
           </div>
         </header>
 
-        <section className="relative mt-4 rounded-apple overflow-hidden flex-1 min-h-0 shadow-apple">
-          <div ref={containerRef} className="relative flex-1 min-h-0 overflow-auto bg-white">
+        <section className="mt-4 rounded-apple shadow-apple overflow-hidden">
+          <div ref={containerRef} className="bg-white">
             <div className="grid grid-cols-[80px_1fr] w-full relative" style={{ height: DAY_PX }}>
               <div className="bg-apple-fill-secondary border-r border-apple-divider text-apple-xs text-apple-text-tertiary">
                 {Array.from({ length: 24 }).map((_, h) => (
@@ -208,12 +217,11 @@ function BayCalendarPage() {
                     </div>
                   );
                 })}
-                <div style={{ height: 180 }} />
               </div>
             </div>
           </div>
         </section>
-      </main>
+      </div>
 
       {data?.locationSlug ? (
         <div className="fixed bottom-5 left-[5%] sm:left-[10%] right-[5%] sm:right-[10%] z-50 pointer-events-none">

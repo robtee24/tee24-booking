@@ -5,9 +5,8 @@ import { MERGE_FIELDS } from "@/lib/template-vars";
 
 export const dynamic = 'force-dynamic';
 
-// Match your Prisma enums exactly
 const CHANNEL = { EMAIL: 'EMAIL', TEXT: 'TEXT' } as const;
-const KIND = { CONFIRMATION: 'CONFIRMATION', NOTIFICATION: 'NOTIFICATION' } as const;
+const KIND = { CONFIRMATION: 'CONFIRMATION', NOTIFICATION: 'NOTIFICATION', CHANGE: 'CHANGE' } as const;
 
 // GET: load current config
 export async function GET(
@@ -92,6 +91,14 @@ export async function GET(
         orderIndex: order,
       }));
 
+    // Change notifications
+    const changeEmail = rows.find(
+      (r) => r.kind === KIND.CHANGE && r.channel === CHANNEL.EMAIL
+    );
+    const changeText = rows.find(
+      (r) => r.kind === KIND.CHANGE && r.channel === CHANNEL.TEXT
+    );
+
     return NextResponse.json({
       location,
       confirmations: {
@@ -99,7 +106,6 @@ export async function GET(
           enabled: confEmail?.enabled ?? false,
           template: confEmail?.template ?? '',
         },
-        // Expose as "sms" to the UI, but stored as TEXT in DB
         sms: {
           enabled: confText?.enabled ?? false,
           template: confText?.template ?? '',
@@ -107,9 +113,19 @@ export async function GET(
       },
       notifications: {
         emails: scheduledEmails,
-        texts: scheduledTexts, // stored as TEXT in DB
+        texts: scheduledTexts,
       },
-      mergeFields: MERGE_FIELDS, // Centralized & always in sync
+      changeNotifications: {
+        email: {
+          enabled: changeEmail?.enabled ?? false,
+          template: changeEmail?.template ?? '',
+        },
+        sms: {
+          enabled: changeText?.enabled ?? false,
+          template: changeText?.template ?? '',
+        },
+      },
+      mergeFields: MERGE_FIELDS,
     });
   } catch (e) {
     console.error('GET notifications error', e);
@@ -145,6 +161,8 @@ export async function POST(
     const nTexts: any[] = Array.isArray(body?.notifications?.texts)
       ? body.notifications.texts
       : [];
+    const chEmail = body?.changeNotifications?.email ?? { enabled: false, template: '' };
+    const chSms = body?.changeNotifications?.sms ?? { enabled: false, template: '' };
 
     await getPrisma().$transaction(async (tx) => {
       await tx.notification.deleteMany({ where: { locationId: location.id } });
@@ -169,6 +187,25 @@ export async function POST(
           template: String(cSms.template ?? ''),
           order: 0,
         },
+        // change notifications
+        {
+          locationId: location.id,
+          kind: KIND.CHANGE,
+          channel: CHANNEL.EMAIL,
+          hoursBefore: 0,
+          enabled: !!chEmail.enabled,
+          template: String(chEmail.template ?? ''),
+          order: 0,
+        },
+        {
+          locationId: location.id,
+          kind: KIND.CHANGE,
+          channel: CHANNEL.TEXT,
+          hoursBefore: 0,
+          enabled: !!chSms.enabled,
+          template: String(chSms.template ?? ''),
+          order: 0,
+        },
         // scheduled emails
         ...nEmails.map((n, idx) => ({
           locationId: location.id,
@@ -179,7 +216,7 @@ export async function POST(
           template: String(n.template ?? ''),
           order: Number(n.orderIndex ?? idx),
         })),
-        // scheduled texts (stored as TEXT)
+        // scheduled texts
         ...nTexts.map((n, idx) => ({
           locationId: location.id,
           kind: KIND.NOTIFICATION,

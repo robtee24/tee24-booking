@@ -20,10 +20,10 @@ export async function PATCH(req: NextRequest) {
       startLocal: body.startLocal,
       endLocal: body.endLocal,
       bayId: body.bayId,
-      firstName: body.firstName?.trim(),
-      lastName: body.lastName?.trim() || undefined,
-      email: body.email?.trim() || null,
-      phone: body.phone?.trim() || null,
+      firstName: body.firstName !== undefined ? body.firstName?.trim() : undefined,
+      lastName: body.lastName !== undefined ? (body.lastName?.trim() || undefined) : undefined,
+      email: body.email !== undefined ? (body.email?.trim() || null) : undefined,
+      phone: body.phone !== undefined ? (body.phone?.trim() || null) : undefined,
     });
 
     return NextResponse.json(updated);

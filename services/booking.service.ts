@@ -245,7 +245,13 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
     where: { id: bookingId },
     include: {
       Location: {
-        select: { id: true, slug: true, timezone: true, name: true },
+        select: {
+          id: true, slug: true, timezone: true, name: true,
+          notifications: {
+            where: { kind: "CHANGE", enabled: true },
+            select: { channel: true, template: true },
+          },
+        },
       },
     },
   });
@@ -280,7 +286,7 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
       bayNumber: finalBayNumber,
       startUTC,
       endUTC,
-      ignoreBookingId: bookingId,   // ignore self for moves
+      ignoreBookingId: bookingId,
     });
 
     if (!isFree) {
@@ -300,7 +306,7 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
   if (conflict) {
     throw new Error("Updated time overlaps with existing booking");
   }
-  return await getPrisma().booking.update({
+  const updated = await getPrisma().booking.update({
     where: { id: bookingId },
     data: {
       ...(startUTC !== booking.start && { start: startUTC }),
@@ -312,6 +318,18 @@ export async function adminUpdateBooking(input: AdminUpdateBookingInput) {
       ...(phone !== undefined && { phone: phone?.trim() ?? "" }),
     },
   });
+
+  // Send change notification for future bookings only
+  const isFutureBooking = updated.end > new Date();
+  if (isFutureBooking && location.notifications.length > 0) {
+    await sendChangeNotifications({
+      booking: updated,
+      locationName: location.name ?? "",
+      notifications: location.notifications,
+    });
+  }
+
+  return updated;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -616,6 +634,69 @@ async function sendConfirmations({
       }
     } else {
       console.log("No valid phone numbers found in:", booking.phone);
+    }
+  }
+}
+
+async function sendChangeNotifications({
+  booking,
+  locationName,
+  notifications,
+}: {
+  booking: any;
+  locationName: string;
+  notifications: { channel: string; template: string }[];
+}) {
+  const manageUrl = `${
+    process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"
+  }/manage/${booking.id}?token=${booking.managementToken}`;
+  const vars = {
+    firstName: booking.firstName ?? "",
+    lastName: booking.lastName ?? "",
+    email: booking.email ?? "",
+    phone: booking.phone ?? "",
+    date: formatDate(booking.start.toISOString()),
+    startTime: formatTime(booking.start.toISOString()),
+    start: formatTime(booking.start.toISOString()),
+    endTime: formatTime(booking.end.toISOString()),
+    end: formatTime(booking.end.toISOString()),
+    bayNumber: booking.bayNumber ?? "—",
+    locationName,
+    manageUrl,
+  };
+
+  const emailTemplate = notifications.find((n) => n.channel === "EMAIL")?.template;
+  const smsTemplate = notifications.find((n) => n.channel === "TEXT")?.template;
+
+  if (emailTemplate && booking.email) {
+    try {
+      const html = renderTemplate(emailTemplate, vars).replace(/\n/g, "<br>");
+      const subject = `Reservation Updated: ${locationName} — Bay ${vars.bayNumber} on ${vars.date} at ${vars.startTime}`;
+      await sendEmail(booking.email, subject, html);
+    } catch (e) {
+      console.error("Change notification email failed:", e);
+    }
+  }
+
+  if (smsTemplate && booking.phone) {
+    const phones = booking.phone
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .map(normalizePhone)
+      .filter(Boolean);
+
+    if (phones.length > 0) {
+      try {
+        const text = renderTemplate(smsTemplate, vars);
+        await sendSms({
+          from: process.env.OPENPHONE_FROM || "system",
+          to: phones,
+          content: text,
+        });
+      } catch (e) {
+        console.error("Change notification SMS failed:", e);
+      }
     }
   }
 }

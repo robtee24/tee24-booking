@@ -206,7 +206,9 @@ function ScheduleInner() {
       const now = new Date();
       const minutes = now.getHours() * 60 + now.getMinutes();
       const topPx = (minutes / (24 * 60)) * DAY_PX;
-      el.scrollTo({ top: Math.max(0, topPx), behavior: "instant" as ScrollBehavior });
+      const gridRect = el.getBoundingClientRect();
+      const scrollTarget = window.scrollY + gridRect.top + topPx - 120;
+      window.scrollTo({ top: Math.max(0, scrollTarget), behavior: "instant" as ScrollBehavior });
     };
 
     if (typeof requestAnimationFrame !== "undefined") {
@@ -228,8 +230,8 @@ function ScheduleInner() {
   }
 
   return (
-    <div className="min-h-screen bg-apple-bg flex flex-col">
-      <main className="flex-1 flex flex-col px-[5%] sm:px-[10%] pt-6 pb-0">
+    <div className="min-h-screen bg-apple-bg">
+      <div className="px-[5%] sm:px-[10%] pt-6 pb-24">
         {/* Top */}
         <div className="pb-2 text-apple-2xl font-semibold tracking-tight text-apple-text">
           {data ? data.locationName : "Loading…"}
@@ -262,8 +264,12 @@ function ScheduleInner() {
         ) : !data ? (
           <div className="mt-6 card p-4 text-apple-sm text-apple-text-secondary">No data.</div>
         ) : (
-          <section className="relative mt-4 rounded-apple overflow-hidden flex-1 min-h-0 shadow-apple">
-            <div ref={containerRef} className="relative flex-1 min-h-0 overflow-auto bg-white">
+          <section className="mt-4 rounded-apple shadow-apple overflow-x-auto">
+            <div
+              ref={containerRef}
+              className="bg-white"
+              style={{ minWidth: `${80 + data.bays.length * 180}px` }}
+            >
               <div
                 className="grid w-full relative"
                 style={{ gridTemplateColumns: `80px repeat(${data.bays.length}, minmax(180px, 1fr))`, height: DAY_PX }}
@@ -281,7 +287,7 @@ function ScheduleInner() {
                   const list = columns.cols[bay.number] || [];
                   return (
                     <div key={bay.id} className="relative border-l border-apple-divider">
-                      <div className="absolute left-0 right-0 top-0 h-8 bg-white/90 backdrop-blur-sm border-b border-apple-divider flex items-center px-3 text-apple-xs font-medium text-apple-text z-10">
+                      <div className="sticky top-0 left-0 right-0 h-8 bg-white/90 backdrop-blur-sm border-b border-apple-divider flex items-center px-3 text-apple-xs font-medium text-apple-text z-10">
                         Bay {bay.name ?? bay.number}
                       </div>
 
@@ -310,7 +316,7 @@ function ScheduleInner() {
             </div>
           </section>
         )}
-      </main>
+      </div>
 
       {/* Floating Reserve button */}
       {data?.locationSlug ? (

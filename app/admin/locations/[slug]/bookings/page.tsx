@@ -15,7 +15,6 @@ import { EditBookingModal } from "./components/EditBookingModal";
 import { CreateBookingModal } from "./components/CreateBookingModal";
 import { BookingHeader } from "./components/BookingHeader";
 import { BookingGrid } from "./components/BookingGrid";
-import { BayPagination } from "./components/BayPagination";
 import { cn } from "@/lib/utils";
 
 // ──────────────────────────────────────────────────────────────
@@ -68,8 +67,6 @@ export default function LocationBookingsPage() {
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
 
-  const [currentPage, setCurrentPage] = useState(0);
-  const baysPerPage = 10;
   const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -94,7 +91,6 @@ export default function LocationBookingsPage() {
       }
       const json: AdminDayView = await res.json();
       setData(json);
-      setCurrentPage(0);
     } catch (e: any) {
       setError(e.message || "Failed to load data");
     } finally {
@@ -111,12 +107,6 @@ export default function LocationBookingsPage() {
     () => (data?.bays || []).sort((a, b) => a.number - b.number),
     [data?.bays]
   );
-
-  const totalPages = Math.ceil(bays.length / baysPerPage) || 1;
-  const visibleBays = useMemo(() => {
-    const start = currentPage * baysPerPage;
-    return bays.slice(start, start + baysPerPage);
-  }, [bays, currentPage, baysPerPage]);
 
   const bookings = data?.bookings;
   const locationTimezone = data?.timezone ?? "UTC";
@@ -241,7 +231,7 @@ export default function LocationBookingsPage() {
   };
 
   const handleAddBooking = () => {
-    const defaultBay = visibleBays[0]?.id || bays[0]?.id || "";
+    const defaultBay = bays[0]?.id || "";
     const selectedDate = fmtDate(date);
     const now = new Date();
     const roundedMinutes = Math.floor(now.getMinutes() / timeStep) * timeStep;
@@ -430,65 +420,55 @@ export default function LocationBookingsPage() {
 
       {!loading && !error && data && bays.length > 0 && (
         <>
-          <div className="sticky top-0 z-10 -mt-4 mb-4 bg-gray-50 pt-4">
-            <BayPagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalBays={bays.length}
-              baysPerPage={baysPerPage}
-              onPageChange={setCurrentPage}
-            />
+          <div className="overflow-x-auto" style={{ minWidth: 0 }}>
+            <div style={{ minWidth: `${80 + bays.length * 140}px` }}>
+              <BookingGrid
+                visibleBays={bays}
+                bookings={bookings}
+                locationTimezone={locationTimezone}
+                date={date}
+                timeStep={timeStep}
+                pxPerMin={pxPerMin}
+                totalHeight={totalHeight}
+                palette={palette}
+                bayRefs={bayRefs}
+                onBookingDragStart={onBookingDragStart}
+                onBayDragOver={onBayDragOver}
+                onBayDrop={onBayDrop}
+                onBookingClick={onBookingClick}
+                onDeleteBooking={deleteBooking}
+              />
+            </div>
           </div>
 
-          <div className="space-y-6">
-            <BookingGrid
-              visibleBays={visibleBays}
-              bookings={bookings}
-              locationTimezone={locationTimezone}
-              date={date}
-              timeStep={timeStep}
-              pxPerMin={pxPerMin}
-              totalHeight={totalHeight}
-              palette={palette}
-              bayRefs={bayRefs}
-              onBookingDragStart={onBookingDragStart}
-              onBayDragOver={onBayDragOver}
-              onBayDrop={onBayDrop}
-              onBookingClick={onBookingClick}
-              onDeleteBooking={deleteBooking}
-            />
+          <CreateBookingModal
+            open={!!creatingDraft}
+            onClose={() => setCreatingDraft(null)}
+            draft={creatingDraft}
+            bays={bays}
+            timeStep={timeStep}
+            timeOptions={timeOptions}
+            getBlockedSlots={getBlockedSlots}
+            isSlotBlocked={isSlotBlocked}
+            onUpdateDraft={(updates) =>
+              setCreatingDraft((prev: any) => (prev ? { ...prev, ...updates } : null))
+            }
+            onCreate={createBooking}
+          />
 
-            {/* CREATE MODAL */}
-            <CreateBookingModal
-              open={!!creatingDraft}
-              onClose={() => setCreatingDraft(null)}
-              draft={creatingDraft}
-              bays={bays}
-              timeStep={timeStep}
-              timeOptions={timeOptions}
-              getBlockedSlots={getBlockedSlots}
-              isSlotBlocked={isSlotBlocked}
-              onUpdateDraft={(updates) =>
-                setCreatingDraft((prev: any) => (prev ? { ...prev, ...updates } : null))
-              }
-              onCreate={createBooking}
-            />
-
-            {/* EDIT MODAL */}
-            <EditBookingModal
-              open={!!editing}
-              onClose={() => setEditing(null)}
-              editing={editing}
-              bays={bays}
-              timeStep={timeStep}
-              timeOptions={timeOptions}
-              onSave={saveEdit}
-              onDelete={deleteBooking}
-              onUpdateField={(updates) =>
-                setEditing((prev: any) => (prev ? { ...prev, ...updates } : null))
-              }
-            />
-          </div>
+          <EditBookingModal
+            open={!!editing}
+            onClose={() => setEditing(null)}
+            editing={editing}
+            bays={bays}
+            timeStep={timeStep}
+            timeOptions={timeOptions}
+            onSave={saveEdit}
+            onDelete={deleteBooking}
+            onUpdateField={(updates) =>
+              setEditing((prev: any) => (prev ? { ...prev, ...updates } : null))
+            }
+          />
         </>
       )}
 

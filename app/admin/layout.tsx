@@ -5,25 +5,37 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from 'react';
 
+type SidebarLocation = { name: string; slug: string };
+
 export default function AdminLayout({ children }: PropsWithChildren) {
   const pathname = usePathname();
 
-  const { slug } = useMemo(() => {
+  const activeSlug = useMemo(() => {
     const m = pathname?.match(/\/admin\/locations\/([^/]+)/);
-    return { slug: m?.[1] ?? null };
+    return m?.[1] ?? null;
   }, [pathname]);
 
-  const [locOpen, setLocOpen] = useState<boolean>(Boolean(slug));
-  useEffect(() => setLocOpen(Boolean(slug)), [slug]);
-
+  const [locOpen, setLocOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [locations, setLocations] = useState<SidebarLocation[]>([]);
 
-  // Close sidebar on navigation (mobile)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/location-settings', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        setLocations(
+          (json?.locations ?? []).map((r: any) => ({ name: r.name, slug: r.slug }))
+        );
+      } catch {}
+    })();
+  }, [pathname]);
+
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
 
-  // Close sidebar on Escape
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setSidebarOpen(false);
@@ -32,7 +44,6 @@ export default function AdminLayout({ children }: PropsWithChildren) {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Lock body scroll when sidebar is open on mobile
   useEffect(() => {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -83,7 +94,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto p-3">
-          {/* Primary */}
+          {/* Manage */}
           <div className="mb-1 px-3 pt-2 pb-1.5 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">
             Manage
           </div>
@@ -94,38 +105,23 @@ export default function AdminLayout({ children }: PropsWithChildren) {
               </NavLink>
             </li>
             <li>
-              <NavLink href="/admin/locations" currentPath={pathname} icon="location">
-                Locations
-              </NavLink>
-            </li>
-            <li>
-              <NavLink href="/admin/admins" currentPath={pathname} icon="admins">
-                Admins
-              </NavLink>
-            </li>
-          </ul>
-
-          {/* Location subtree */}
-          {slug && (
-            <div className="mt-4">
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded-apple-sm px-3 py-2 transition-colors duration-150 hover:bg-apple-fill-secondary"
+                className={[
+                  'flex w-full items-center gap-2.5 rounded-apple-sm px-3 py-2.5 text-apple-sm font-medium transition-colors duration-150',
+                  pathname?.startsWith('/admin/locations')
+                    ? 'bg-apple-blue text-white'
+                    : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text',
+                ].join(' ')}
                 onClick={() => setLocOpen((v) => !v)}
                 aria-expanded={locOpen}
-                aria-controls="location-subtree"
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-apple-blue/10 text-apple-blue">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                  </svg>
+                <span className={pathname?.startsWith('/admin/locations') ? 'text-white' : 'text-apple-text-tertiary'}>
+                  {NAV_ICONS.location}
                 </span>
-                <span className="flex-1 truncate text-left text-apple-sm font-semibold text-apple-text">
-                  {titleize(slug)}
-                </span>
+                <span className="flex-1 text-left">Locations</span>
                 <svg
-                  className={`h-4 w-4 text-apple-text-tertiary transition-transform duration-200 ${locOpen ? 'rotate-0' : '-rotate-90'}`}
+                  className={`h-4 w-4 transition-transform duration-200 ${locOpen ? 'rotate-0' : '-rotate-90'} ${pathname?.startsWith('/admin/locations') ? 'text-white/70' : 'text-apple-text-tertiary'}`}
                   fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -133,31 +129,59 @@ export default function AdminLayout({ children }: PropsWithChildren) {
               </button>
 
               {locOpen && (
-                <ul id="location-subtree" className="mt-1 ml-4 space-y-0.5 border-l-2 border-apple-divider pl-3">
+                <ul className="mt-1 ml-4 space-y-0.5 border-l-2 border-apple-divider pl-3">
                   <li>
-                    <SubNavLink href={`/admin/locations/${slug}`} currentPath={pathname} exact>
-                      Details
+                    <SubNavLink href="/admin/locations" currentPath={pathname} exact>
+                      All Locations
                     </SubNavLink>
                   </li>
-                  <li>
-                    <SubNavLink href={`/admin/locations/${slug}/bays`} currentPath={pathname}>
-                      Bays
-                    </SubNavLink>
-                  </li>
-                  <li>
-                    <SubNavLink href={`/admin/locations/${slug}/notifications`} currentPath={pathname}>
-                      Notifications
-                    </SubNavLink>
-                  </li>
-                  <li>
-                    <SubNavLink href={`/admin/locations/${slug}/bookings`} currentPath={pathname}>
-                      Bookings
-                    </SubNavLink>
-                  </li>
+                  {locations.map((loc) => (
+                    <li key={loc.slug}>
+                      <SubNavLink href={`/admin/locations/${loc.slug}`} currentPath={pathname}>
+                        {loc.name}
+                      </SubNavLink>
+                      {activeSlug === loc.slug && (
+                        <ul className="mt-0.5 ml-3 space-y-0.5 border-l border-apple-divider/60 pl-3">
+                          <li>
+                            <SubNavLink href={`/admin/locations/${loc.slug}`} currentPath={pathname} exact>
+                              Details
+                            </SubNavLink>
+                          </li>
+                          <li>
+                            <SubNavLink href={`/admin/locations/${loc.slug}/bays`} currentPath={pathname}>
+                              Bays
+                            </SubNavLink>
+                          </li>
+                          <li>
+                            <SubNavLink href={`/admin/locations/${loc.slug}/notifications`} currentPath={pathname}>
+                              Notifications
+                            </SubNavLink>
+                          </li>
+                          <li>
+                            <SubNavLink href={`/admin/locations/${loc.slug}/bookings`} currentPath={pathname}>
+                              Bookings
+                            </SubNavLink>
+                          </li>
+                        </ul>
+                      )}
+                    </li>
+                  ))}
                 </ul>
               )}
-            </div>
-          )}
+            </li>
+          </ul>
+
+          {/* Settings */}
+          <div className="mb-1 mt-6 px-3 pt-2 pb-1.5 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">
+            Settings
+          </div>
+          <ul className="space-y-0.5">
+            <li>
+              <NavLink href="/admin/admins" currentPath={pathname} icon="admins">
+                Admins
+              </NavLink>
+            </li>
+          </ul>
         </nav>
 
         {/* Sidebar footer */}
