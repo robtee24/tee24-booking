@@ -1,20 +1,6 @@
 // app/schedule/page.tsx
 "use client";
 
-/**
- * Location-wide read-only day view with bay columns
- * URL: /schedule?slug=<locationSlug>&d=YYYY-MM-DD
- *
- * - Left hour ruler; each bay is its own column
- * - Blocks show: "F. Lastname" (top) and times (below, small)
- * - Full-width blocks per column
- * - Autoscrolls so "now" is at the very top when viewing today's date
- * - Full-height layout with responsive margins (5% mobile, 10% tablet/desktop)
- * - Floating full-width "Reserve A Bay" button at bottom (inside margins)
- * - Per-column color cycling: each column alternates through 10 colors independently
- * - No bottom gap; grid extends to 12:00 AM (explicit bottom line)
- */
-
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -37,8 +23,8 @@ type ApiOk = {
 };
 type ApiErr = { error: string };
 
-const HOUR_PX = 96;           // 6rem
-const DAY_PX = 24 * HOUR_PX;  // total pixel height for 24h
+const HOUR_PX = 96;
+const DAY_PX = 24 * HOUR_PX;
 
 function nyISO(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -88,7 +74,6 @@ function nameCompact(fn: string, ln: string) {
   return `${first ? first[0] + "." : ""} ${last}`.trim();
 }
 
-/** Wrapper to satisfy Next's CSR bailout rule for useSearchParams */
 export default function LocationSchedulePage() {
   return (
     <Suspense fallback={<ScheduleFallback />}>
@@ -99,15 +84,14 @@ export default function LocationSchedulePage() {
 
 function ScheduleFallback() {
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <h1 className="text-xl font-semibold mb-2">Location schedule (read-only)</h1>
-      <p className="text-sm text-gray-700">Loading…</p>
+    <main className="mx-auto max-w-2xl px-6 py-10">
+      <h1 className="text-apple-xl font-semibold text-apple-text mb-2">Location schedule</h1>
+      <p className="text-apple-sm text-apple-text-secondary">Loading…</p>
     </main>
   );
 }
 
 function ScheduleInner() {
-  // ✅ Next 16: useSearchParams can be null at build/prerender — make it null-safe
   const sp = useSearchParams() as URLSearchParams | null;
   const slug = (sp?.get("slug") ?? "").trim();
   const dParam = coerceDay(sp?.get("d") ?? null);
@@ -160,7 +144,6 @@ function ScheduleInner() {
     return () => { cancelled = true; };
   }, [slug, dParam]);
 
-  // Build columns with bookings positioned by time
   const columns = useMemo(() => {
     if (!data) {
       return {
@@ -172,7 +155,6 @@ function ScheduleInner() {
     const minutesPerDay = 24 * 60;
     const startNY = new Date(`${data.dateISO}T00:00:00-05:00`);
 
-    // Group bookings by bayNumber
     const grouped: Record<number, BookingDTO[]> = {};
     for (const b of data.bookings) {
       grouped[b.bayNumber] ||= [];
@@ -202,21 +184,19 @@ function ScheduleInner() {
     return { bays: data.bays, cols };
   }, [data]);
 
-  // 10-color palette
   const palette = [
-    ["bg-blue-50", "border-blue-200", "text-blue-900"],
-    ["bg-emerald-50", "border-emerald-200", "text-emerald-900"],
-    ["bg-amber-50", "border-amber-200", "text-amber-900"],
-    ["bg-violet-50", "border-violet-200", "text-violet-900"],
-    ["bg-rose-50", "border-rose-200", "text-rose-900"],
-    ["bg-cyan-50", "border-cyan-200", "text-cyan-900"],
-    ["bg-fuchsia-50", "border-fuchsia-200", "text-fuchsia-900"],
-    ["bg-lime-50", "border-lime-200", "text-lime-900"],
-    ["bg-orange-50", "border-orange-200", "text-orange-900"],
-    ["bg-sky-50", "border-sky-200", "text-sky-900"],
+    ["bg-blue-50", "border-blue-200/60", "text-blue-900"],
+    ["bg-emerald-50", "border-emerald-200/60", "text-emerald-900"],
+    ["bg-amber-50", "border-amber-200/60", "text-amber-900"],
+    ["bg-violet-50", "border-violet-200/60", "text-violet-900"],
+    ["bg-rose-50", "border-rose-200/60", "text-rose-900"],
+    ["bg-cyan-50", "border-cyan-200/60", "text-cyan-900"],
+    ["bg-fuchsia-50", "border-fuchsia-200/60", "text-fuchsia-900"],
+    ["bg-lime-50", "border-lime-200/60", "text-lime-900"],
+    ["bg-orange-50", "border-orange-200/60", "text-orange-900"],
+    ["bg-sky-50", "border-sky-200/60", "text-sky-900"],
   ];
 
-  // Auto-scroll so "now" sits at the top on today's date
   useEffect(() => {
     if (!data || data.dateISO !== todayISO) return;
     const el = containerRef.current;
@@ -238,96 +218,88 @@ function ScheduleInner() {
 
   if (!slug) {
     return (
-      <main className="mx-auto max-w-2xl p-6">
-        <h1 className="text-xl font-semibold mb-2">Location schedule (read-only)</h1>
-        <p className="text-sm text-gray-700">
-          Add <code className="font-mono bg-gray-100 px-1 py-0.5 rounded">?slug=&lt;locationSlug&gt;</code> to the URL.
+      <main className="mx-auto max-w-2xl px-6 py-10">
+        <h1 className="text-apple-xl font-semibold text-apple-text mb-2">Location schedule</h1>
+        <p className="text-apple-sm text-apple-text-secondary">
+          Add <code className="rounded-apple-sm bg-apple-fill-secondary px-1.5 py-0.5 font-mono text-apple-xs">?slug=&lt;locationSlug&gt;</code> to the URL.
         </p>
       </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <main className="flex-1 flex flex-col px-[5%] sm:px-[10%] pb-0">
+    <div className="min-h-screen bg-apple-bg flex flex-col">
+      <main className="flex-1 flex flex-col px-[5%] sm:px-[10%] pt-6 pb-0">
         {/* Top */}
-        <div className="pb-2 text-2xl font-semibold">{data ? data.locationName : "Loading…"}</div>
+        <div className="pb-2 text-apple-2xl font-semibold tracking-tight text-apple-text">
+          {data ? data.locationName : "Loading…"}
+        </div>
 
-        <header className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b">
-          <div className="text-lg font-medium">All Bays</div>
+        <header className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-apple-divider">
+          <div className="text-apple-lg font-medium text-apple-text">All Bays</div>
           <div className="flex items-center gap-2">
-            <Link href={mkUrl(prevISO)} className="px-3 py-1.5 rounded border hover:bg-gray-50">←</Link>
-            <div className="px-2 text-base font-semibold">{data ? fmtLongDateNY(data.dateISO) : fmtLongDateNY(dParam)}</div>
-            <Link href={mkUrl(nextISO)} className="px-3 py-1.5 rounded border hover:bg-gray-50">→</Link>
-            <Link href={mkUrl(todayISO)} className="ml-2 px-3 py-1.5 rounded border hover:bg-gray-50">Today</Link>
+            <Link href={mkUrl(prevISO)} className="btn-secondary !px-3 !py-1.5 text-apple-sm">←</Link>
+            <div className="px-2 text-apple-base font-semibold text-apple-text">{data ? fmtLongDateNY(data.dateISO) : fmtLongDateNY(dParam)}</div>
+            <Link href={mkUrl(nextISO)} className="btn-secondary !px-3 !py-1.5 text-apple-sm">→</Link>
+            <Link href={mkUrl(todayISO)} className="btn-secondary !px-3 !py-1.5 text-apple-sm ml-1">Today</Link>
           </div>
         </header>
 
         {/* Calendar */}
         {loading ? (
-          <div className="mt-6 text-sm text-gray-600">Loading…</div>
+          <div className="mt-6 text-apple-sm text-apple-text-tertiary">Loading…</div>
         ) : err ? (
-          <div className="mt-6 rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
-            <div className="font-medium mb-1">Couldn’t load schedule</div>
+          <div className="mt-6 rounded-apple-sm border border-apple-orange/30 bg-apple-orange/5 p-4 text-apple-sm text-apple-orange">
+            <div className="font-medium mb-1">Couldn&apos;t load schedule</div>
             <div>{err}</div>
             {raw ? (
               <details className="mt-2">
-                <summary className="cursor-pointer">Show server response</summary>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-xs bg-white border p-2 rounded max-h-64 overflow-auto">{raw}</pre>
+                <summary className="cursor-pointer text-apple-xs">Show server response</summary>
+                <pre className="mt-2 whitespace-pre-wrap break-words text-apple-xs bg-white border border-apple-border p-2 rounded-apple-sm max-h-64 overflow-auto">{raw}</pre>
               </details>
             ) : null}
           </div>
         ) : !data ? (
-          <div className="mt-6 rounded border bg-gray-50 p-3 text-sm">No data.</div>
+          <div className="mt-6 card p-4 text-apple-sm text-apple-text-secondary">No data.</div>
         ) : (
-          <section className="relative mt-4 border rounded-lg overflow-hidden flex-1 min-h-0">
+          <section className="relative mt-4 rounded-apple overflow-hidden flex-1 min-h-0 shadow-apple">
             <div ref={containerRef} className="relative flex-1 min-h-0 overflow-auto bg-white">
-              {/* Grid: 80px ruler + N bay columns; bay columns min width for readability */}
               <div
                 className="grid w-full relative"
                 style={{ gridTemplateColumns: `80px repeat(${data.bays.length}, minmax(180px, 1fr))`, height: DAY_PX }}
               >
                 {/* Ruler */}
-                <div className="bg-gray-50 border-r text-xs text-gray-600">
+                <div className="bg-apple-fill-secondary border-r border-apple-divider text-apple-xs text-apple-text-tertiary">
                   {Array.from({ length: 24 }).map((_, h) => (
-                    <div key={h} className="h-24 px-2 flex items-start border-t border-gray-100">{fmtHourLabel(h)}</div>
+                    <div key={h} className="h-24 px-2 flex items-start border-t border-apple-divider/50">{fmtHourLabel(h)}</div>
                   ))}
-                  {/* explicit midnight line to close the day */}
-                  <div className="border-t border-gray-100" />
+                  <div className="border-t border-apple-divider/50" />
                 </div>
 
                 {/* Bay columns */}
                 {data.bays.map((bay) => {
                   const list = columns.cols[bay.number] || [];
                   return (
-                    <div key={bay.id} className="relative border-l">
-                      {/* Column header (overlay) */}
-                      <div className="absolute left-0 right-0 top-0 h-8 bg-white/90 backdrop-blur-sm border-b flex items-center px-2 text-xs font-medium z-10">
+                    <div key={bay.id} className="relative border-l border-apple-divider">
+                      <div className="absolute left-0 right-0 top-0 h-8 bg-white/90 backdrop-blur-sm border-b border-apple-divider flex items-center px-3 text-apple-xs font-medium text-apple-text z-10">
                         Bay {bay.name ?? bay.number}
                       </div>
 
-                      {/* Hour lines */}
                       {Array.from({ length: 24 }).map((_, h) => (
-                        <div
-                          key={h}
-                          className="absolute left-0 right-0 border-t border-gray-100"
-                          style={{ top: `${(h / 24) * 100}%` }}
-                        />
+                        <div key={h} className="absolute left-0 right-0 border-t border-apple-divider/30" style={{ top: `${(h / 24) * 100}%` }} />
                       ))}
-                      {/* explicit midnight line at 100% */}
-                      <div className="absolute left-0 right-0 border-t border-gray-100" style={{ top: "100%" }} />
+                      <div className="absolute left-0 right-0 border-t border-apple-divider/30" style={{ top: "100%" }} />
 
-                      {/* Bookings — full width & per-column color cycling */}
                       {list.map((blk, idx) => {
                         const [bg, br, tx] = palette[idx % palette.length];
                         return (
                           <div
                             key={blk.id}
-                            className={`absolute left-0 right-0 border-y first:rounded-t-md last:rounded-b-md shadow-sm px-2 py-1 ${bg} ${br} ${tx}`}
+                            className={`absolute left-1 right-1 rounded-apple-sm border shadow-apple px-2 py-1 ${bg} ${br} ${tx}`}
                             style={{ top: blk.topPx, height: blk.heightPx, minHeight: 28 }}
                           >
                             <div className="text-[11px] leading-tight font-medium truncate">{blk.name}</div>
-                            <div className="text-[10px] leading-tight opacity-80">{blk.times}</div>
+                            <div className="text-[10px] leading-tight opacity-70">{blk.times}</div>
                           </div>
                         );
                       })}
@@ -335,19 +307,18 @@ function ScheduleInner() {
                   );
                 })}
               </div>
-              {/* No spacer: content now ends exactly at 12:00 AM */}
             </div>
           </section>
         )}
       </main>
 
-      {/* Floating full-width Reserve button (overlay; respects page margins) */}
+      {/* Floating Reserve button */}
       {data?.locationSlug ? (
-        <div className="fixed bottom-4 left-[5%] sm:left-[10%] right-[5%] sm:right-[10%] z-50 pointer-events-none">
+        <div className="fixed bottom-5 left-[5%] sm:left-[10%] right-[5%] sm:right-[10%] z-50 pointer-events-none">
           <Link
             href={`/book/${data.locationSlug}`}
             aria-label={`Reserve a bay at ${data.locationName}`}
-            className="pointer-events-auto block w-full text-center rounded-xl bg-black text-white px-5 py-3 text-sm font-medium shadow-lg hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/30"
+            className="pointer-events-auto btn-primary block w-full text-center !py-3.5 shadow-apple-lg"
           >
             Reserve A Bay
           </Link>
@@ -356,7 +327,3 @@ function ScheduleInner() {
     </div>
   );
 }
-
-
-
-

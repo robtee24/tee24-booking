@@ -54,10 +54,10 @@ export function BayColumn({
         if (el) bayRefs.current[bay.id] = el;
       }}
       className={`
-        relative border-l transition-all duration-300
+        relative border-l transition-all duration-200
         ${isDisabled
-          ? "bg-gray-100 border-gray-300"
-          : "bg-white border-gray-200"
+          ? "bg-apple-fill-secondary border-apple-border"
+          : "bg-white border-apple-divider"
         }
       `}
       style={{ height: totalHeight }}
@@ -70,23 +70,21 @@ export function BayColumn({
         onBayDrop(e, bay);
       }}
     >
-      {/* Subtle diagonal stripes when bay is disabled */}
       {isDisabled && (
         <div
-          className="absolute inset-0 opacity-30 pointer-events-none"
+          className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
             backgroundImage: `repeating-linear-gradient(
               45deg,
               transparent,
               transparent 8px,
-              #9ca3af 8px,
-              #9ca3af 16px
+              #D2D2D7 8px,
+              #D2D2D7 16px
             )`,
           }}
         />
       )}
 
-      {/* Horizontal grid lines */}
       <GridLines
         timeStep={timeStep}
         pxPerMin={pxPerMin}
@@ -94,12 +92,10 @@ export function BayColumn({
         className={isDisabled ? "opacity-30" : ""}
       />
 
-      {/* Bookings — dimmed when bay is disabled */}
       <div className={isDisabled ? "opacity-40" : ""}>
         {bookings.map((booking, idx) => {
           const position = getBookingPosition(booking);
           if (!position) return null;
-
           const { top, height } = position;
 
           return (

@@ -13,7 +13,7 @@ export function TimeGutter({ pxPerMin, totalHeight }: TimeGutterProps) {
       {Array.from({ length: 25 }, (_, i) => (
         <div
           key={i}
-          className="absolute left-0 right-0 border-t text-right text-[10px] text-gray-500"
+          className="absolute left-0 right-0 border-t border-apple-divider text-right text-[10px] text-apple-text-tertiary"
           style={{ top: minutesToTop(i * 60, pxPerMin) }}
         >
           <div className="-translate-y-1/2 px-2">{labelForHour(i)}</div>

@@ -5,26 +5,13 @@ import React from "react";
 import { toE164 } from "@/lib/phone";
 
 type Props = {
-  /** Where to POST when requesting OTP */
   startEndpoint: string;
-  /** Where to POST when verifying OTP */
   verifyEndpoint: string;
-
-  /** Optional: title above the form */
   title?: string;
-  /** Optional: subtitle under title */
   subtitle?: string;
-
-  /** Optional: if provided, skip phone entry and go straight to code screen */
   initialPhone?: string;
-
-  /** Called after successful verification */
   onSuccess: () => void;
-
-  /** Customize the "Send Code" button text */
   sendButtonText?: string;
-
-  /** Delay before calling onSuccess (ms) */
   successDelayMs?: number;
 };
 
@@ -38,7 +25,6 @@ export default function OtpFlow({
   sendButtonText = "Send Code",
   successDelayMs = 0,
 }: Props) {
-  // If initialPhone is passed, start in code mode with that phone
   const [step, setStep] = React.useState<"phone" | "code">(
     initialPhone ? "code" : "phone"
   );
@@ -113,33 +99,30 @@ export default function OtpFlow({
   };
 
   return (
-    <div className="w-full max-w-sm space-y-6 rounded-2xl border bg-white p-8 shadow-lg">
-      {/* Title (only shown if provided) */}
+    <div className="w-full max-w-sm card p-8 space-y-6">
       {(title || subtitle) && (
         <div className="text-center">
-          {title && <h2 className="text-2xl font-bold">{title}</h2>}
-          {subtitle && <p className="mt-2 text-sm text-neutral-600">{subtitle}</p>}
+          {title && <h2 className="text-apple-2xl font-semibold tracking-tight text-apple-text">{title}</h2>}
+          {subtitle && <p className="mt-2 text-apple-sm text-apple-text-secondary">{subtitle}</p>}
         </div>
       )}
 
-      {/* Message */}
       {message && (
         <div
-          className={`rounded-lg px-4 py-3 text-sm font-medium ${
+          className={`rounded-apple-sm px-4 py-3 text-apple-sm font-medium ${
             message.includes("sent") || message.includes("Verified")
-              ? "bg-green-50 text-green-800"
-              : "bg-red-50 text-red-800"
+              ? "bg-apple-green/5 border border-apple-green/30 text-apple-green"
+              : "bg-apple-red/5 border border-apple-red/30 text-apple-red"
           }`}
         >
           {message}
         </div>
       )}
 
-      {/* Phone Entry */}
       {step === "phone" && (
         <form onSubmit={requestCode} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-neutral-700">
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">
               Phone number
             </label>
             <input
@@ -147,27 +130,22 @@ export default function OtpFlow({
               placeholder="(555) 123-4567"
               value={phoneInput}
               onChange={(e) => setPhoneInput(e.target.value)}
-              className="mt-1.5 block w-full rounded-xl border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black"
+              className="input"
               required
               disabled={loading}
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-black py-3.5 font-medium text-white hover:bg-neutral-800 disabled:opacity-60"
-          >
+          <button type="submit" disabled={loading} className="btn-primary w-full !py-3">
             {loading ? "Sending..." : sendButtonText}
           </button>
         </form>
       )}
 
-      {/* Code Entry */}
       {step === "code" && (
         <form onSubmit={verifyCode} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-neutral-700">
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">
               6-digit code
             </label>
             <input
@@ -177,22 +155,18 @@ export default function OtpFlow({
               placeholder="123456"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="mt-1.5 block w-full rounded-xl border px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-black"
+              className="input text-center text-2xl tracking-widest"
               maxLength={6}
               required
               disabled={loading}
               autoFocus
             />
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-apple-xs text-apple-text-tertiary">
               Sent to <span className="font-medium">{phoneE164}</span>
             </p>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-black py-3.5 font-medium text-white hover:bg-neutral-800 disabled:opacity-60"
-          >
+          <button type="submit" disabled={loading} className="btn-primary w-full !py-3">
             {loading ? "Verifying..." : "Verify"}
           </button>
 
@@ -200,7 +174,7 @@ export default function OtpFlow({
             type="button"
             onClick={requestCode}
             disabled={loading}
-            className="w-full rounded-xl border border-neutral-300 py-3 font-medium text-neutral-700 hover:bg-neutral-50"
+            className="btn-secondary w-full"
           >
             Resend Code
           </button>

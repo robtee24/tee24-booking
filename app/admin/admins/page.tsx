@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-/* ===== Types ===== */
 type AdminRole = "ROOT" | "FULL" | "SCOPED";
 type LocationLite = { id: string; name: string; slug: string };
 type AdminLocationLink = { id: string; location: LocationLite };
@@ -91,40 +90,42 @@ export default function AdminsPage() {
   }, []);
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Admins</h1>
-        <Link
-          href="/admin/admins/new"
-          className="rounded-lg bg-black px-3 py-2 text-white hover:bg-neutral-800"
-        >
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Admins</h1>
+          <p className="mt-1 text-apple-base text-apple-text-secondary">
+            Manage admin accounts and control access.
+          </p>
+        </div>
+        <Link href="/admin/admins/new" className="btn-primary">
           + Add Admin
         </Link>
       </div>
 
       {loading ? (
-        <div className="rounded-xl border p-6 text-sm text-neutral-600">Loading…</div>
+        <div className="card p-6 text-apple-sm text-apple-text-tertiary">Loading…</div>
       ) : err ? (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-apple border border-apple-red/30 bg-apple-red/5 p-4 text-apple-sm text-apple-red">
           {err}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left">
+        <div className="card overflow-hidden">
+          <table className="w-full text-apple-sm">
+            <thead className="border-b border-apple-divider bg-apple-fill-secondary text-left">
               <tr>
-                <th className="px-4 py-2 font-medium text-neutral-700">Phone</th>
-                <th className="px-4 py-2 font-medium text-neutral-700">Name</th>
-                <th className="px-4 py-2 font-medium text-neutral-700">Role</th>
-                <th className="px-4 py-2 font-medium text-neutral-700">Locations</th>
-                <th className="px-4 py-2 font-medium text-neutral-700">Created</th>
-                <th className="px-4 py-2" />
+                <th className="px-5 py-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Phone</th>
+                <th className="px-5 py-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Name</th>
+                <th className="px-5 py-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Role</th>
+                <th className="px-5 py-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Locations</th>
+                <th className="px-5 py-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Created</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody>
               {(admins ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-neutral-600">
+                  <td colSpan={6} className="px-5 py-8 text-center text-apple-text-secondary">
                     No admins yet.
                   </td>
                 </tr>
@@ -138,17 +139,19 @@ export default function AdminsPage() {
                           .join(", ") || "None"
                       : "All locations";
                   return (
-                    <tr key={a.id || Math.random()} className="border-t align-top">
-                      <td className="px-4 py-3 font-mono">{a.phone || "—"}</td>
-                      <td className="px-4 py-3">{a.name ?? <span className="text-neutral-500">—</span>}</td>
-                      <td className="px-4 py-3">
-                        <span className="rounded border px-2 py-0.5 text-xs">{a.role}</span>
+                    <tr key={a.id || Math.random()} className="border-t border-apple-divider align-top transition-colors hover:bg-apple-fill-secondary/50">
+                      <td className="px-5 py-3.5 font-mono text-apple-sm">{a.phone || "—"}</td>
+                      <td className="px-5 py-3.5">{a.name ?? <span className="text-apple-text-tertiary">—</span>}</td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex items-center rounded-apple-pill border border-apple-border px-2.5 py-0.5 text-apple-xs font-medium">
+                          {a.role}
+                        </span>
                       </td>
-                      <td className="px-4 py-3">{locs}</td>
-                      <td className="px-4 py-3">
-                        {a.createdAt ? new Date(a.createdAt).toLocaleString() : "—"}
+                      <td className="px-5 py-3.5 text-apple-text-secondary">{locs}</td>
+                      <td className="px-5 py-3.5 text-apple-text-tertiary">
+                        {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-5 py-3.5 text-right">
                         <ManageButton admin={a} allLocations={locations} onSaved={reload} onDeleted={reload} />
                       </td>
                     </tr>
@@ -160,14 +163,14 @@ export default function AdminsPage() {
         </div>
       )}
 
-      <div className="mt-3 text-xs text-neutral-500">
-        admins: {(admins ?? []).length} • locations: {(locations ?? []).length}
+      <div className="text-apple-xs text-apple-text-tertiary">
+        admins: {(admins ?? []).length} · locations: {(locations ?? []).length}
       </div>
     </div>
   );
 }
 
-/* ========= Manage Modal (client-only, defensive) ========= */
+/* ========= Manage Modal ========= */
 
 function ManageButton({
   admin,
@@ -184,7 +187,7 @@ function ManageButton({
   return (
     <>
       <button
-        className="rounded-md border px-3 py-1 hover:bg-neutral-50"
+        className="rounded-apple-sm border border-apple-border px-3 py-1.5 text-apple-xs font-medium text-apple-text-secondary transition-colors hover:bg-apple-fill-secondary hover:text-apple-text"
         onClick={() => setOpen(true)}
       >
         Manage →
@@ -238,10 +241,7 @@ function ManageModal({
 
   const onSave = async () => {
     setErr(null);
-    if (!adminId) {
-      setErr("missing id");
-      return;
-    }
+    if (!adminId) { setErr("missing id"); return; }
     try {
       setSaving(true);
       const payload: any = { name: name || null, role };
@@ -267,15 +267,10 @@ function ManageModal({
 
   const onDelete = async () => {
     setErr(null);
-    if (!adminId) {
-      setErr("missing id");
-      return;
-    }
+    if (!adminId) { setErr("missing id"); return; }
     try {
       setDeleting(true);
-      const res = await fetch(`/api/admin/admins/${encodeURIComponent(adminId)}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/admin/admins/${encodeURIComponent(adminId)}`, { method: "DELETE" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `HTTP ${res.status}`);
@@ -290,26 +285,22 @@ function ManageModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
-        <div className="mb-3 text-xs text-neutral-500">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl rounded-apple bg-white p-6 shadow-apple-lg">
+        <div className="mb-4 text-apple-xs text-apple-text-tertiary">
           <span className="font-mono">Admin ID</span>:{" "}
           <span className="font-mono">{adminId || "—"}</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-neutral-600">Phone</label>
-            <input
-              className="mt-1 w-full rounded border px-3 py-2 font-mono"
-              value={admin?.phone ?? ""}
-              disabled
-            />
+            <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Phone</label>
+            <input className="input font-mono" value={admin?.phone ?? ""} disabled />
           </div>
           <div>
-            <label className="block text-xs font-medium text-neutral-600">Name</label>
+            <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Name</label>
             <input
-              className="mt-1 w-full rounded border px-3 py-2"
+              className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="(optional)"
@@ -317,11 +308,11 @@ function ManageModal({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-neutral-600">Role</label>
+            <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Role</label>
             <select
-              className="mt-1 w-full rounded border px-3 py-2"
+              className="input"
               value={role}
               onChange={(e) => setRole(e.target.value as AdminRole)}
             >
@@ -329,31 +320,31 @@ function ManageModal({
               <option value="FULL">FULL</option>
               <option value="SCOPED">SCOPED</option>
             </select>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1.5 text-apple-xs text-apple-text-tertiary">
               ROOT and FULL access all locations. SCOPED limits access to selected locations.
             </p>
           </div>
         </div>
 
         {role === "SCOPED" && (
-          <div className="mt-4">
-            <div className="mb-1 text-sm font-semibold text-neutral-700">Allowed Locations</div>
-            <div className="max-h-56 overflow-auto rounded border p-3">
+          <div className="mt-5">
+            <div className="mb-2 text-apple-sm font-semibold text-apple-text">Allowed Locations</div>
+            <div className="max-h-56 overflow-auto rounded-apple-sm border border-apple-border p-3">
               {(allLocations ?? []).length === 0 ? (
-                <div className="text-sm text-neutral-500">No locations.</div>
+                <div className="text-apple-sm text-apple-text-tertiary">No locations.</div>
               ) : (
                 (allLocations ?? []).map((loc) => {
                   const isChecked = checked.has(loc.id);
                   return (
-                    <label key={loc.id} className="flex cursor-pointer items-center gap-3 py-1">
+                    <label key={loc.id} className="flex cursor-pointer items-center gap-3 rounded-apple-sm px-2 py-2 transition-colors hover:bg-apple-fill-secondary">
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => toggle(loc.id)}
-                        className="h-4 w-4"
+                        className="h-4 w-4 rounded accent-apple-blue"
                       />
-                      <span className="text-sm">{loc.name}</span>
-                      <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                      <span className="text-apple-sm text-apple-text">{loc.name}</span>
+                      <span className="rounded-apple-pill bg-apple-fill-secondary px-2 py-0.5 text-apple-xs text-apple-text-tertiary">
                         {loc.slug}
                       </span>
                     </label>
@@ -365,18 +356,18 @@ function ManageModal({
         )}
 
         {err && (
-          <div className="mt-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mt-4 rounded-apple-sm border border-apple-red/30 bg-apple-red/5 px-4 py-2.5 text-apple-sm text-apple-red">
             {err}
           </div>
         )}
 
-        <div className="mt-5 flex items-center justify-between">
-          <button className="rounded border px-3 py-2 hover:bg-neutral-50" onClick={onClose}>
+        <div className="mt-6 flex items-center justify-between border-t border-apple-divider pt-5">
+          <button className="btn-secondary" onClick={onClose}>
             Close
           </button>
           <div className="flex items-center gap-2">
             <button
-              className="rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-60"
+              className="btn-danger"
               onClick={onDelete}
               disabled={deleting || !adminId}
               title={!adminId ? "Missing id" : "Delete admin"}
@@ -384,12 +375,12 @@ function ManageModal({
               {deleting ? "Deleting…" : "Delete"}
             </button>
             <button
-              className="rounded bg-black px-4 py-2 text-white hover:bg-neutral-800 disabled:opacity-60"
+              className="btn-primary"
               onClick={onSave}
               disabled={saving || !adminId}
               title={!adminId ? "Missing id" : "Save changes"}
             >
-              {saving ? "Saving…" : "Save changes"}
+              {saving ? "Saving…" : "Save Changes"}
             </button>
           </div>
         </div>
@@ -397,5 +388,3 @@ function ManageModal({
     </div>
   );
 }
-
-

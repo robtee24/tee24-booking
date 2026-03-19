@@ -27,7 +27,7 @@ export function GridLines({
           <div
             key={i}
             className={`absolute left-0 right-0 border-t ${
-              isHour ? "border-gray-300" : "border-gray-100"
+              isHour ? "border-apple-border" : "border-apple-divider/50"
             }`}
             style={{ top: minutesToTop(mins, pxPerMin) }}
           />

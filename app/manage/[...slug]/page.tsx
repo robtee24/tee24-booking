@@ -27,17 +27,10 @@ type ApiBooking = {
 };
 
 function fmtDate(d: Date) {
-  return d.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 function fmtTime(d: Date) {
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
 export default function ManageBookingPage(props: {
@@ -78,26 +71,16 @@ export default function ManageBookingPage(props: {
       setBookingLoading(true);
       setBookingLoadError(null);
       setBooking(null);
-      if (!bookingId) {
-        setBookingLoading(false);
-        return;
-      }
+      if (!bookingId) { setBookingLoading(false); return; }
       try {
-        const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, { cache: "no-store" });
         if (!res.ok) {
-          if (!cancelled) {
-            setBookingLoadError(res.status === 404 ? "Reservation not found." : `HTTP ${res.status}`);
-          }
+          if (!cancelled) setBookingLoadError(res.status === 404 ? "Reservation not found." : `HTTP ${res.status}`);
           return;
         }
         const data: ApiBooking = await res.json();
         const loc = data.location ?? (data as any).Location ?? {};
-        if (!cancelled) {
-          setLocationSlug(loc?.slug ?? null);
-          setBooking(data);
-        }
+        if (!cancelled) { setLocationSlug(loc?.slug ?? null); setBooking(data); }
       } catch (e: any) {
         if (!cancelled) setBookingLoadError(e?.message || "Failed to load reservation.");
       } finally {
@@ -105,16 +88,11 @@ export default function ManageBookingPage(props: {
       }
     }
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [bookingId]);
 
   const cancelReservation = React.useCallback(async () => {
-    if (!bookingId) {
-      setError("Missing booking id.");
-      return;
-    }
+    if (!bookingId) { setError("Missing booking id."); return; }
     setLoading(true);
     setError(null);
     try {
@@ -135,107 +113,100 @@ export default function ManageBookingPage(props: {
   }, [bookingId, token]);
 
   const gotoNewReservation = React.useCallback(() => {
-    if (locationSlug) {
-      router.replace(`/book/${encodeURIComponent(locationSlug)}`);
-    } else {
-      router.replace(`/book`);
-    }
+    if (locationSlug) router.replace(`/book/${encodeURIComponent(locationSlug)}`);
+    else router.replace(`/book`);
   }, [router, locationSlug]);
 
-  // Summary derivations
-  const locationName =
-    (booking?.location?.name ?? (booking as any)?.Location?.name ?? "") || "";
+  const locationName = (booking?.location?.name ?? (booking as any)?.Location?.name ?? "") || "";
   const bay = booking?.bayNumber ?? "—";
   const startDate = booking?.start ? new Date(booking.start) : null;
   const endDate = booking?.end ? new Date(booking.end) : null;
   const dateStr = startDate ? fmtDate(startDate) : "—";
-  const timeStr =
-    startDate && endDate ? `${fmtTime(startDate)} – ${fmtTime(endDate)}` : "—";
+  const timeStr = startDate && endDate ? `${fmtTime(startDate)} – ${fmtTime(endDate)}` : "—";
   const guestName = [booking?.firstName, booking?.lastName].filter(Boolean).join(" ").trim();
   const guestContact = booking?.email || booking?.phone || "";
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
+    <main className="mx-auto max-w-2xl px-6 py-10">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Manage Reservation</h1>
-        {/* ✅ Pure link: never cancels anything */}
+        <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Manage Reservation</h1>
         <a
           href="https://tee24.golf"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
+          className="btn-secondary text-apple-xs"
         >
           Visit Tee24.Golf
         </a>
       </div>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-apple-sm text-apple-text-secondary mb-8">
         To change your reservation, cancel the current one and make a new reservation.
       </p>
 
-      <div className="mb-6 rounded-lg border px-4 py-5">
-        <h2 className="text-lg font-semibold mb-3">Reservation Summary</h2>
+      <div className="card mb-6 p-6">
+        <h2 className="text-apple-lg font-semibold text-apple-text mb-4">Reservation Summary</h2>
 
         {bookingLoading ? (
-          <p className="text-sm text-gray-500">Loading reservation…</p>
+          <p className="text-apple-sm text-apple-text-tertiary">Loading reservation…</p>
         ) : bookingLoadError ? (
-          <p className="text-sm text-red-600">{bookingLoadError}</p>
+          <p className="text-apple-sm text-apple-red">{bookingLoadError}</p>
         ) : booking ? (
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 text-apple-sm">
             <div className="flex flex-col">
-              <dt className="text-gray-500">Date</dt>
-              <dd className="font-medium">{dateStr}</dd>
+              <dt className="text-apple-text-tertiary text-apple-xs font-medium">Date</dt>
+              <dd className="font-medium text-apple-text">{dateStr}</dd>
             </div>
             <div className="flex flex-col">
-              <dt className="text-gray-500">Time</dt>
-              <dd className="font-medium">{timeStr}</dd>
+              <dt className="text-apple-text-tertiary text-apple-xs font-medium">Time</dt>
+              <dd className="font-medium text-apple-text">{timeStr}</dd>
             </div>
             <div className="flex flex-col">
-              <dt className="text-gray-500">Location</dt>
-              <dd className="font-medium">{locationName || "—"}</dd>
+              <dt className="text-apple-text-tertiary text-apple-xs font-medium">Location</dt>
+              <dd className="font-medium text-apple-text">{locationName || "—"}</dd>
             </div>
             <div className="flex flex-col">
-              <dt className="text-gray-500">Bay</dt>
-              <dd className="font-medium">{bay}</dd>
+              <dt className="text-apple-text-tertiary text-apple-xs font-medium">Bay</dt>
+              <dd className="font-medium text-apple-text">{bay}</dd>
             </div>
             {(guestName || guestContact) && (
               <>
                 <div className="flex flex-col">
-                  <dt className="text-gray-500">Guest</dt>
-                  <dd className="font-medium">{guestName || "—"}</dd>
+                  <dt className="text-apple-text-tertiary text-apple-xs font-medium">Guest</dt>
+                  <dd className="font-medium text-apple-text">{guestName || "—"}</dd>
                 </div>
                 <div className="flex flex-col">
-                  <dt className="text-gray-500">Contact</dt>
-                  <dd className="font-medium">{guestContact || "—"}</dd>
+                  <dt className="text-apple-text-tertiary text-apple-xs font-medium">Contact</dt>
+                  <dd className="font-medium text-apple-text">{guestContact || "—"}</dd>
                 </div>
               </>
             )}
             <div className="flex flex-col">
-              <dt className="text-gray-500">Booking ID</dt>
-              <dd className="font-mono text-xs">{booking?.id ?? "—"}</dd>
+              <dt className="text-apple-text-tertiary text-apple-xs font-medium">Booking ID</dt>
+              <dd className="font-mono text-apple-xs text-apple-text-secondary">{booking?.id ?? "—"}</dd>
             </div>
           </dl>
         ) : (
-          <p className="text-sm text-gray-500">No reservation found.</p>
+          <p className="text-apple-sm text-apple-text-tertiary">No reservation found.</p>
         )}
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-700">
+        <div className="mb-5 rounded-apple-sm border border-apple-red/30 bg-apple-red/5 p-3 text-apple-sm text-apple-red">
           {error}
         </div>
       )}
 
-      <div className="rounded-lg border px-4 py-5">
+      <div className="card p-6">
         <div className="flex flex-col gap-4">
           <button
             onClick={cancelReservation}
             disabled={loading || !bookingId || !token}
-            className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-white disabled:opacity-60"
+            className="btn-danger w-full !py-3"
           >
             {loading ? "Canceling…" : "Cancel Current Reservation (and Re-Book)"}
           </button>
           {!token && (
-            <p className="text-xs text-amber-600">
+            <p className="text-apple-xs text-apple-orange">
               This link is missing a token. Use the link from your confirmation to cancel.
             </p>
           )}
@@ -244,13 +215,15 @@ export default function ManageBookingPage(props: {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowModal(false)}
-          />
-          <div className="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-semibold">Reservation Cancelled</h2>
-            <p className="mt-2 text-sm text-gray-600">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-apple bg-white p-6 shadow-apple-lg">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-apple-green/10">
+              <svg className="h-5 w-5 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-apple-xl font-semibold text-apple-text">Reservation Cancelled</h2>
+            <p className="mt-2 text-apple-sm text-apple-text-secondary">
               Your reservation has been cancelled successfully. What would you like to do next?
             </p>
 
@@ -259,21 +232,18 @@ export default function ManageBookingPage(props: {
                 href="https://tee24.golf"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full rounded-md border border-gray-300 px-4 py-2 text-center text-gray-800 hover:bg-gray-50"
+                className="btn-secondary w-full text-center"
               >
                 Visit Tee24.Golf
               </a>
-              <button
-                onClick={gotoNewReservation}
-                className="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-              >
+              <button onClick={gotoNewReservation} className="btn-primary w-full">
                 New Reservation
               </button>
             </div>
 
             <button
               onClick={() => setShowModal(false)}
-              className="mt-4 w-full rounded-md px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
+              className="mt-4 w-full rounded-apple-sm px-3 py-2 text-apple-sm text-apple-text-tertiary hover:bg-apple-fill-secondary transition-colors"
             >
               Close
             </button>

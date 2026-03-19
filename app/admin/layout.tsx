@@ -8,38 +8,33 @@ import { PropsWithChildren, useEffect, useMemo, useState } from 'react';
 export default function AdminLayout({ children }: PropsWithChildren) {
   const pathname = usePathname();
 
-  // Detect if we're inside a specific location: /admin/locations/[slug](/...)
-  const { slug, basePath } = useMemo(() => {
+  const { slug } = useMemo(() => {
     const m = pathname?.match(/\/admin\/locations\/([^/]+)/);
-    return {
-      slug: m?.[1] ?? null,
-      basePath: '/admin',
-    };
+    return { slug: m?.[1] ?? null };
   }, [pathname]);
 
-  // Auto-expand location section if we're in a location page
   const [locOpen, setLocOpen] = useState<boolean>(Boolean(slug));
   useEffect(() => setLocOpen(Boolean(slug)), [slug]);
 
   const crumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-apple-bg">
       {/* Sidebar */}
-      <aside className="fixed z-40 w-64 shrink-0 border-r bg-white lg:static">
-        <div className="flex h-14 items-center justify-between border-b px-4">
-          <Link href="/admin" className="font-semibold tracking-tight">
-            Admin
+      <aside className="fixed z-40 flex w-[220px] shrink-0 flex-col border-r border-apple-divider bg-white/80 backdrop-blur-xl lg:static">
+        <div className="flex h-14 items-center border-b border-apple-divider px-5">
+          <Link href="/admin" className="text-apple-lg font-semibold tracking-tight text-apple-text">
+            Tee24
           </Link>
         </div>
 
-        <nav className="space-y-6 p-4 text-sm">
+        <nav className="flex-1 space-y-5 p-4">
           {/* Primary navigation */}
           <div>
-            <div className="mb-1 px-2 text-xs font-semibold uppercase text-gray-500">
+            <div className="mb-2 px-3 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">
               Manage
             </div>
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               <li>
                 <NavLink href="/admin/locations" currentPath={pathname}>
                   Locations
@@ -53,54 +48,46 @@ export default function AdminLayout({ children }: PropsWithChildren) {
             </ul>
           </div>
 
-          {/* Location-specific subtree (only when a location is selected) */}
+          {/* Location subtree */}
           {slug && (
             <div>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-gray-50"
+                className="flex w-full items-center justify-between rounded-apple-sm px-3 py-2 transition-colors duration-150 hover:bg-apple-fill-secondary"
                 onClick={() => setLocOpen((v) => !v)}
                 aria-expanded={locOpen}
                 aria-controls="location-subtree"
                 title="Toggle location menu"
               >
-                <span className="text-xs font-semibold uppercase text-gray-500">
-                  {`Location: ${titleize(slug)}`}
+                <span className="text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">
+                  {titleize(slug)}
                 </span>
-                <span className="text-gray-400">{locOpen ? '▾' : '▸'}</span>
+                <span
+                  className={`text-apple-text-tertiary transition-transform duration-200 ${locOpen ? 'rotate-0' : '-rotate-90'}`}
+                >
+                  ▾
+                </span>
               </button>
 
               {locOpen && (
-                <ul id="location-subtree" className="mt-1 space-y-1 pl-2">
+                <ul id="location-subtree" className="mt-1 space-y-0.5 pl-2">
                   <li>
-                    <NavLink
-                      href={`/admin/locations/${slug}`}
-                      currentPath={pathname}
-                    >
+                    <NavLink href={`/admin/locations/${slug}`} currentPath={pathname}>
                       Details
                     </NavLink>
                   </li>
                   <li>
-                    <NavLink
-                      href={`/admin/locations/${slug}/bays`}
-                      currentPath={pathname}
-                    >
+                    <NavLink href={`/admin/locations/${slug}/bays`} currentPath={pathname}>
                       Bays
                     </NavLink>
                   </li>
                   <li>
-                    <NavLink
-                      href={`/admin/locations/${slug}/notifications`}
-                      currentPath={pathname}
-                    >
+                    <NavLink href={`/admin/locations/${slug}/notifications`} currentPath={pathname}>
                       Notifications
                     </NavLink>
                   </li>
                   <li>
-                    <NavLink
-                      href={`/admin/locations/${slug}/bookings`}
-                      currentPath={pathname}
-                    >
+                    <NavLink href={`/admin/locations/${slug}/bookings`} currentPath={pathname}>
                       Bookings
                     </NavLink>
                   </li>
@@ -109,25 +96,29 @@ export default function AdminLayout({ children }: PropsWithChildren) {
             </div>
           )}
         </nav>
+
+        {/* Sidebar footer */}
+        <div className="border-t border-apple-divider p-4">
+          <a
+            href="/admin/logout"
+            className="block rounded-apple-sm px-3 py-2 text-apple-sm font-medium text-apple-text-secondary transition-colors duration-150 hover:bg-apple-fill-secondary hover:text-apple-text"
+          >
+            Sign Out
+          </a>
+        </div>
       </aside>
 
       {/* Main column */}
       <div className="flex min-h-screen flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b bg-white/90 backdrop-blur">
-          <div className="flex h-14 items-center justify-between px-4">
+        <header className="sticky top-0 z-30 border-b border-apple-divider bg-white/80 backdrop-blur-xl">
+          <div className="flex h-14 items-center justify-between px-6">
             <Breadcrumbs items={crumbs} />
-            <a
-              href="/admin/logout"
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-100 transition"
-            >
-              Log out
-            </a>
           </div>
         </header>
 
         {/* Content */}
-        <main className="mx-auto w-full max-w-6xl flex-1 p-4">{children}</main>
+        <main className="mx-auto w-full max-w-5xl flex-1 p-6">{children}</main>
       </div>
     </div>
   );
@@ -148,8 +139,10 @@ function NavLink({
     <Link
       href={href}
       className={[
-        'block rounded px-2 py-1.5',
-        active ? 'bg-gray-900 text-white' : 'hover:bg-gray-100',
+        'block rounded-apple-sm px-3 py-2 text-apple-sm font-medium transition-colors duration-150',
+        active
+          ? 'bg-apple-blue text-white'
+          : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text',
       ].join(' ')}
     >
       {children}
@@ -157,7 +150,7 @@ function NavLink({
   );
 }
 
-/* ---------------- Breadcrumb Components ---------------- */
+/* ---------------- Breadcrumbs ---------------- */
 
 type Crumb = { label: string; href?: string };
 
@@ -165,20 +158,20 @@ function Breadcrumbs({ items }: { items: Crumb[] }) {
   if (!items?.length) return null;
   return (
     <nav aria-label="Breadcrumb" className="truncate">
-      <ol className="flex items-center gap-2 text-sm">
+      <ol className="flex items-center gap-1.5 text-apple-sm">
         {items.map((c, i) => {
           const isLast = i === items.length - 1;
           return (
-            <li key={i} className="flex items-center gap-2">
-              {i > 0 && <span className="text-gray-400">›</span>}
+            <li key={i} className="flex items-center gap-1.5">
+              {i > 0 && <span className="text-apple-text-tertiary">/</span>}
               {isLast || !c.href ? (
-                <span className="max-w-[28ch] truncate font-medium">
+                <span className="max-w-[28ch] truncate font-medium text-apple-text">
                   {c.label}
                 </span>
               ) : (
                 <Link
                   href={c.href}
-                  className="max-w-[28ch] truncate text-gray-600 hover:underline"
+                  className="max-w-[28ch] truncate text-apple-text-secondary transition-colors hover:text-apple-blue"
                 >
                   {c.label}
                 </Link>
@@ -191,18 +184,16 @@ function Breadcrumbs({ items }: { items: Crumb[] }) {
   );
 }
 
-/* ---------------- Breadcrumb logic (adds Bays, removes Settings) ---------------- */
+/* ---------------- Breadcrumb logic ---------------- */
 
 function buildBreadcrumbs(pathname: string | null): Crumb[] {
   if (!pathname) return [{ label: 'Admin', href: '/admin' }];
 
-  const parts = pathname.split('/').filter(Boolean); // ['admin','locations','clarksville','bays']
+  const parts = pathname.split('/').filter(Boolean);
   const crumbs: Crumb[] = [];
 
-  // Always start with Admin root
   crumbs.push({ label: 'Admin', href: '/admin' });
 
-  // Build each step, preserving /admin/... prefix
   let acc = '/admin';
   for (let i = 1; i < parts.length; i++) {
     const seg = parts[i];

@@ -2,11 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-/* optional: small padding so content isn't glued to the edges */
-:root {
-  --page-pad: 1.25rem;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: #F5F5F7;
+    color: #1D1D1F;
+    font-size: 15px;
+    line-height: 1.47;
+    letter-spacing: -0.009em;
+  }
+
+  ::selection {
+    background: rgba(0, 113, 227, 0.2);
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.3);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D2D2D7;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #86868B;
+  }
 }
 
-body {
-  padding: var(--page-pad);
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-apple-pill bg-apple-blue px-5 py-2.5 text-sm font-medium text-white transition-all duration-200;
+  }
+  .btn-primary:hover {
+    @apply bg-apple-blue-hover;
+  }
+  .btn-primary:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-apple-pill border border-apple-border px-5 py-2.5 text-sm font-medium text-apple-text transition-all duration-200;
+  }
+  .btn-secondary:hover {
+    @apply bg-apple-fill-secondary;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-apple-pill border border-apple-red/30 bg-apple-red/5 px-5 py-2.5 text-sm font-medium text-apple-red transition-all duration-200;
+  }
+  .btn-danger:hover {
+    @apply bg-apple-red/10;
+  }
+
+  .card {
+    @apply rounded-apple bg-white shadow-apple;
+  }
+
+  .input {
+    @apply w-full rounded-apple-sm border border-apple-border bg-white px-4 py-2.5 text-sm text-apple-text transition-colors duration-200 placeholder:text-apple-text-tertiary;
+  }
+  .input:focus {
+    @apply border-apple-blue outline-none ring-0;
+    box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.3);
+  }
 }

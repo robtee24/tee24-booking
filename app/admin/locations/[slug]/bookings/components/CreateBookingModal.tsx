@@ -47,29 +47,19 @@ export function CreateBookingModal({
 }: CreateBookingModalProps) {
   if (!draft) return null;
 
-  // Local state for the selected date in the modal
   const [selectedDateOnly, setSelectedDateOnly] = useState(draft.dateOnly);
 
-  // Sync external draft.dateOnly → internal state (e.g. when modal re-opens)
   useEffect(() => {
     setSelectedDateOnly(draft.dateOnly);
   }, [draft.dateOnly]);
 
-  // When user changes the date → update draft with new date + recalculate start/end
   const handleDateChange = (newDate: string) => {
     setSelectedDateOnly(newDate);
-
     const newStartLocal = `${newDate}T${draft.startHHMM}:00`;
     const newEndLocal = addMinutesToLocalISO(newStartLocal, draft.duration);
-
-    onUpdateDraft({
-      dateOnly: newDate,
-      startLocal: newStartLocal,
-      endLocal: newEndLocal,
-    });
+    onUpdateDraft({ dateOnly: newDate, startLocal: newStartLocal, endLocal: newEndLocal });
   };
 
-  // Recalculate blocked slots for the currently selected date + bay
   const blockedSlots = getBlockedSlots(draft.bayId, selectedDateOnly);
 
   const availableTimeOptions = timeOptions.filter((option) => {
@@ -105,122 +95,81 @@ export function CreateBookingModal({
   return (
     <Modal open={open} onClose={onClose} title="Create Booking">
       <div className="space-y-5">
-        {/* Date + Bay */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Date <span className="text-red-600">*</span>
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">
+              Date <span className="text-apple-red">*</span>
             </label>
             <input
               type="date"
               value={selectedDateOnly}
               onChange={(e) => handleDateChange(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="input"
               required
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Bay
-            </label>
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Bay</label>
             <select
               value={draft.bayId}
               onChange={(e) => onUpdateDraft({ bayId: e.target.value })}
-              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="input"
             >
               {bays.map((b) => (
-                <option key={b.id} value={b.id}>
-                  Bay {b.number}
-                </option>
+                <option key={b.id} value={b.id}>Bay {b.number}</option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Start Time + Duration */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Start Time
-            </label>
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Start Time</label>
             <select
               value={draft.startHHMM}
               onChange={(e) => handleStartTimeChange(e.target.value)}
-              className="w-full rounded-lg border px-2 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="input"
             >
               {availableTimeOptions.length === 0 ? (
                 <option disabled>No available slots</option>
               ) : (
                 availableTimeOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))
               )}
             </select>
             {availableTimeOptions.length === 0 && (
-              <p className="mt-1 text-xs text-amber-600">
+              <p className="mt-1.5 text-apple-xs text-apple-orange">
                 No available time slots for this bay and duration
               </p>
             )}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Duration (minutes)
-            </label>
+            <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Duration (minutes)</label>
             <input
               type="number"
               min={timeStep}
               step={timeStep}
               value={draft.duration}
               onChange={(e) => handleDurationChange(Number(e.target.value))}
-              className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="input"
             />
           </div>
         </div>
 
-        {/* Customer Info */}
         <div className="grid grid-cols-2 gap-4">
-          <input
-            placeholder="First Name *"
-            value={draft.firstName}
-            onChange={(e) => onUpdateDraft({ firstName: e.target.value })}
-            className="rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
-          <input
-            placeholder="Last Name"
-            value={draft.lastName}
-            onChange={(e) => onUpdateDraft({ lastName: e.target.value })}
-            className="rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
-          <input
-            placeholder="Email (optional)"
-            value={draft.email}
-            onChange={(e) => onUpdateDraft({ email: e.target.value })}
-            className="rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
-          <input
-            placeholder="Phone (optional)"
-            value={draft.phone}
-            onChange={(e) => onUpdateDraft({ phone: e.target.value })}
-            className="rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
-          />
+          <input placeholder="First Name *" value={draft.firstName} onChange={(e) => onUpdateDraft({ firstName: e.target.value })} className="input" />
+          <input placeholder="Last Name" value={draft.lastName} onChange={(e) => onUpdateDraft({ lastName: e.target.value })} className="input" />
+          <input placeholder="Email (optional)" value={draft.email} onChange={(e) => onUpdateDraft({ email: e.target.value })} className="input" />
+          <input placeholder="Phone (optional)" value={draft.phone} onChange={(e) => onUpdateDraft({ phone: e.target.value })} className="input" />
         </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <button
-            onClick={onClose}
-            className="rounded-xl border px-5 py-2.5 font-medium hover:bg-gray-50 transition"
-          >
-            Cancel
-          </button>
+        <div className="flex justify-end gap-3 pt-5 border-t border-apple-divider">
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
           <button
             onClick={onCreate}
             disabled={!draft.firstName.trim() || availableTimeOptions.length === 0}
-            className="rounded-xl bg-black text-white px-5 py-2.5 font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="btn-primary"
           >
             Create Booking
           </button>

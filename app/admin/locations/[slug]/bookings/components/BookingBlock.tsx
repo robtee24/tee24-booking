@@ -31,12 +31,11 @@ export function BookingBlock({
 }: BookingBlockProps) {
   const [bg, br, tx] = palette;
 
-  // Use the location timezone
   const timeLabel = formatTimeRange(bk.start, bk.end, locationTimezone);
 
   return (
     <div
-      className={`absolute left-0 right-0 border-y shadow-sm px-2 py-1 cursor-grab active:cursor-grabbing group ${bg} ${br} ${tx} transition-all hover:z-10`}
+      className={`absolute left-1 right-1 rounded-apple-sm border shadow-apple px-2 py-1 cursor-grab active:cursor-grabbing group ${bg} ${br} ${tx} transition-all duration-200 hover:shadow-apple-md hover:z-10`}
       style={{
         top: `${top}px`,
         height: `${height}px`,

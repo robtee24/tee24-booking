@@ -8,7 +8,7 @@ type DeleteButtonProps = {
 export function DeleteButton({ onClick }: DeleteButtonProps) {
   return (
     <button
-      className="rounded-md p-1 hover:bg-black/10 transition-opacity opacity-0 group-hover:opacity-100"
+      className="rounded-apple-sm p-1 hover:bg-black/10 transition-opacity duration-150 opacity-0 group-hover:opacity-100"
       onClick={onClick}
     >
       <Trash2 className="w-3.5 h-3.5" />

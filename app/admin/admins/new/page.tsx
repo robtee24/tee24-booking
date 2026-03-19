@@ -7,8 +7,11 @@ type Loc = { id: string; name: string };
 
 export default function Page() {
   return (
-    <div className="p-6">
-      <h1 className="mb-4 text-xl font-semibold">Add New Admin</h1>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Add New Admin</h1>
+        <p className="mt-1 text-apple-base text-apple-text-secondary">Create a new admin account with the appropriate role and access.</p>
+      </div>
       <NewAdminForm />
     </div>
   );
@@ -32,9 +35,7 @@ function NewAdminForm() {
         if (!cancelled) setLocations([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   function toggleLocation(id: string) {
@@ -72,33 +73,20 @@ function NewAdminForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+    <form onSubmit={handleSubmit} className="card max-w-lg p-6 space-y-5">
       <div>
-        <label className="block text-sm font-medium">Name</label>
-        <input
-          name="name"
-          className="mt-1 w-full rounded-md border p-2"
-          placeholder="Optional"
-        />
+        <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Name</label>
+        <input name="name" className="input" placeholder="Optional" />
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Phone Number</label>
-        <input
-          name="phone"
-          className="mt-1 w-full rounded-md border p-2"
-          required
-          placeholder="+13361234567"
-        />
+        <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Phone Number</label>
+        <input name="phone" className="input" required placeholder="+13361234567" />
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Role</label>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as any)}
-          className="mt-1 w-full rounded-md border p-2"
-        >
+        <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Role</label>
+        <select value={role} onChange={(e) => setRole(e.target.value as any)} className="input">
           <option value="SCOPED">Scoped (specific locations)</option>
           <option value="FULL">Full (all locations)</option>
           <option value="ROOT">Root (manage admins)</option>
@@ -107,29 +95,27 @@ function NewAdminForm() {
 
       {role === "SCOPED" && (
         <div>
-          <label className="block text-sm font-medium">Locations</label>
-          <div className="mt-2 space-y-1 rounded-md border p-2">
+          <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Locations</label>
+          <div className="mt-1.5 space-y-1 rounded-apple-sm border border-apple-border p-3">
             {locations.map((loc) => (
-              <label key={loc.id} className="flex items-center gap-2">
+              <label key={loc.id} className="flex cursor-pointer items-center gap-2.5 rounded-apple-sm px-2 py-1.5 transition-colors hover:bg-apple-fill-secondary">
                 <input
                   type="checkbox"
                   checked={selectedLocations.includes(loc.id)}
                   onChange={() => toggleLocation(loc.id)}
+                  className="h-4 w-4 rounded accent-apple-blue"
                 />
-                {loc.name}
+                <span className="text-apple-sm text-apple-text">{loc.name}</span>
               </label>
             ))}
             {locations.length === 0 && (
-              <div className="text-sm text-neutral-500">No locations yet.</div>
+              <div className="text-apple-sm text-apple-text-tertiary">No locations yet.</div>
             )}
           </div>
         </div>
       )}
 
-      <button
-        disabled={loading}
-        className="rounded-md bg-black px-4 py-2 text-white hover:bg-neutral-800 disabled:opacity-60"
-      >
+      <button disabled={loading} className="btn-primary">
         {loading ? "Creating..." : "Create Admin"}
       </button>
     </form>

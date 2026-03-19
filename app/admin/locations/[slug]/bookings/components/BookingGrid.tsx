@@ -53,19 +53,19 @@ export function BookingGrid({
   return (
     <>
       {/* Sticky Header */}
-      <div className="sticky top-0 z-20 border-b bg-white shadow-sm">
+      <div className="sticky top-0 z-20 border-b border-apple-divider bg-white/90 backdrop-blur-sm shadow-apple">
         <div
-          className="grid text-sm font-medium"
+          className="grid text-apple-sm font-medium"
           style={{ gridTemplateColumns: columnTemplate }}
         >
-          <div className="px-3 py-2 text-right text-gray-500">Time</div>
+          <div className="px-3 py-2.5 text-right text-apple-text-tertiary">Time</div>
           <BayHeader bays={visibleBays} />
         </div>
       </div>
 
       {/* Main Grid */}
       <div
-        className="grid overflow-auto border-t bg-gray-50/50"
+        className="grid overflow-auto border-t border-apple-divider bg-apple-fill-secondary/30"
         style={{ gridTemplateColumns: columnTemplate }}
       >
         <TimeGutter pxPerMin={pxPerMin} totalHeight={totalHeight} />

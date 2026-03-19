@@ -104,11 +104,8 @@ export default function BookPage() {
   const [phoneErr, setPhoneErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<any>(null);
-
-  // Track verified phone
   const [verifiedPhone, setVerifiedPhone] = useState<string>("");
 
-  // Load location info
   useEffect(() => {
     if (!locationSlug) return;
     let cancelled = false;
@@ -130,7 +127,6 @@ export default function BookPage() {
     return () => { cancelled = true; };
   }, [locationSlug]);
 
-  // Allowed durations
   const allowedDurations = useMemo(() => {
     const durations: number[] = [];
     const start = Math.max(minDuration, 30);
@@ -149,7 +145,6 @@ export default function BookPage() {
     }
   }, [duration, allowedDurations]);
 
-  // Load availability
   const loadAvailability = async () => {
     if (!locationSlug || !date) return;
     setLoading(true);
@@ -171,7 +166,6 @@ export default function BookPage() {
     loadAvailability();
   }, [locationSlug, date, partyKind, handedness]);
 
-  // Available times & bays
   const availableStartTimes = useMemo(() => {
     if (!availability?.startTimes) return [];
     const times = availability.startTimes[duration as 30 | 60 | 90 | 120] || [];
@@ -203,22 +197,16 @@ export default function BookPage() {
 
   const baysAvailableAtTime = freeBaysAtSelectedTime.length;
 
-  // Move to verification step and SEND CODE IMMEDIATELY
   const goToVerification = () => {
     setEmailErr("");
     setPhoneErr("");
     setError("");
-
     if (!isValidEmail(email)) return setEmailErr("Valid email required");
     if (!isValidPhone(phone)) return setPhoneErr("10 digits required");
-
     const normalized = toE164(phone);
     if (!normalized) return setPhoneErr("Invalid phone number");
-
     setVerifiedPhone("");
     setStep(3);
-
-    // Automatically send the first OTP when entering step 3
     fetch("/api/bookings/otp/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -226,24 +214,17 @@ export default function BookPage() {
     }).catch(console.error);
   };
 
-  // Final booking after OTP success
   const finalizeBooking = async (phone: string) => {
-    if (!phone) { return };
-
+    if (!phone) return;
     setSubmitting(true);
     setError("");
-
     try {
-      // Build local datetime strings (no timezone conversion yet)
       const [year, month, day] = date.split("-");
       const [hour, minute] = startTime.split(":");
-
       const startLocal = `${year}-${month}-${day}T${hour}:${minute}:00`;
       const endLocal = new Date(
         new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() + duration * 60 * 1000
       );
-
-      // Format endLocal as YYYY-MM-DDTHH:mm:00 in local time
       const endLocalStr = `${endLocal.getFullYear()}-${String(endLocal.getMonth() + 1).padStart(2, "0")}-${String(endLocal.getDate()).padStart(2, "0")}T${String(endLocal.getHours()).padStart(2, "0")}:${String(endLocal.getMinutes()).padStart(2, "0")}:00`;
 
       const payload: any = {
@@ -272,84 +253,94 @@ export default function BookPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl p-6 text-black">
+    <div className="mx-auto max-w-3xl px-6 py-10 text-apple-text">
       {adminNote && (
-        <div className="mb-6 rounded-lg border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
+        <div className="mb-6 rounded-apple-sm border border-apple-orange/30 bg-apple-orange/5 p-4 text-apple-sm text-apple-orange">
           {adminNote}
         </div>
       )}
       {isAdminMode && (
-        <div className="mb-4 p-3 bg-purple-100 border border-purple-300 rounded-lg text-purple-900 text-sm">
+        <div className="mb-4 rounded-apple-sm border border-purple-300/30 bg-purple-50 p-3 text-apple-sm text-purple-800">
           Admin Mode Active
         </div>
       )}
 
       {confirmed ? (
-        /* CONFIRMED STATE */
         <div className="space-y-6">
-          <h1 className="text-3xl font-bold">Booking Confirmed!</h1>
-          <p className="text-gray-600">Confirmation sent to {confirmed.email}</p>
-          <div className="rounded-xl border border-gray-300 p-6 text-sm">
-            <div className="grid grid-cols-2 gap-4">
-              <div><strong>Location</strong></div><div>{confirmed.locationName}</div>
-              <div><strong>Bay</strong></div><div>Bay {confirmed.bayNumber}</div>
-              <div><strong>Date & Time</strong></div>
-              <div>
-                {new Date(confirmed.start).toLocaleDateString()} •{" "}
-                {new Date(confirmed.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
-                {new Date(confirmed.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-              </div>
-              <div><strong>Name</strong></div><div>{confirmed.firstName} {confirmed.lastName}</div>
+          <div>
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-apple-green/10">
+              <svg className="h-6 w-6 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
             </div>
-            <div className="mt-4 text-xs text-gray-500">ID: {confirmed.id}</div>
+            <h1 className="text-apple-3xl font-semibold tracking-tight">Booking Confirmed!</h1>
+            <p className="mt-1 text-apple-base text-apple-text-secondary">Confirmation sent to {confirmed.email}</p>
           </div>
-          <div className="flex gap-4">
-            <button onClick={() => { setConfirmed(null); setStep(1); }} className="rounded-lg border border-black px-6 py-3">
+
+          <div className="card p-6">
+            <div className="grid grid-cols-2 gap-4 text-apple-sm">
+              <div className="text-apple-text-secondary">Location</div><div className="font-medium">{confirmed.locationName}</div>
+              <div className="text-apple-text-secondary">Bay</div><div className="font-medium">Bay {confirmed.bayNumber}</div>
+              <div className="text-apple-text-secondary">Date & Time</div>
+              <div className="font-medium">
+                {new Date(confirmed.start).toLocaleDateString()} · {new Date(confirmed.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – {new Date(confirmed.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </div>
+              <div className="text-apple-text-secondary">Name</div><div className="font-medium">{confirmed.firstName} {confirmed.lastName}</div>
+            </div>
+            <div className="mt-4 text-apple-xs text-apple-text-tertiary">ID: {confirmed.id}</div>
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={() => { setConfirmed(null); setStep(1); }} className="btn-secondary">
               Book Another
             </button>
-            <a href={passUrl ?? "/passes"} target="_blank" rel="noreferrer" className="ml-auto rounded-lg bg-black px-6 py-3 text-white">
+            <a href={passUrl ?? "/passes"} target="_blank" rel="noreferrer" className="btn-primary ml-auto">
               Buy Access Pass
             </a>
           </div>
         </div>
       ) : (
         <>
-          <h1 className="text-3xl font-bold mb-2">
-            Book a Bay <span className="text-gray-600 font-normal">({locationName || locationSlug})</span>
+          <h1 className="text-apple-3xl font-semibold tracking-tight mb-1">
+            Book a Bay
           </h1>
+          <p className="text-apple-base text-apple-text-secondary mb-8">
+            {locationName || locationSlug}
+          </p>
 
-          {error && <div className="mb-4 p-4 bg-red-50 border border-red-300 rounded-lg text-red-700">{error}</div>}
+          {error && (
+            <div className="mb-5 rounded-apple-sm border border-apple-red/30 bg-apple-red/5 p-4 text-apple-sm text-apple-red">
+              {error}
+            </div>
+          )}
 
           {/* Progress Bar */}
           <div className="flex gap-2 mb-8">
-            <div className={`h-2 flex-1 rounded-full ${step >= 1 ? "bg-black" : "bg-gray-300"}`} />
-            <div className={`h-2 flex-1 rounded-full ${step >= 2 ? "bg-black" : "bg-gray-300"}`} />
-            <div className={`h-2 flex-1 rounded-full ${step >= 3 ? "bg-black" : "bg-gray-300"}`} />
+            {[1, 2, 3].map((s) => (
+              <div key={s} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${step >= s ? "bg-apple-blue" : "bg-apple-divider"}`} />
+            ))}
           </div>
 
-          {/* STEP 1: Select Time & Bay */}
+          {/* STEP 1 */}
           {step === 1 && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium mb-2">Date</label>
-                <input type="date" min={todayYMD} value={date} onChange={e => setDate(e.target.value)}
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3" />
+                <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Date</label>
+                <input type="date" min={todayYMD} value={date} onChange={e => setDate(e.target.value)} className="input" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Playing As</label>
-                  <select value={partyKind} onChange={e => { setPartyKind(e.target.value as any); setStartTime(""); }}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3">
+                  <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Playing As</label>
+                  <select value={partyKind} onChange={e => { setPartyKind(e.target.value as any); setStartTime(""); }} className="input">
                     <option value="GROUP">Group</option>
                     <option value="SINGLE">Single</option>
                   </select>
                 </div>
                 {partyKind === "SINGLE" && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">Handedness</label>
-                    <select value={handedness} onChange={e => { setHandedness(e.target.value as any); setStartTime(""); }}
-                      className="w-full rounded-xl border border-gray-300 px-4 py-3">
+                    <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Handedness</label>
+                    <select value={handedness} onChange={e => { setHandedness(e.target.value as any); setStartTime(""); }} className="input">
                       <option value="RH">Right-handed</option>
                       <option value="LH">Left-handed</option>
                     </select>
@@ -358,13 +349,13 @@ export default function BookPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-3">
+                <label className="mb-2 block text-apple-sm font-medium text-apple-text">
                   Duration ({minDuration}–{maxDuration} min)
                 </label>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-2">
                   {allowedDurations.map(d => (
                     <button key={d} onClick={() => { setDuration(d); setStartTime(""); setSelectedBay(null); }}
-                      className={`rounded-lg border py-3 text-sm font-medium transition ${duration === d ? "bg-black text-white border-black" : "border-gray-300 hover:border-gray-500"}`}>
+                      className={`rounded-apple-sm border py-2.5 text-apple-sm font-medium transition-all duration-200 ${duration === d ? "bg-apple-blue text-white border-apple-blue" : "border-apple-border text-apple-text-secondary hover:border-apple-text-tertiary"}`}>
                       {d} min
                     </button>
                   ))}
@@ -372,12 +363,11 @@ export default function BookPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  Start Time {baysAvailableAtTime > 0 && `(${baysAvailableAtTime} bay${baysAvailableAtTime > 1 ? "s" : ""} free)`}
+                <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">
+                  Start Time {baysAvailableAtTime > 0 && <span className="text-apple-text-tertiary font-normal">({baysAvailableAtTime} bay{baysAvailableAtTime > 1 ? "s" : ""} free)</span>}
                 </label>
                 <select value={startTime} onChange={e => { setStartTime(e.target.value); setSelectedBay(null); }}
-                  disabled={loading || availableStartTimes.length === 0}
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 disabled:opacity-50">
+                  disabled={loading || availableStartTimes.length === 0} className="input disabled:opacity-50">
                   <option value="">
                     {loading ? "Loading…" : availableStartTimes.length ? "Select a time" : "No times available"}
                   </option>
@@ -389,42 +379,42 @@ export default function BookPage() {
                 </select>
               </div>
 
-              {/* Bay Selection with Smart Toggle */}
+              {/* Bay Selection */}
               {freeBaysAtSelectedTime.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Choose a specific bay?</label>
+                    <label className="text-apple-sm font-medium text-apple-text">Choose a specific bay?</label>
                     <button
                       type="button"
                       onClick={() => setPreferSpecificBay(!preferSpecificBay)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${preferSpecificBay ? "bg-black" : "bg-gray-300"}`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${preferSpecificBay ? "bg-apple-blue" : "bg-apple-border"}`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${preferSpecificBay ? "translate-x-6" : "translate-x-1"}`} />
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${preferSpecificBay ? "translate-x-6" : "translate-x-1"}`} />
                     </button>
                   </div>
 
                   {!preferSpecificBay ? (
-                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-800">
-                      <strong>We'll assign you Bay {freeBaysAtSelectedTime[0]}</strong>
+                    <div className="rounded-apple-sm border border-apple-green/30 bg-apple-green/5 p-4 text-apple-sm text-apple-green">
+                      <strong>We&apos;ll assign you Bay {freeBaysAtSelectedTime[0]}</strong>
                       <br />
-                      <span className="text-green-700">Best available</span>
+                      <span className="opacity-80">Best available</span>
                     </div>
                   ) : (
                     <div>
-                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                         {freeBaysAtSelectedTime.map(bay => (
                           <button
                             key={bay}
                             onClick={() => setSelectedBay(bay)}
-                            className={`rounded-lg border py-3 text-sm font-medium transition ${
-                              selectedBay === bay ? "bg-black text-white border-black" : "border-gray-300 hover:border-gray-500"
+                            className={`rounded-apple-sm border py-2.5 text-apple-sm font-medium transition-all duration-200 ${
+                              selectedBay === bay ? "bg-apple-blue text-white border-apple-blue" : "border-apple-border text-apple-text-secondary hover:border-apple-text-tertiary"
                             }`}
                           >
                             Bay {bay}
                           </button>
                         ))}
                       </div>
-                      {!selectedBay && <p className="text-sm text-red-600 mt-2">Please select a bay</p>}
+                      {!selectedBay && <p className="text-apple-sm text-apple-red mt-2">Please select a bay</p>}
                     </div>
                   )}
                 </div>
@@ -433,67 +423,65 @@ export default function BookPage() {
               <button
                 onClick={() => setStep(2)}
                 disabled={!startTime || (preferSpecificBay && !selectedBay)}
-                className="w-full bg-black text-white py-4 rounded-xl font-medium disabled:opacity-40"
+                className="btn-primary w-full !py-3.5 !text-base"
               >
                 Continue to Contact
               </button>
             </div>
           )}
 
-          {/* STEP 2: Contact Info */}
+          {/* STEP 2 */}
           {step === 2 && (
             <div className="space-y-6">
-              <div className="text-lg font-medium mb-4">
-                {date} • {new Date(`${date}T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
-                {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{" "}
-                ({duration} min)
-                {selectedBay && ` • Bay ${selectedBay}`}
+              <div className="card p-4 text-apple-sm text-apple-text-secondary">
+                {date} · {new Date(`${date}T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – {new Date(new Date(`${date}T${startTime}`).getTime() + duration * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} ({duration} min)
+                {selectedBay && ` · Bay ${selectedBay}`}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">First Name</label>
-                  <input value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Jane" />
+                  <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">First Name</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} className="input" placeholder="Jane" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Last Name</label>
-                  <input value={lastName} onChange={e => setLastName(e.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3" placeholder="Doe" />
+                  <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Last Name</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} className="input" placeholder="Doe" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Phone</label>
+                <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Phone</label>
                 <input
                   value={phone}
                   onChange={(e) => { setPhone(formatPhone(e.target.value)); phoneErr && setPhoneErr(""); }}
                   onBlur={() => !isValidPhone(phone) && setPhoneErr("10 digits required")}
-                  className={`w-full rounded-xl border px-4 py-3 ${phoneErr ? "border-red-500" : "border-gray-300"}`}
+                  className={`input ${phoneErr ? "!border-apple-red" : ""}`}
                   placeholder="(555) 123-4567"
                 />
-                {phoneErr && <p className="text-red-600 text-sm mt-1">{phoneErr}</p>}
+                {phoneErr && <p className="text-apple-red text-apple-xs mt-1">{phoneErr}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
+                <label className="mb-1.5 block text-apple-sm font-medium text-apple-text">Email</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); emailErr && setEmailErr(""); }}
                   onBlur={() => !isValidEmail(email) && setEmailErr("Valid email required")}
-                  className={`w-full rounded-xl border px-4 py-3 ${emailErr ? "border-red-500" : "border-gray-300"}`}
+                  className={`input ${emailErr ? "!border-apple-red" : ""}`}
                   placeholder="jane@example.com"
                 />
-                {emailErr && <p className="text-red-600 text-sm mt-1">{emailErr}</p>}
+                {emailErr && <p className="text-apple-red text-apple-xs mt-1">{emailErr}</p>}
               </div>
 
-              <div className="flex gap-4">
-                <button onClick={() => setStep(1)} className="flex-1 border border-black py-4 rounded-xl">
+              <div className="flex gap-3">
+                <button onClick={() => setStep(1)} className="btn-secondary flex-1 !py-3.5">
                   Back
                 </button>
                 <button
                   onClick={goToVerification}
                   disabled={!firstName || !lastName || !phone || !email || !!emailErr || !!phoneErr}
-                  className="flex-1 bg-black text-white py-4 rounded-xl disabled:opacity-40 font-medium"
+                  className="btn-primary flex-1 !py-3.5"
                 >
                   Confirm Booking
                 </button>
@@ -501,15 +489,15 @@ export default function BookPage() {
             </div>
           )}
 
-          {/* STEP 3: Phone Verification */}
+          {/* STEP 3 */}
           {step === 3 && (
             <div className="grid min-h-[70vh] place-items-center py-12">
               <div className="w-full max-w-sm">
                 <div className="text-center mb-10">
-                  <h2 className="text-2xl font-bold">Verify Your Phone Number to Confirm Booking</h2>
-                  <p className="mt-3 text-lg text-neutral-600">
+                  <h2 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Verify Your Phone</h2>
+                  <p className="mt-3 text-apple-base text-apple-text-secondary">
                     We sent a 6-digit code to<br />
-                    <strong className="text-black">{phone}</strong>
+                    <strong className="text-apple-text">{phone}</strong>
                   </p>
                 </div>
 
@@ -528,7 +516,7 @@ export default function BookPage() {
 
                 <button
                   onClick={() => setStep(2)}
-                  className="mt-8 w-full border border-gray-400 py-3 rounded-xl text-sm font-medium hover:bg-gray-50"
+                  className="btn-secondary mt-8 w-full"
                 >
                   ← Change Phone Number
                 </button>
