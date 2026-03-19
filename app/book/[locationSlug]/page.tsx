@@ -255,7 +255,7 @@ export default function BookPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 text-apple-text">
       {adminNote && (
-        <div className="mb-6 rounded-apple-sm border border-apple-orange/30 bg-apple-orange/5 p-4 text-apple-sm text-apple-orange">
+        <div className="mb-6 rounded-apple bg-apple-text p-5 text-apple-base leading-relaxed text-white shadow-apple-md">
           {adminNote}
         </div>
       )}
