@@ -32,6 +32,31 @@ function findField(obj: any, ...keys: string[]): string {
   return "";
 }
 
+function parseDate(val: string): Date | null {
+  if (!val) return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function extractAllFields(body: any) {
+  return {
+    email: findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail"),
+    firstName: findField(body, "firstName", "first_name", "First Name", "first", "fname"),
+    lastName: findField(body, "lastName", "last_name", "Last Name", "last", "lname"),
+    fullName: findField(body, "fullName", "full_name", "name", "Full Name"),
+    phone: findField(body, "phone", "phoneNumber", "Phone", "mobile", "cell", "member_phone"),
+    dob: findField(body, "dob", "dateOfBirth", "date_of_birth", "birthday"),
+    gender: findField(body, "gender", "Gender"),
+    membershipType: findField(body, "membershipType", "membership_title", "membership", "plan", "membership_name", "membershipName"),
+    membershipStartDate: findField(body, "membershipStartDate", "start_date", "startDate", "membership_start_date"),
+    signupFee: findField(body, "signupFee", "signup_fee", "signupCost"),
+    membershipFees: findField(body, "membershipFees", "membership_fees", "membershipAmount"),
+    membershipRecurrence: findField(body, "membershipRecurrence", "membership_recurrence", "recurrence"),
+    loginLink: findField(body, "loginLink", "login_link", "portalLink"),
+    gymDeskId: findField(body, "gymDeskId", "member_id", "memberId", "id"),
+  };
+}
+
 async function handleRequest(req: NextRequest) {
   if (!authorize(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -46,11 +71,8 @@ async function handleRequest(req: NextRequest) {
   try {
     const text = await req.text();
     if (text) body = JSON.parse(text);
-  } catch {
-    // Gymdesk may send form-encoded, empty body, or GET with no body
-  }
+  } catch {}
 
-  // For GET requests, also pull member fields from query params as fallback
   const allParams = Object.fromEntries(params.entries());
   const merged = { ...allParams, ...body };
 
@@ -85,16 +107,11 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleNewMember(body: any, locationSlug: string, statusOverride: string) {
-  const email = findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail");
-  const firstName = findField(body, "firstName", "first_name", "First Name", "first", "fname");
-  const lastName = findField(body, "lastName", "last_name", "Last Name", "last", "lname");
-  const phone = findField(body, "phone", "phoneNumber", "Phone", "mobile", "cell", "member_phone");
-  const membershipType = findField(body, "membershipType", "membership", "plan", "membership_name", "membershipName");
-  const gymDeskId = findField(body, "id", "memberId", "member_id", "gymDeskId");
+  const fields = extractAllFields(body);
 
-  if (!locationSlug || !email) {
+  if (!locationSlug || !fields.email) {
     return NextResponse.json(
-      { error: "locationSlug (in URL) and email (in body) are required" },
+      { error: "locationSlug and email are required" },
       { status: 400 }
     );
   }
@@ -115,27 +132,43 @@ async function handleNewMember(body: any, locationSlug: string, statusOverride: 
     where: {
       locationId_email: {
         locationId: location.id,
-        email: email.toLowerCase().trim(),
+        email: fields.email.toLowerCase().trim(),
       },
     },
     update: {
-      firstName: firstName || undefined,
-      lastName: lastName || undefined,
-      phone: phone || undefined,
+      firstName: fields.firstName || undefined,
+      lastName: fields.lastName || undefined,
+      fullName: fields.fullName || undefined,
+      phone: fields.phone || undefined,
+      dob: parseDate(fields.dob) ?? undefined,
+      gender: fields.gender || undefined,
       status: memberStatus,
-      membershipType: membershipType || undefined,
-      gymDeskId: gymDeskId || undefined,
+      membershipType: fields.membershipType || undefined,
+      membershipStartDate: parseDate(fields.membershipStartDate) ?? undefined,
+      signupFee: fields.signupFee || undefined,
+      membershipFees: fields.membershipFees || undefined,
+      membershipRecurrence: fields.membershipRecurrence || undefined,
+      loginLink: fields.loginLink || undefined,
+      gymDeskId: fields.gymDeskId || undefined,
       source: "WEBHOOK",
     },
     create: {
       locationId: location.id,
-      firstName: firstName || "",
-      lastName: lastName || "",
-      email: email.toLowerCase().trim(),
-      phone: phone || "",
+      email: fields.email.toLowerCase().trim(),
+      firstName: fields.firstName || "",
+      lastName: fields.lastName || "",
+      fullName: fields.fullName || null,
+      phone: fields.phone || "",
+      dob: parseDate(fields.dob),
+      gender: fields.gender || null,
       status: memberStatus,
-      membershipType: membershipType || null,
-      gymDeskId: gymDeskId || null,
+      membershipType: fields.membershipType || null,
+      membershipStartDate: parseDate(fields.membershipStartDate),
+      signupFee: fields.signupFee || null,
+      membershipFees: fields.membershipFees || null,
+      membershipRecurrence: fields.membershipRecurrence || null,
+      loginLink: fields.loginLink || null,
+      gymDeskId: fields.gymDeskId || null,
       source: "WEBHOOK",
     },
   });
@@ -144,13 +177,10 @@ async function handleNewMember(body: any, locationSlug: string, statusOverride: 
 }
 
 async function handleStatusChange(body: any, locationSlug: string, statusOverride: string) {
-  const email = findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail");
-  const firstName = findField(body, "firstName", "first_name", "First Name", "first", "fname");
-  const lastName = findField(body, "lastName", "last_name", "Last Name", "last", "lname");
-  const phone = findField(body, "phone", "phoneNumber", "Phone", "mobile", "cell", "member_phone");
+  const fields = extractAllFields(body);
   const status = statusOverride || findField(body, "status");
 
-  if (!email || !status) {
+  if (!fields.email || !status) {
     return NextResponse.json(
       { error: "email and status are required" },
       { status: 400 }
@@ -165,7 +195,7 @@ async function handleStatusChange(body: any, locationSlug: string, statusOverrid
     );
   }
 
-  const where: any = { email: email.toLowerCase().trim() };
+  const where: any = { email: fields.email.toLowerCase().trim() };
 
   if (locationSlug) {
     const location = await getPrisma().location.findUnique({
@@ -179,9 +209,19 @@ async function handleStatusChange(body: any, locationSlug: string, statusOverrid
   }
 
   const data: any = { status: upperStatus, source: "WEBHOOK" };
-  if (firstName) data.firstName = firstName;
-  if (lastName) data.lastName = lastName;
-  if (phone) data.phone = phone;
+  if (fields.firstName) data.firstName = fields.firstName;
+  if (fields.lastName) data.lastName = fields.lastName;
+  if (fields.fullName) data.fullName = fields.fullName;
+  if (fields.phone) data.phone = fields.phone;
+  if (fields.dob) data.dob = parseDate(fields.dob);
+  if (fields.gender) data.gender = fields.gender;
+  if (fields.membershipType) data.membershipType = fields.membershipType;
+  if (fields.membershipStartDate) data.membershipStartDate = parseDate(fields.membershipStartDate);
+  if (fields.signupFee) data.signupFee = fields.signupFee;
+  if (fields.membershipFees) data.membershipFees = fields.membershipFees;
+  if (fields.membershipRecurrence) data.membershipRecurrence = fields.membershipRecurrence;
+  if (fields.loginLink) data.loginLink = fields.loginLink;
+  if (fields.gymDeskId) data.gymDeskId = fields.gymDeskId;
 
   const updated = await getPrisma().member.updateMany({
     where,

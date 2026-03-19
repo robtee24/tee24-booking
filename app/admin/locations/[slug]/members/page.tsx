@@ -7,10 +7,19 @@ type Member = {
   id: string;
   firstName: string;
   lastName: string;
+  fullName: string | null;
   email: string;
   phone: string;
+  dob: string | null;
+  gender: string | null;
   status: string;
   membershipType: string | null;
+  membershipStartDate: string | null;
+  signupFee: string | null;
+  membershipFees: string | null;
+  membershipRecurrence: string | null;
+  loginLink: string | null;
+  gymDeskId: string | null;
   joinDate: string | null;
   source: string;
 };
@@ -46,6 +55,15 @@ function formatDate(iso: string | null) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <div className="text-apple-xs font-medium text-apple-text-tertiary">{label}</div>
+      <div className="mt-0.5 text-apple-sm text-apple-text">{value || '—'}</div>
+    </div>
+  );
+}
+
 export default function MembersPage() {
   const rawParams = useParams() as { slug?: string } | null;
   const slug = (rawParams?.slug ?? '').toString();
@@ -56,6 +74,7 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMembers = useCallback(async (s: string, status: string, p: number) => {
@@ -92,20 +111,20 @@ export default function MembersPage() {
     setPage(1);
   }
 
+  const colCount = 6;
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Members</h1>
         <p className="text-sm text-gray-600">
-          Gymdesk members synced via Zapier
+          Gymdesk members synced via webhook
           {data ? ` · ${data.total} total` : ''}
         </p>
       </header>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
-        {/* Status tabs */}
         <div className="flex rounded-lg border border-apple-border bg-apple-fill-tertiary p-0.5">
           {STATUS_TABS.map((tab) => (
             <button
@@ -123,7 +142,6 @@ export default function MembersPage() {
           ))}
         </div>
 
-        {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
@@ -138,7 +156,6 @@ export default function MembersPage() {
         </div>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
@@ -148,42 +165,86 @@ export default function MembersPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-apple-divider bg-apple-fill-tertiary">
+              <th className="w-8 px-2 py-3"></th>
               <th className="px-4 py-3 font-medium text-apple-secondary">Name</th>
               <th className="px-4 py-3 font-medium text-apple-secondary">Email</th>
               <th className="px-4 py-3 font-medium text-apple-secondary">Phone</th>
               <th className="px-4 py-3 font-medium text-apple-secondary">Status</th>
               <th className="px-4 py-3 font-medium text-apple-secondary">Membership</th>
-              <th className="px-4 py-3 font-medium text-apple-secondary">Joined</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-apple-divider">
             {loading && !data ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={colCount} className="px-4 py-12 text-center text-gray-400">
                   Loading…
                 </td>
               </tr>
             ) : data && data.members.length > 0 ? (
-              data.members.map((m) => (
-                <tr key={m.id} className="transition-colors hover:bg-apple-fill-tertiary/50">
-                  <td className="whitespace-nowrap px-4 py-3 font-medium">
-                    {m.firstName} {m.lastName}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{m.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{m.phone || '—'}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={m.status} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{m.membershipType || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{formatDate(m.joinDate)}</td>
-                </tr>
-              ))
+              data.members.map((m) => {
+                const isExpanded = expandedId === m.id;
+                return (
+                  <tr key={m.id} className="group">
+                    <td colSpan={colCount} className="p-0">
+                      {/* Main row */}
+                      <button
+                        type="button"
+                        className="flex w-full items-center text-left transition-colors hover:bg-apple-fill-tertiary/50"
+                        onClick={() => setExpandedId(isExpanded ? null : m.id)}
+                      >
+                        <span className="w-8 flex-shrink-0 px-2 py-3 text-center">
+                          <svg className={`inline h-3.5 w-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </span>
+                        <span className="whitespace-nowrap px-4 py-3 font-medium flex-1 min-w-[140px]">
+                          {m.firstName} {m.lastName}
+                        </span>
+                        <span className="px-4 py-3 text-gray-600 flex-1 min-w-[180px]">{m.email}</span>
+                        <span className="px-4 py-3 text-gray-600 flex-1 min-w-[120px]">{m.phone || '—'}</span>
+                        <span className="px-4 py-3 flex-1 min-w-[100px]">
+                          <StatusBadge status={m.status} />
+                        </span>
+                        <span className="px-4 py-3 text-gray-600 flex-1 min-w-[140px]">{m.membershipType || '—'}</span>
+                      </button>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div className="border-t border-apple-divider/50 bg-apple-fill-tertiary/30 px-10 py-4">
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                            <DetailField label="Full Name" value={m.fullName || `${m.firstName} ${m.lastName}`} />
+                            <DetailField label="Email" value={m.email} />
+                            <DetailField label="Phone" value={m.phone} />
+                            <DetailField label="Date of Birth" value={formatDate(m.dob)} />
+                            <DetailField label="Gender" value={m.gender} />
+                            <DetailField label="Status" value={m.status} />
+                            <DetailField label="Membership Type" value={m.membershipType} />
+                            <DetailField label="Membership Start" value={formatDate(m.membershipStartDate)} />
+                            <DetailField label="Signup Fee" value={m.signupFee} />
+                            <DetailField label="Membership Fees" value={m.membershipFees} />
+                            <DetailField label="Recurrence" value={m.membershipRecurrence} />
+                            <DetailField label="Gymdesk ID" value={m.gymDeskId} />
+                            {m.loginLink && (
+                              <div>
+                                <div className="text-apple-xs font-medium text-apple-text-tertiary">Gymdesk Portal</div>
+                                <a href={m.loginLink} target="_blank" rel="noopener noreferrer" className="mt-0.5 text-apple-sm text-apple-blue hover:underline">
+                                  Open Portal
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={colCount} className="px-4 py-12 text-center text-gray-400">
                   {search || statusFilter !== 'ALL'
                     ? 'No members match your filters'
-                    : 'No members yet. Connect Gymdesk via Zapier to sync members automatically.'}
+                    : 'No members yet. Connect Gymdesk webhooks to sync members automatically.'}
                 </td>
               </tr>
             )}

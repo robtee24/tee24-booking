@@ -170,20 +170,28 @@ model NotificationLog {
  * =========================
  */
 model Member {
-  id              String    @id @default(cuid())
-  locationId      String
-  location        Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  gymDeskId       String?
-  firstName       String
-  lastName        String
-  email           String
-  phone           String
-  status          String    @default("ACTIVE")
-  membershipType  String?
-  joinDate        DateTime?
-  source          String    @default("CSV")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  locationId             String
+  location               Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  gymDeskId              String?
+  firstName              String
+  lastName               String
+  fullName               String?
+  email                  String
+  phone                  String
+  dob                    DateTime?
+  gender                 String?
+  status                 String    @default("ACTIVE")
+  membershipType         String?
+  membershipStartDate    DateTime?
+  signupFee              String?
+  membershipFees         String?
+  membershipRecurrence   String?
+  loginLink              String?
+  joinDate               DateTime?
+  source                 String    @default("CSV")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@unique([locationId, email])
   @@index([locationId, status])
