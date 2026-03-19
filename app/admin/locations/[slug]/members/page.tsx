@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 
 type Member = {
@@ -56,9 +56,6 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMembers = useCallback(async (s: string, status: string, p: number) => {
@@ -95,73 +92,16 @@ export default function MembersPage() {
     setPage(1);
   }
 
-  async function handleImport(file: File) {
-    if (!file || !slug) return;
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('locationSlug', slug);
-      const res = await fetch('/api/admin/members/import', { method: 'POST', body: form });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error ?? 'Import failed');
-      setImportResult(`Import complete: ${json.created} created, ${json.updated} updated, ${json.skipped} skipped`);
-      fetchMembers(search, statusFilter, 1);
-      setPage(1);
-    } catch (e: any) {
-      setImportResult(`Error: ${e?.message ?? 'Import failed'}`);
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-          <p className="text-sm text-gray-600">
-            Gymdesk members for this location
-            {data ? ` · ${data.total} total` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-            }}
-          />
-          <button
-            type="button"
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-4 py-2 text-sm font-medium text-apple-text shadow-sm transition-colors hover:bg-apple-fill-secondary disabled:opacity-60"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-            {importing ? 'Importing…' : 'Import CSV'}
-          </button>
-        </div>
+      <header>
+        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
+        <p className="text-sm text-gray-600">
+          Gymdesk members synced via Zapier
+          {data ? ` · ${data.total} total` : ''}
+        </p>
       </header>
-
-      {/* Import result */}
-      {importResult && (
-        <div className={`rounded-lg border px-4 py-3 text-sm ${importResult.startsWith('Error') ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-          {importResult}
-          <button type="button" onClick={() => setImportResult(null)} className="ml-3 font-medium underline">
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
@@ -243,7 +183,7 @@ export default function MembersPage() {
                 <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
                   {search || statusFilter !== 'ALL'
                     ? 'No members match your filters'
-                    : 'No members yet. Import a CSV from Gymdesk to get started.'}
+                    : 'No members yet. Connect Gymdesk via Zapier to sync members automatically.'}
                 </td>
               </tr>
             )}
