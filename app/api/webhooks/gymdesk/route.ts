@@ -145,11 +145,14 @@ async function handleNewMember(body: any, locationSlug: string, statusOverride: 
 
 async function handleStatusChange(body: any, locationSlug: string, statusOverride: string) {
   const email = findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail");
+  const firstName = findField(body, "firstName", "first_name", "First Name", "first", "fname");
+  const lastName = findField(body, "lastName", "last_name", "Last Name", "last", "lname");
+  const phone = findField(body, "phone", "phoneNumber", "Phone", "mobile", "cell", "member_phone");
   const status = statusOverride || findField(body, "status");
 
   if (!email || !status) {
     return NextResponse.json(
-      { error: "email (in body) and status (in URL ?status=) are required" },
+      { error: "email and status are required" },
       { status: 400 }
     );
   }
@@ -175,9 +178,14 @@ async function handleStatusChange(body: any, locationSlug: string, statusOverrid
     where.locationId = location.id;
   }
 
+  const data: any = { status: upperStatus, source: "WEBHOOK" };
+  if (firstName) data.firstName = firstName;
+  if (lastName) data.lastName = lastName;
+  if (phone) data.phone = phone;
+
   const updated = await getPrisma().member.updateMany({
     where,
-    data: { status: upperStatus, source: "WEBHOOK" },
+    data,
   });
 
   return NextResponse.json({ ok: true, updated: updated.count });
