@@ -13,22 +13,52 @@ function authorize(req: NextRequest): boolean {
   return qs === secret || header === secret;
 }
 
+function findField(obj: any, ...keys: string[]): string {
+  if (!obj || typeof obj !== "object") return "";
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null && obj[key] !== "") {
+      return String(obj[key]).trim();
+    }
+  }
+  const lower = Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k.toLowerCase().replace(/[^a-z0-9]/g, ""), v])
+  );
+  for (const key of keys) {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (lower[normalized] !== undefined && lower[normalized] !== null && lower[normalized] !== "") {
+      return String(lower[normalized]).trim();
+    }
+  }
+  return "";
+}
+
 export async function POST(req: NextRequest) {
   if (!authorize(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const body = await req.json();
-    const action = body.action as string;
+  const params = req.nextUrl.searchParams;
+  const action = params.get("action") || "";
+  const locationSlug = params.get("locationSlug") || params.get("location") || "";
+  const statusParam = params.get("status") || "";
 
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    // Gymdesk may send form-encoded or empty body
+  }
+
+  console.log("[Gymdesk webhook] action=%s locationSlug=%s status=%s body=%j", action, locationSlug, statusParam, body);
+
+  try {
     if (action === "new_member") {
-      return await handleNewMember(body);
+      return await handleNewMember(body, locationSlug, statusParam);
     } else if (action === "status_change") {
-      return await handleStatusChange(body);
+      return await handleStatusChange(body, locationSlug, statusParam);
     } else {
       return NextResponse.json(
-        { error: `Unknown action: ${action}` },
+        { error: `Unknown action: ${action}. Use ?action=new_member or ?action=status_change` },
         { status: 400 }
       );
     }
@@ -41,12 +71,17 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function handleNewMember(body: any) {
-  const { locationSlug, firstName, lastName, email, phone, status, membershipType, gymDeskId } = body;
+async function handleNewMember(body: any, locationSlug: string, statusOverride: string) {
+  const email = findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail");
+  const firstName = findField(body, "firstName", "first_name", "First Name", "first", "fname");
+  const lastName = findField(body, "lastName", "last_name", "Last Name", "last", "lname");
+  const phone = findField(body, "phone", "phoneNumber", "Phone", "mobile", "cell", "member_phone");
+  const membershipType = findField(body, "membershipType", "membership", "plan", "membership_name", "membershipName");
+  const gymDeskId = findField(body, "id", "memberId", "member_id", "gymDeskId");
 
   if (!locationSlug || !email) {
     return NextResponse.json(
-      { error: "locationSlug and email are required" },
+      { error: "locationSlug (in URL) and email (in body) are required" },
       { status: 400 }
     );
   }
@@ -59,8 +94,8 @@ async function handleNewMember(body: any) {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
 
-  const memberStatus = VALID_STATUSES.includes(status?.toUpperCase())
-    ? status.toUpperCase()
+  const memberStatus = VALID_STATUSES.includes(statusOverride?.toUpperCase())
+    ? statusOverride.toUpperCase()
     : "ACTIVE";
 
   const member = await getPrisma().member.upsert({
@@ -71,36 +106,37 @@ async function handleNewMember(body: any) {
       },
     },
     update: {
-      firstName: firstName?.trim() || undefined,
-      lastName: lastName?.trim() || undefined,
-      phone: phone?.trim() || undefined,
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      phone: phone || undefined,
       status: memberStatus,
       membershipType: membershipType || undefined,
       gymDeskId: gymDeskId || undefined,
-      source: "ZAPIER",
+      source: "WEBHOOK",
     },
     create: {
       locationId: location.id,
-      firstName: (firstName || "").trim(),
-      lastName: (lastName || "").trim(),
+      firstName: firstName || "",
+      lastName: lastName || "",
       email: email.toLowerCase().trim(),
-      phone: (phone || "").trim(),
+      phone: phone || "",
       status: memberStatus,
       membershipType: membershipType || null,
       gymDeskId: gymDeskId || null,
-      source: "ZAPIER",
+      source: "WEBHOOK",
     },
   });
 
   return NextResponse.json({ ok: true, memberId: member.id });
 }
 
-async function handleStatusChange(body: any) {
-  const { locationSlug, email, status } = body;
+async function handleStatusChange(body: any, locationSlug: string, statusOverride: string) {
+  const email = findField(body, "email", "emailAddress", "Email", "member_email", "memberEmail");
+  const status = statusOverride || findField(body, "status");
 
   if (!email || !status) {
     return NextResponse.json(
-      { error: "email and status are required" },
+      { error: "email (in body) and status (in URL ?status=) are required" },
       { status: 400 }
     );
   }
