@@ -111,6 +111,10 @@ export async function GET(req: Request) {
         activeBookingIdentifyBy: true,
         activeBookingWindowHours: true,
         maxConsecutiveBookingsPerGuest: true,
+        bayAppEnabled: true,
+        bayAppUnlockMinutes: true,
+        bayAppWarningMinutes: true,
+        bayAppAutoCancelOnTimeout: true,
         bays: { select: { number: true }, orderBy: { number: 'asc' } },
         createdAt: true,
         updatedAt: true,
@@ -212,6 +216,11 @@ export async function PATCH(req: Request) {
       }
     }
 
+    const bayAppEnabled = body.bayAppEnabled === undefined ? undefined : Boolean(body.bayAppEnabled);
+    const bayAppUnlockMinutes = body.bayAppUnlockMinutes === undefined ? undefined : clamp(body.bayAppUnlockMinutes, 1, 60, 10);
+    const bayAppWarningMinutes = body.bayAppWarningMinutes === undefined ? undefined : clamp(body.bayAppWarningMinutes, 1, 60, 5);
+    const bayAppAutoCancelOnTimeout = body.bayAppAutoCancelOnTimeout === undefined ? undefined : Boolean(body.bayAppAutoCancelOnTimeout);
+
     const data = pickDefined({
       name: nextName,
       slug: nextSlug,
@@ -225,6 +234,10 @@ export async function PATCH(req: Request) {
       activeBookingIdentifyBy,
       activeBookingWindowHours,
       maxConsecutiveBookingsPerGuest,
+      bayAppEnabled,
+      bayAppUnlockMinutes,
+      bayAppWarningMinutes,
+      bayAppAutoCancelOnTimeout,
     });
 
     // Update location (without email/sms templates)
@@ -245,6 +258,10 @@ export async function PATCH(req: Request) {
         activeBookingIdentifyBy: true,
         activeBookingWindowHours: true,
         maxConsecutiveBookingsPerGuest: true,
+        bayAppEnabled: true,
+        bayAppUnlockMinutes: true,
+        bayAppWarningMinutes: true,
+        bayAppAutoCancelOnTimeout: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -324,6 +341,10 @@ export async function PATCH(req: Request) {
         activeBookingIdentifyBy: true,
         activeBookingWindowHours: true,
         maxConsecutiveBookingsPerGuest: true,
+        bayAppEnabled: true,
+        bayAppUnlockMinutes: true,
+        bayAppWarningMinutes: true,
+        bayAppAutoCancelOnTimeout: true,
         createdAt: true,
         updatedAt: true,
         notifications: {

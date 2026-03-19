@@ -67,6 +67,12 @@ export default function LocationBookingsPage() {
   const [creatingDraft, setCreatingDraft] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
 
+  type MemberLookup = {
+    byEmail: Record<string, { status: string; membershipType: string | null }>;
+    byPhone: Record<string, { status: string; membershipType: string | null }>;
+  };
+  const [memberLookup, setMemberLookup] = useState<MemberLookup>({ byEmail: {}, byPhone: {} });
+
   const pxPerMin = 1.2;
   const totalHeight = Math.round(24 * 60 * pxPerMin);
   const bayRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -91,6 +97,11 @@ export default function LocationBookingsPage() {
       }
       const json: AdminDayView = await res.json();
       setData(json);
+
+      try {
+        const mRes = await fetch(`/api/admin/members/lookup?locationSlug=${slug}`, { cache: 'no-store' });
+        if (mRes.ok) setMemberLookup(await mRes.json());
+      } catch {}
     } catch (e: any) {
       setError(e.message || "Failed to load data");
     } finally {
@@ -369,6 +380,22 @@ export default function LocationBookingsPage() {
     });
   };
 
+  // ───── Member Status Lookup ─────
+  const getMemberStatus = useCallback(
+    (email?: string, phone?: string): string | null => {
+      if (email) {
+        const m = memberLookup.byEmail[email.toLowerCase()];
+        if (m) return m.status;
+      }
+      if (phone) {
+        const m = memberLookup.byPhone[phone];
+        if (m) return m.status;
+      }
+      return null;
+    },
+    [memberLookup]
+  );
+
   // ───── Palette ─────
   const palette = [
     ["bg-blue-100", "border-blue-300", "text-blue-900"],
@@ -437,6 +464,7 @@ export default function LocationBookingsPage() {
                 onBayDrop={onBayDrop}
                 onBookingClick={onBookingClick}
                 onDeleteBooking={deleteBooking}
+                getMemberStatus={getMemberStatus}
               />
             </div>
           </div>
@@ -468,6 +496,7 @@ export default function LocationBookingsPage() {
             onUpdateField={(updates) =>
               setEditing((prev: any) => (prev ? { ...prev, ...updates } : null))
             }
+            memberStatus={editing ? getMemberStatus(editing.email, editing.phone) : null}
           />
         </>
       )}

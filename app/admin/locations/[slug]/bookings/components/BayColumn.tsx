@@ -22,6 +22,7 @@ type BayColumnProps = {
   onBayDrop: (e: React.DragEvent, bay: Bay) => void;
   onBookingClick: (booking: AdminBooking, bay: Bay) => void;
   onDeleteBooking: (id: string) => void;
+  getMemberStatus?: (email?: string, phone?: string) => string | null;
 };
 
 export function BayColumn({
@@ -39,6 +40,7 @@ export function BayColumn({
   onBayDrop,
   onBookingClick,
   onDeleteBooking,
+  getMemberStatus,
 }: BayColumnProps) {
   const { getBookingPosition } = useBookingPosition({
     date,
@@ -110,6 +112,7 @@ export function BayColumn({
               onDragStart={onBookingDragStart}
               onClick={() => onBookingClick(booking, bay)}
               onDelete={() => onDeleteBooking(booking.id)}
+              memberStatus={getMemberStatus?.(booking.email, booking.phone) ?? null}
             />
           );
         })}

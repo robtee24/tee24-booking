@@ -50,10 +50,17 @@ model Location {
   activeBookingWindowHours    Int       @default(24)
   maxConsecutiveBookingsPerGuest Int    @default(2)
 
-  bays         Bay[]
-  bookings     Booking[]
-  adminLinks   AdminLocation[]
-  notifications Notification[]
+  bayAppEnabled              Boolean @default(false)
+  bayAppUnlockMinutes        Int     @default(10)
+  bayAppWarningMinutes       Int     @default(5)
+  bayAppAutoCancelOnTimeout  Boolean @default(true)
+
+  bays                Bay[]
+  bookings            Booking[]
+  adminLinks          AdminLocation[]
+  notifications       Notification[]
+  bayAppRegistrations BayAppRegistration[]
+  members             Member[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -86,6 +93,7 @@ model Booking {
   email           String
   managementToken String    @unique @default(uuid())
   canceledAt      DateTime?
+  checkedInAt     DateTime?
 
   createdAt DateTime @default(now())
   Location  Location  @relation(fields: [locationId], references: [id])
@@ -158,6 +166,33 @@ model NotificationLog {
 
 /**
  * =========================
+ * Gymdesk Members
+ * =========================
+ */
+model Member {
+  id              String    @id @default(cuid())
+  locationId      String
+  location        Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  gymDeskId       String?
+  firstName       String
+  lastName        String
+  email           String
+  phone           String
+  status          String    @default("ACTIVE")
+  membershipType  String?
+  joinDate        DateTime?
+  source          String    @default("CSV")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([locationId, email])
+  @@index([locationId, status])
+  @@index([locationId, phone])
+  @@index([email])
+}
+
+/**
+ * =========================
  * One time passcode
  * =========================
  */
@@ -169,4 +204,22 @@ model Otp {
   createdAt DateTime @default(now())
 
   @@index([phone])
+}
+
+/**
+ * =========================
+ * Bay App Registration
+ * =========================
+ */
+model BayAppRegistration {
+  id         String   @id @default(uuid())
+  locationId String
+  bayNumber  Int
+  deviceId   String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, bayNumber])
 }

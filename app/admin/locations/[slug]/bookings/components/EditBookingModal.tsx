@@ -5,6 +5,13 @@ import React, { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import type { Bay } from "@/types/bay";
 
+const STATUS_BADGE_COLORS: Record<string, string> = {
+  ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  VISITOR: 'bg-blue-50 text-blue-700 border-blue-200',
+  CANCELLED: 'bg-red-50 text-red-700 border-red-200',
+  FROZEN: 'bg-amber-50 text-amber-700 border-amber-200',
+};
+
 type EditBookingModalProps = {
   open: boolean;
   onClose: () => void;
@@ -25,6 +32,7 @@ type EditBookingModalProps = {
   onSave: () => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onUpdateField: (updates: Partial<EditBookingModalProps["editing"]>) => void;
+  memberStatus?: string | null;
 };
 
 export function EditBookingModal({
@@ -37,6 +45,7 @@ export function EditBookingModal({
   onSave,
   onDelete,
   onUpdateField,
+  memberStatus,
 }: EditBookingModalProps) {
   if (!editing) return null;
 
@@ -124,6 +133,15 @@ export function EditBookingModal({
           <input placeholder="Email (optional)" value={editing.email} onChange={(e) => onFieldChange({ email: e.target.value })} className="input" />
           <input placeholder="Phone (optional)" value={editing.phone} onChange={(e) => onFieldChange({ phone: e.target.value })} className="input" />
         </div>
+
+        {memberStatus && (
+          <div className="flex items-center gap-2">
+            <span className="text-apple-sm text-apple-text-secondary">Gymdesk Status:</span>
+            <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE_COLORS[memberStatus] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+              {memberStatus.toLowerCase()}
+            </span>
+          </div>
+        )}
 
         {editing.phone && (
           <div className="pt-4 border-t border-apple-divider">

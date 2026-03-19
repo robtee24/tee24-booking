@@ -21,6 +21,7 @@ type BookingGridProps = {
   onBayDrop: (e: React.DragEvent, bay: Bay) => void;
   onBookingClick: (booking: AdminBooking, bay: Bay) => void;
   onDeleteBooking: (id: string) => void;
+  getMemberStatus?: (email?: string, phone?: string) => string | null;
 };
 
 export function BookingGrid({
@@ -38,6 +39,7 @@ export function BookingGrid({
   onBayDrop,
   onBookingClick,
   onDeleteBooking,
+  getMemberStatus,
 }: BookingGridProps) {
   if (visibleBays.length === 0) return null;
 
@@ -86,6 +88,7 @@ export function BookingGrid({
             onBayDrop={onBayDrop}
             onBookingClick={onBookingClick}
             onDeleteBooking={onDeleteBooking}
+            getMemberStatus={getMemberStatus}
           />
         ))}
       </div>

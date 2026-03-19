@@ -20,6 +20,10 @@ type LocationSettings = {
   activeBookingIdentifyBy?: 'phone' | 'email' | 'either' | null;
   activeBookingWindowHours?: number | null;
   maxConsecutiveBookingsPerGuest?: number | null;
+  bayAppEnabled?: boolean | null;
+  bayAppUnlockMinutes?: number | null;
+  bayAppWarningMinutes?: number | null;
+  bayAppAutoCancelOnTimeout?: boolean | null;
   updatedAt?: string | null;
 };
 
@@ -59,6 +63,14 @@ export default function LocationDetailsPage() {
     maxConsecutiveBookingsPerGuest: 2,
   });
 
+  const [editBayApp, setEditBayApp] = useState(false);
+  const [bayAppDraft, setBayAppDraft] = useState({
+    bayAppEnabled: false,
+    bayAppUnlockMinutes: 10,
+    bayAppWarningMinutes: 5,
+    bayAppAutoCancelOnTimeout: true,
+  });
+
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -94,6 +106,13 @@ export default function LocationDetailsPage() {
           activeBookingIdentifyBy: (settings.activeBookingIdentifyBy ?? 'either') as any,
           activeBookingWindowHours: toOpt(settings.activeBookingWindowHours, 1, 720, 24),
           maxConsecutiveBookingsPerGuest: toOpt(settings.maxConsecutiveBookingsPerGuest, 1, 10, 2),
+        });
+
+        setBayAppDraft({
+          bayAppEnabled: Boolean(settings.bayAppEnabled),
+          bayAppUnlockMinutes: toOpt(settings.bayAppUnlockMinutes, 1, 60, 10),
+          bayAppWarningMinutes: toOpt(settings.bayAppWarningMinutes, 1, 60, 5),
+          bayAppAutoCancelOnTimeout: settings.bayAppAutoCancelOnTimeout !== false,
         });
       } catch (e: any) {
         if (!cancelled) setErr(e?.message ?? 'Failed to load');
@@ -257,6 +276,33 @@ export default function LocationDetailsPage() {
       setSaveMsg('Booking rules saved.');
     } catch (e: any) {
       setSaveMsg(e?.message ?? 'Failed to save booking rules');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveBayApp() {
+    if (!data) return;
+    const payload = {
+      locationSlug: data.slug,
+      bayAppEnabled: bayAppDraft.bayAppEnabled,
+      bayAppUnlockMinutes: Number(bayAppDraft.bayAppUnlockMinutes),
+      bayAppWarningMinutes: Number(bayAppDraft.bayAppWarningMinutes),
+      bayAppAutoCancelOnTimeout: bayAppDraft.bayAppAutoCancelOnTimeout,
+    };
+    try {
+      setSaving(true); setSaveMsg(null);
+      const res = await fetch('/api/admin/location-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw await errorFromResponse(res, 'Save failed');
+      setData({ ...data, ...payload, updatedAt: new Date().toISOString() } as any);
+      setEditBayApp(false);
+      setSaveMsg('Bay app settings saved.');
+    } catch (e: any) {
+      setSaveMsg(e?.message ?? 'Failed to save bay app settings');
     } finally {
       setSaving(false);
     }
@@ -442,6 +488,49 @@ export default function LocationDetailsPage() {
                 <div>
                   <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Max consecutive bookings / guest</label>
                   <input type="number" min={1} max={10} value={rulesDraft.maxConsecutiveBookingsPerGuest} onChange={(e) => setRulesDraft((p) => ({ ...p, maxConsecutiveBookingsPerGuest: Number(e.target.value) }))} className="input" />
+                </div>
+              </div>
+            )}
+          </SettingsSection>
+
+          {/* Bay App Settings */}
+          <SettingsSection title="Bay App Settings" editing={editBayApp} onEdit={() => setEditBayApp(true)} onCancel={() => { setEditBayApp(false); setBayAppDraft({ bayAppEnabled: Boolean(data.bayAppEnabled), bayAppUnlockMinutes: toOpt(data.bayAppUnlockMinutes, 1, 60, 10), bayAppWarningMinutes: toOpt(data.bayAppWarningMinutes, 1, 60, 5), bayAppAutoCancelOnTimeout: data.bayAppAutoCancelOnTimeout !== false }); }} onSave={saveBayApp} saving={saving}>
+            {!editBayApp ? (
+              <div className="grid grid-cols-1 gap-4 text-apple-sm sm:grid-cols-2">
+                <Field label="Bay App Enabled" value={data.bayAppEnabled ? 'Yes' : 'No'} />
+                <Field label="Unlock Timer (minutes)" value={numToStr(data.bayAppUnlockMinutes, '10')} />
+                <Field label="Warning Before Reservation (minutes)" value={numToStr(data.bayAppWarningMinutes, '5')} />
+                <Field label="Auto-Cancel on Timeout" value={data.bayAppAutoCancelOnTimeout !== false ? 'Yes' : 'No'} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 text-apple-sm sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="flex items-center gap-2.5 text-apple-sm text-apple-text">
+                    <input type="checkbox" checked={bayAppDraft.bayAppEnabled} onChange={(e) => setBayAppDraft((p) => ({ ...p, bayAppEnabled: e.target.checked }))} className="h-4 w-4 rounded accent-apple-blue" />
+                    Enable Bay Check-In App
+                  </label>
+                  <p className="mt-1.5 ml-6.5 text-apple-xs text-apple-text-tertiary">
+                    When enabled, desktop apps on bay computers will lock bays at reservation time and require phone verification to unlock.
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Unlock Timer (minutes)</label>
+                  <input type="number" min={1} max={60} value={bayAppDraft.bayAppUnlockMinutes} onChange={(e) => setBayAppDraft((p) => ({ ...p, bayAppUnlockMinutes: Number(e.target.value) }))} className="input" />
+                  <p className="mt-1 text-apple-xs text-apple-text-tertiary">How long before the bay auto-unlocks and the reservation is cancelled.</p>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-apple-xs font-medium text-apple-text-secondary">Warning Before Reservation (minutes)</label>
+                  <input type="number" min={1} max={60} value={bayAppDraft.bayAppWarningMinutes} onChange={(e) => setBayAppDraft((p) => ({ ...p, bayAppWarningMinutes: Number(e.target.value) }))} className="input" />
+                  <p className="mt-1 text-apple-xs text-apple-text-tertiary">How many minutes before a reservation to show the warning bar.</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="flex items-center gap-2.5 text-apple-sm text-apple-text">
+                    <input type="checkbox" checked={bayAppDraft.bayAppAutoCancelOnTimeout} onChange={(e) => setBayAppDraft((p) => ({ ...p, bayAppAutoCancelOnTimeout: e.target.checked }))} className="h-4 w-4 rounded accent-apple-blue" />
+                    Auto-cancel reservation on timeout
+                  </label>
+                  <p className="mt-1.5 ml-6.5 text-apple-xs text-apple-text-tertiary">
+                    If the guest doesn&apos;t check in before the unlock timer expires, automatically cancel the reservation.
+                  </p>
                 </div>
               </div>
             )}

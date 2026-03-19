@@ -162,6 +162,11 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                               Bookings
                             </SubNavLink>
                           </li>
+                          <li>
+                            <SubNavLink href={`/admin/locations/${loc.slug}/members`} currentPath={pathname}>
+                              Members
+                            </SubNavLink>
+                          </li>
                         </ul>
                       )}
                     </li>
@@ -179,6 +184,11 @@ export default function AdminLayout({ children }: PropsWithChildren) {
             <li>
               <NavLink href="/admin/admins" currentPath={pathname} icon="admins">
                 Admins
+              </NavLink>
+            </li>
+            <li>
+              <NavLink href="/admin/bay-app" currentPath={pathname} icon="bayapp">
+                Bay App
               </NavLink>
             </li>
           </ul>
@@ -242,6 +252,11 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   admins: (
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+    </svg>
+  ),
+  bayapp: (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z" />
     </svg>
   ),
 };
@@ -357,6 +372,8 @@ function buildBreadcrumbs(pathname: string | null): Crumb[] {
     else if (seg === 'bookings') label = 'Bookings';
     else if (seg === 'admins') label = 'Admins';
     else if (seg === 'bays') label = 'Bays';
+    else if (seg === 'members') label = 'Members';
+    else if (seg === 'bay-app') label = 'Bay App';
     else label = titleize(seg);
 
     const isLast = i === parts.length - 1;
