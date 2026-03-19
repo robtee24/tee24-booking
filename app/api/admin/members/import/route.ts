@@ -83,16 +83,16 @@ const MEMBERSHIP_PRICING: Record<string, { fees: string; recurrence: string }> =
   "ca discount - noonan (limited membership 3x per month)": { fees: "$42.00", recurrence: "month" },
   "ca discount - tin cup / mcavoy (unlimited membership)": { fees: "$70.00", recurrence: "month" },
   "ca discount - tin cup / mcavoy + guest (unlimited membership)": { fees: "$87.50", recurrence: "month" },
-  "gilmore unlimited day pass | 24 hour door access sent after purchase": { fees: "$50.00", recurrence: "one-time" },
-  "lessons | 10 pack": { fees: "$600.00", recurrence: "one-time" },
-  "lessons | 5 pack": { fees: "$350.00", recurrence: "one-time" },
-  "lessons | single lesson (45 min)": { fees: "$85.00", recurrence: "one-time" },
+  "gilmore unlimited day pass | 24 hour door access sent after purchase": { fees: "$50.00", recurrence: "1-day pass" },
+  "lessons | 10 pack": { fees: "$600.00", recurrence: "month" },
+  "lessons | 5 pack": { fees: "$350.00", recurrence: "month" },
+  "lessons | single lesson (45 min)": { fees: "$85.00", recurrence: "month" },
   "noonan ( limited membership 3x per month)": { fees: "$60.00", recurrence: "month" },
   "noonan (limited membership 3x per month)": { fees: "$60.00", recurrence: "month" },
   "tin cup / mcavoy (unlimited membership)": { fees: "$100.00", recurrence: "month" },
   "tin cup / mcavoy + guest (unlimited membership)": { fees: "$125.00", recurrence: "month" },
   "tin cup / mcavoy + guest discounted | first responder | vet | senior | students (unlimited membership)": { fees: "$95.00", recurrence: "month" },
-  "waiting list - refundable deposit - applied toward first month": { fees: "$50.00", recurrence: "one-time" },
+  "waiting list - refundable deposit - applied toward first month": { fees: "$50.00", recurrence: "month" },
 };
 
 function lookupPricing(title: string): { fees: string; recurrence: string } | null {
@@ -171,6 +171,9 @@ export async function POST(req: NextRequest) {
 
       let status = normalizeStatus(statusRaw);
       if (status === "ACTIVE" && typeRaw.toLowerCase() === "visitor") {
+        status = "VISITOR";
+      }
+      if (membershipType.toLowerCase().includes("gilmore unlimited day pass")) {
         status = "VISITOR";
       }
 
