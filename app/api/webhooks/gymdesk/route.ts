@@ -32,7 +32,7 @@ function findField(obj: any, ...keys: string[]): string {
   return "";
 }
 
-export async function POST(req: NextRequest) {
+async function handleRequest(req: NextRequest) {
   if (!authorize(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -44,18 +44,23 @@ export async function POST(req: NextRequest) {
 
   let body: any = {};
   try {
-    body = await req.json();
+    const text = await req.text();
+    if (text) body = JSON.parse(text);
   } catch {
-    // Gymdesk may send form-encoded or empty body
+    // Gymdesk may send form-encoded, empty body, or GET with no body
   }
 
-  console.log("[Gymdesk webhook] action=%s locationSlug=%s status=%s body=%j", action, locationSlug, statusParam, body);
+  // For GET requests, also pull member fields from query params as fallback
+  const allParams = Object.fromEntries(params.entries());
+  const merged = { ...allParams, ...body };
+
+  console.log("[Gymdesk webhook] method=%s action=%s locationSlug=%s status=%s data=%j", req.method, action, locationSlug, statusParam, merged);
 
   try {
     if (action === "new_member") {
-      return await handleNewMember(body, locationSlug, statusParam);
+      return await handleNewMember(merged, locationSlug, statusParam);
     } else if (action === "status_change") {
-      return await handleStatusChange(body, locationSlug, statusParam);
+      return await handleStatusChange(merged, locationSlug, statusParam);
     } else {
       return NextResponse.json(
         { error: `Unknown action: ${action}. Use ?action=new_member or ?action=status_change` },
@@ -69,6 +74,14 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(req: NextRequest) {
+  return handleRequest(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handleRequest(req);
 }
 
 async function handleNewMember(body: any, locationSlug: string, statusOverride: string) {
