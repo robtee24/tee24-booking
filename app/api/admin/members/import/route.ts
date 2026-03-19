@@ -76,6 +76,50 @@ function findField(row: Record<string, string>, ...candidates: string[]): string
   return "";
 }
 
+// Gymdesk membership pricing lookup (normalized title → { fees, recurrence })
+const MEMBERSHIP_PRICING: Record<string, { fees: string; recurrence: string }> = {
+  "$250 pga membership": { fees: "$250.00", recurrence: "month" },
+  "ca discount - noonan ( limited membership 3x per month)": { fees: "$42.00", recurrence: "month" },
+  "ca discount - noonan (limited membership 3x per month)": { fees: "$42.00", recurrence: "month" },
+  "ca discount - tin cup / mcavoy (unlimited membership)": { fees: "$70.00", recurrence: "month" },
+  "ca discount - tin cup / mcavoy + guest (unlimited membership)": { fees: "$87.50", recurrence: "month" },
+  "gilmore unlimited day pass | 24 hour door access sent after purchase": { fees: "$50.00", recurrence: "one-time" },
+  "lessons | 10 pack": { fees: "$600.00", recurrence: "one-time" },
+  "lessons | 5 pack": { fees: "$350.00", recurrence: "one-time" },
+  "lessons | single lesson (45 min)": { fees: "$85.00", recurrence: "one-time" },
+  "noonan ( limited membership 3x per month)": { fees: "$60.00", recurrence: "month" },
+  "noonan (limited membership 3x per month)": { fees: "$60.00", recurrence: "month" },
+  "tin cup / mcavoy (unlimited membership)": { fees: "$100.00", recurrence: "month" },
+  "tin cup / mcavoy + guest (unlimited membership)": { fees: "$125.00", recurrence: "month" },
+  "tin cup / mcavoy + guest discounted | first responder | vet | senior | students (unlimited membership)": { fees: "$95.00", recurrence: "month" },
+  "waiting list - refundable deposit - applied toward first month": { fees: "$50.00", recurrence: "one-time" },
+};
+
+function lookupPricing(title: string): { fees: string; recurrence: string } | null {
+  const key = title.toLowerCase().trim();
+  if (MEMBERSHIP_PRICING[key]) return MEMBERSHIP_PRICING[key];
+  for (const [k, v] of Object.entries(MEMBERSHIP_PRICING)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+  return null;
+}
+
+/**
+ * Parse a Gymdesk membership field like:
+ *   "Tin Cup / McAvoy + Guest (Unlimited Membership), 03/18/2026"
+ *   "Noonan ( Limited Membership 3x per month), 03/17/2026 (2 / 3  sessions)"
+ * Returns { title, startDate }
+ */
+function parseMembershipField(raw: string): { title: string; startDate: string | null } {
+  if (!raw) return { title: "", startDate: null };
+  const dateMatch = raw.match(/,\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+  if (dateMatch) {
+    const title = raw.substring(0, dateMatch.index!).trim();
+    return { title, startDate: dateMatch[1] };
+  }
+  return { title: raw.trim(), startDate: null };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -116,11 +160,14 @@ export async function POST(req: NextRequest) {
       const phone = findField(row, "phone", "phonenumber", "mobile", "cell");
       const statusRaw = findField(row, "status", "memberstatus");
       const typeRaw = findField(row, "type");
-      const membershipType = findField(row, "membership", "membershiptype", "plan", "membershipplan");
+      const membershipRaw = findField(row, "membership", "membershiptype", "plan", "membershipplan");
       const joinDateRaw = findField(row, "joindate", "joined", "startdate", "datejoined", "createddate");
       const gymDeskId = findField(row, "id", "memberid", "gymdeskid");
       const dobRaw = findField(row, "dateofbirth", "dob", "birthday");
       const gender = findField(row, "gender");
+
+      const { title: membershipType, startDate: membershipStartRaw } = parseMembershipField(membershipRaw);
+      const pricing = membershipType ? lookupPricing(membershipType) : null;
 
       let status = normalizeStatus(statusRaw);
       if (status === "ACTIVE" && typeRaw.toLowerCase() === "visitor") {
@@ -135,6 +182,7 @@ export async function POST(req: NextRequest) {
 
       const joinDate = parseDateField(joinDateRaw);
       const dob = parseDateField(dobRaw);
+      const membershipStartDate = parseDateField(membershipStartRaw ?? "");
 
       const fullName = firstName && lastName ? `${firstName} ${lastName}` : null;
 
@@ -155,6 +203,9 @@ export async function POST(req: NextRequest) {
               gender: gender || existing.gender,
               status,
               membershipType: membershipType || existing.membershipType,
+              membershipStartDate: membershipStartDate ?? existing.membershipStartDate,
+              membershipFees: pricing?.fees ?? existing.membershipFees,
+              membershipRecurrence: pricing?.recurrence ?? existing.membershipRecurrence,
               joinDate: joinDate ?? existing.joinDate,
               gymDeskId: gymDeskId || existing.gymDeskId,
               source: "CSV",
@@ -174,6 +225,9 @@ export async function POST(req: NextRequest) {
               gender: gender || null,
               status,
               membershipType: membershipType || null,
+              membershipStartDate,
+              membershipFees: pricing?.fees ?? null,
+              membershipRecurrence: pricing?.recurrence ?? null,
               joinDate,
               gymDeskId: gymDeskId || null,
               source: "CSV",
