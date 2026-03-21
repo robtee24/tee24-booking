@@ -24,14 +24,17 @@ type Member = {
   source: string;
 };
 
+type StatusCounts = Record<string, number>;
+
 type PageData = {
   members: Member[];
   total: number;
   page: number;
   totalPages: number;
+  counts: StatusCounts;
 };
 
-const STATUS_TABS = ['ALL', 'ACTIVE', 'VISITOR', 'CANCELLED', 'FROZEN'] as const;
+const STATUS_TABS = ['ACTIVE', 'VISITOR', 'CANCELLED', 'FROZEN', 'ALL'] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -71,12 +74,14 @@ export default function MembersPage() {
   const [data, setData] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: boolean; total: number; created: number; updated: number; skipped: number } | null>(null);
+  const [reparsing, setReparsing] = useState(false);
+  const [reparseResult, setReparseResult] = useState<{ ok: boolean; total: number; updated: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -114,6 +119,27 @@ export default function MembersPage() {
     setPage(1);
   }
 
+  async function handleReparse() {
+    if (!slug) return;
+    setReparsing(true);
+    setReparseResult(null);
+    try {
+      const res = await fetch('/api/admin/members/reparse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationSlug: slug }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Re-parse failed');
+      setReparseResult(json);
+      fetchMembers(search, statusFilter, page);
+    } catch (err: any) {
+      setError(err?.message ?? 'Re-parse failed');
+    } finally {
+      setReparsing(false);
+    }
+  }
+
   async function handleCSVUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !slug) return;
@@ -148,13 +174,36 @@ export default function MembersPage() {
             {data ? ` · ${data.total} total` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={reparsing}
+            onClick={handleReparse}
+            className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-apple-fill-secondary disabled:opacity-50"
+          >
+            {reparsing ? (
+              <>
+                <svg className="h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Parsing…
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+                Re-parse Memberships
+              </>
+            )}
+          </button>
           <input ref={fileRef} type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
           <button
             type="button"
             disabled={importing}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-apple-fill-secondary disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-apple-fill-secondary disabled:opacity-50"
           >
             {importing ? (
               <>
@@ -187,23 +236,47 @@ export default function MembersPage() {
         </div>
       )}
 
+      {reparseResult && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <div className="flex items-center justify-between">
+            <span>
+              Re-parse complete — <strong>{reparseResult.updated}</strong> of {reparseResult.total} memberships updated (dates extracted, pricing applied)
+            </span>
+            <button type="button" onClick={() => setReparseResult(null)} className="ml-4 text-current opacity-60 hover:opacity-100">✕</button>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex rounded-lg border border-apple-border bg-apple-fill-tertiary p-0.5">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => onStatusChange(tab)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                statusFilter === tab
-                  ? 'bg-white text-apple-text shadow-sm'
-                  : 'text-apple-secondary hover:text-apple-text'
-              }`}
-            >
-              {tab === 'ALL' ? 'All' : tab.charAt(0) + tab.slice(1).toLowerCase()}
-            </button>
-          ))}
+          {STATUS_TABS.map((tab) => {
+            const count = data?.counts?.[tab];
+            const label = tab === 'ALL' ? 'All' : tab.charAt(0) + tab.slice(1).toLowerCase();
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => onStatusChange(tab)}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  statusFilter === tab
+                    ? 'bg-white text-apple-text shadow-sm'
+                    : 'text-apple-secondary hover:text-apple-text'
+                }`}
+              >
+                {label}
+                {count !== undefined && (
+                  <span className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[20px] text-[10px] font-semibold leading-4 ${
+                    statusFilter === tab
+                      ? 'bg-apple-blue/10 text-apple-blue'
+                      : 'bg-gray-200/70 text-gray-500'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="relative flex-1 min-w-[200px] max-w-md">

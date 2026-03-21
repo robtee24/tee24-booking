@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const [members, total] = await Promise.all([
+    const [members, total, countActive, countVisitor, countCancelled, countFrozen] = await Promise.all([
       getPrisma().member.findMany({
         where,
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -47,7 +47,13 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       getPrisma().member.count({ where }),
+      getPrisma().member.count({ where: { locationId: location.id, status: "ACTIVE" } }),
+      getPrisma().member.count({ where: { locationId: location.id, status: "VISITOR" } }),
+      getPrisma().member.count({ where: { locationId: location.id, status: "CANCELLED" } }),
+      getPrisma().member.count({ where: { locationId: location.id, status: "FROZEN" } }),
     ]);
+
+    const totalAll = countActive + countVisitor + countCancelled + countFrozen;
 
     return NextResponse.json({
       members,
@@ -55,6 +61,13 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      counts: {
+        ALL: totalAll,
+        ACTIVE: countActive,
+        VISITOR: countVisitor,
+        CANCELLED: countCancelled,
+        FROZEN: countFrozen,
+      },
     });
   } catch (e: any) {
     console.error("[Members list] Error:", e);
