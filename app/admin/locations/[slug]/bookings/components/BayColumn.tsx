@@ -80,8 +80,8 @@ export function BayColumn({
               45deg,
               transparent,
               transparent 8px,
-              #D2D2D7 8px,
-              #D2D2D7 16px
+              #e2e8f0 8px,
+              #e2e8f0 16px
             )`,
           }}
         />

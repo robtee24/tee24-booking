@@ -12,9 +12,9 @@ export default async function DisplayBoard({
   const slug = resolved?.locationSlug ?? "(missing)";
 
   return (
-    <main>
-      <h1 className="text-2xl font-bold">Display Board: {slug}</h1>
-      <p className="text-gray-600">
+    <main className="mx-auto max-w-2xl px-6 py-10">
+      <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Display Board: {slug}</h1>
+      <p className="text-apple-base text-apple-text-secondary">
         Airport-style next 5 per bay (auto-refresh)
       </p>
     </main>

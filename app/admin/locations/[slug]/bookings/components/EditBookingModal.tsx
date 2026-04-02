@@ -146,7 +146,7 @@ export function EditBookingModal({
         {editing.phone && (
           <div className="pt-4 border-t border-apple-divider">
             <a
-              href={`sms:${editing.phone.replace(/[^+\d]/g, '')}`}
+              href={`openphone://message?number=${editing.phone.replace(/[^+\d]/g, '')}`}
               className="inline-flex items-center gap-2 rounded-apple-sm border border-apple-border px-4 py-2.5 text-apple-sm font-medium text-apple-text transition-colors hover:bg-apple-fill-secondary"
             >
               <svg className="h-4 w-4 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

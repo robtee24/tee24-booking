@@ -265,7 +265,7 @@ export default function BaysAdminPage() {
         <section className="rounded-xl border p-5">
           <h2 className="mb-2 text-base font-semibold">Public Schedule (All Bays)</h2>
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <a href={scheduleUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+            <a href={scheduleUrl} target="_blank" rel="noreferrer" className="text-brand-600 underline">
               {scheduleUrl}
             </a>
             <button
@@ -567,7 +567,7 @@ export default function BaysAdminPage() {
                         {/* Public Link */}
                         <td className="p-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <a href={url} target="_blank" rel="noreferrer" className="max-w-xs truncate text-blue-600 underline">
+                            <a href={url} target="_blank" rel="noreferrer" className="max-w-xs truncate text-brand-600 underline">
                               {url}
                             </a>
                             <button

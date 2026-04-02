@@ -89,7 +89,7 @@ export default function LockModal({ booking, unlockMinutes, autoCancelOnTimeout 
         width: 56,
         height: 56,
         borderRadius: '50%',
-        background: 'rgba(0, 122, 255, 0.1)',
+        background: 'rgba(22, 163, 74, 0.1)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -102,7 +102,7 @@ export default function LockModal({ booking, unlockMinutes, autoCancelOnTimeout 
       <h1 style={{
         fontSize: 22,
         fontWeight: 700,
-        color: '#1d1d1f',
+        color: '#0f172a',
         marginBottom: 8,
         lineHeight: 1.3,
       }}>
@@ -111,7 +111,7 @@ export default function LockModal({ booking, unlockMinutes, autoCancelOnTimeout 
       <p style={{
         fontSize: 26,
         fontWeight: 700,
-        color: '#007aff',
+        color: '#16a34a',
         marginBottom: 24,
       }}>
         {booking.firstName} {booking.lastName}
@@ -119,7 +119,7 @@ export default function LockModal({ booking, unlockMinutes, autoCancelOnTimeout 
 
       <p style={{
         fontSize: 14,
-        color: '#6e6e73',
+        color: '#64748b',
         marginBottom: 16,
       }}>
         Input Reservation Phone Number to Unlock
@@ -169,7 +169,7 @@ export default function LockModal({ booking, unlockMinutes, autoCancelOnTimeout 
       }}>
         <p style={{
           fontSize: 13,
-          color: secondsLeft < 120 ? '#ff3b30' : '#86868b',
+          color: secondsLeft < 120 ? '#ff3b30' : '#94a3b8',
           lineHeight: 1.5,
         }}>
           This bay will unlock in{' '}

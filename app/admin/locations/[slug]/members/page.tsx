@@ -374,7 +374,7 @@ export default function MembersPage() {
                           {m.phone && (
                             <div className="mt-4 pt-4 border-t border-apple-divider/50">
                               <a
-                                href={`sms:${m.phone.replace(/[^+\d]/g, '')}`}
+                                href={`openphone://message?number=${m.phone.replace(/[^+\d]/g, '')}`}
                                 className="inline-flex items-center gap-2 rounded-lg border border-apple-border bg-white px-4 py-2.5 text-sm font-medium text-apple-text shadow-sm transition-colors hover:bg-apple-fill-secondary"
                               >
                                 <svg className="h-4 w-4 text-apple-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

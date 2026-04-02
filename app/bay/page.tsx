@@ -146,7 +146,6 @@ function BayCalendarPage() {
   }, [isTodayNY, data?.dateISO]);
 
   const colorClasses = [
-    ["bg-blue-50", "border-blue-200/60", "text-blue-900"],
     ["bg-emerald-50", "border-emerald-200/60", "text-emerald-900"],
     ["bg-amber-50", "border-amber-200/60", "text-amber-900"],
     ["bg-violet-50", "border-violet-200/60", "text-violet-900"],
@@ -156,6 +155,7 @@ function BayCalendarPage() {
     ["bg-lime-50", "border-lime-200/60", "text-lime-900"],
     ["bg-orange-50", "border-orange-200/60", "text-orange-900"],
     ["bg-sky-50", "border-sky-200/60", "text-sky-900"],
+    ["bg-teal-50", "border-teal-200/60", "text-teal-900"],
   ];
 
   if (!id) {

@@ -7,18 +7,18 @@
 }
 
 :root {
-  --color-bg: #f5f5f7;
+  --color-bg: #f8fafc;
   --color-card: #ffffff;
-  --color-text: #1d1d1f;
-  --color-text-secondary: #6e6e73;
-  --color-text-tertiary: #86868b;
-  --color-blue: #007aff;
-  --color-blue-hover: #0066d6;
+  --color-text: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-tertiary: #94a3b8;
+  --color-blue: #16a34a;
+  --color-blue-hover: #15803d;
   --color-red: #ff3b30;
   --color-red-dark: #d70015;
-  --color-green: #34c759;
-  --color-border: #d2d2d7;
-  --color-fill: #f5f5f7;
+  --color-green: #22c55e;
+  --color-border: #e2e8f0;
+  --color-fill: #f8fafc;
   --radius: 12px;
   --radius-sm: 8px;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
@@ -58,7 +58,7 @@ input, select, button {
 
 .input:focus {
   border-color: var(--color-blue);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
 .input::placeholder {

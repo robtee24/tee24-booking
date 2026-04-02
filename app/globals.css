@@ -12,20 +12,20 @@
   }
 
   body {
-    background-color: #F5F5F7;
-    color: #1D1D1F;
+    background-color: #f8fafc;
+    color: #0f172a;
     font-size: 15px;
     line-height: 1.47;
     letter-spacing: -0.009em;
   }
 
   ::selection {
-    background: rgba(0, 113, 227, 0.2);
+    background: rgba(22, 163, 74, 0.2);
   }
 
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.3);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.3);
     border-radius: 4px;
   }
 
@@ -37,11 +37,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #D2D2D7;
+    background: #cbd5e1;
     border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #86868B;
+    background: #94a3b8;
   }
 }
 
@@ -79,6 +79,6 @@
   }
   .input:focus {
     @apply border-apple-blue outline-none ring-0;
-    box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.3);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.3);
   }
 }

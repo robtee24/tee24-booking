@@ -64,7 +64,7 @@ export default function BayAssign({ location, deviceId, onBack, onAssigned }: Pr
                 padding: '14px 8px',
                 border: `2px solid ${selected === bay.number ? 'var(--color-blue)' : 'var(--color-border)'}`,
                 borderRadius: 'var(--radius-sm)',
-                background: selected === bay.number ? 'rgba(0, 122, 255, 0.06)' : 'var(--color-card)',
+                background: selected === bay.number ? 'rgba(22, 163, 74, 0.06)' : 'var(--color-card)',
                 cursor: 'pointer',
                 textAlign: 'center',
                 transition: 'all 0.15s',
