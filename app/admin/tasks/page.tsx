@@ -1,6 +1,7 @@
 import { getPrisma } from "@/lib/db";
 import { getCurrentAdmin, isFullAccess } from "@/lib/access";
 import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { BarChart, KpiCard } from "@/components/ui/charts";
 import { ListTodo } from "lucide-react";
 import { TasksClient } from "./TasksClient";
 
@@ -35,9 +36,51 @@ export default async function TasksPage() {
     ? await prisma.location.findMany({ select: { id: true, name: true, slug: true } })
     : admin.locations.map((l) => l.location);
 
+  const now = new Date();
+  const overdue = tasks.filter((t) => t.dueAt && t.dueAt < now).length;
+  const dueToday = tasks.filter((t) => {
+    if (!t.dueAt) return false;
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    return t.dueAt <= todayEnd && t.dueAt >= new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }).length;
+  const unassigned = tasks.filter((t) => !t.assignee).length;
+
+  // Tasks per assignee
+  const byAssignee = new Map<string, number>();
+  for (const t of tasks) {
+    const k = t.assignee?.name ?? "Unassigned";
+    byAssignee.set(k, (byAssignee.get(k) ?? 0) + 1);
+  }
+  const assigneeData = Array.from(byAssignee.entries())
+    .map(([name, value]) => ({ name, tasks: value }))
+    .sort((a, b) => b.tasks - a.tasks)
+    .slice(0, 8);
+
   return (
     <div className="space-y-6">
       <PageHeader title="Tasks" description="Staff to-do list and CRM follow-ups." />
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <KpiCard label="Open" value={tasks.length.toLocaleString()} />
+        <KpiCard label="Due today" value={dueToday.toLocaleString()} />
+        <KpiCard label="Overdue" value={overdue.toLocaleString()} hint={overdue > 0 ? "Review now" : undefined} />
+        <KpiCard label="Unassigned" value={unassigned.toLocaleString()} />
+      </div>
+
+      {assigneeData.length > 0 && (
+        <Card>
+          <CardHeader title="Workload" subtitle="Open tasks by assignee" />
+          <div className="mt-4">
+            <BarChart
+              data={assigneeData}
+              xKey="name"
+              series={[{ key: "tasks", label: "Tasks" }]}
+              layout="vertical"
+              height={Math.max(220, assigneeData.length * 28)}
+            />
+          </div>
+        </Card>
+      )}
 
       <TasksClient tasks={tasks as any} admins={admins} locations={locations} />
 

@@ -1,6 +1,18 @@
 import { Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import {
+  AreaChart,
+  BarChart,
+  DonutChart,
+  KpiCard,
+} from "@/components/ui/charts";
 import { LayoutDashboard } from "lucide-react";
 import { getPrisma } from "@/lib/db";
+import {
+  memberStatusBreakdown,
+  visitsByDay,
+  visitsHourly,
+  revenueByMonth,
+} from "@/lib/chart-data";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +34,6 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
     );
   }
 
-  // Period: month-to-date
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -36,6 +47,11 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
     visitsToday,
     upcomingBookings,
     recentNotifications,
+    visits7d,
+    visits30d,
+    visitsToday24h,
+    statusBreakdown,
+    revenue6mo,
   ] = await Promise.all([
     prisma.member.count({ where: { locationId: location.id, status: "ACTIVE" } }),
     prisma.member.count({ where: { locationId: location.id, status: "VISITOR" } }),
@@ -56,11 +72,19 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
+    visitsByDay({ locationId: location.id, days: 7 }),
+    visitsByDay({ locationId: location.id, days: 30 }),
+    visitsHourly({ locationId: location.id }),
+    memberStatusBreakdown({ locationId: location.id }),
+    revenueByMonth({ locationId: location.id, months: 6 }),
   ]);
 
   const expectedMtd = invoicesMTD._sum?.totalCents ?? 0;
   const overdueAmt = overdueInvoices._sum?.totalCents ?? 0;
   const overdueCnt = overdueInvoices._count ?? 0;
+
+  const visitsTrend = visits7d.map((v) => ({ y: v.visits }));
+  const revenueTrend = revenue6mo.map((m) => ({ y: m.revenue }));
 
   return (
     <div className="space-y-6">
@@ -75,10 +99,84 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <KpiCard label="Active members" value={activeMembers.toLocaleString()} href={`/admin/locations/${slug}/members/list`} />
-        <KpiCard label="Visitors" value={visitorsCount.toLocaleString()} href={`/admin/locations/${slug}/members/list?status=VISITOR`} />
-        <KpiCard label="Frozen" value={frozenMembers.toLocaleString()} href={`/admin/locations/${slug}/members/list?status=FROZEN`} />
-        <KpiCard label="Visits today" value={visitsToday.toLocaleString()} href={`/admin/locations/${slug}/members/attendance`} />
+        <KpiCard
+          label="Active members"
+          value={activeMembers.toLocaleString()}
+          href={`/admin/locations/${slug}/members/list`}
+        />
+        <KpiCard
+          label="Visitors"
+          value={visitorsCount.toLocaleString()}
+          href={`/admin/locations/${slug}/marketing/visitors`}
+        />
+        <KpiCard
+          label="Visits today"
+          value={visitsToday.toLocaleString()}
+          trend={visitsTrend}
+          href={`/admin/locations/${slug}/members/attendance`}
+        />
+        <KpiCard
+          label="Revenue (MTD)"
+          value={`$${(expectedMtd / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          trend={revenueTrend}
+          hint={overdueCnt > 0 ? `${overdueCnt} overdue` : undefined}
+          href={`/admin/locations/${slug}/billing`}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title="Visits — last 30 days" subtitle="Daily check-ins" />
+          <div className="mt-4">
+            <AreaChart
+              data={visits30d}
+              xKey="label"
+              series={[{ key: "visits", label: "Visits" }]}
+              height={220}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Member status" subtitle={`${activeMembers + visitorsCount + frozenMembers} total`} />
+          <div className="mt-2">
+            <DonutChart
+              data={statusBreakdown}
+              useStatusColors
+              centerLabel="Members"
+              centerValue={(activeMembers + visitorsCount + frozenMembers).toLocaleString()}
+              height={220}
+            />
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Today by hour" subtitle="Hourly check-ins" />
+          <div className="mt-4">
+            <BarChart
+              data={visitsToday24h.filter((b) => b.visits > 0 || (Number(b.hour.slice(0, 2)) >= 6 && Number(b.hour.slice(0, 2)) <= 22))}
+              xKey="hour"
+              series={[{ key: "visits", label: "Visits" }]}
+              height={200}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Revenue trend" subtitle="Last 6 months (paid charges)" />
+          <div className="mt-4">
+            <BarChart
+              data={revenue6mo}
+              xKey="month"
+              series={[{ key: "revenue", label: "Revenue" }]}
+              yFormatter={(v) => `$${v.toLocaleString()}`}
+              height={200}
+              colorByCell
+            />
+          </div>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -115,20 +213,17 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
             <QuickAction href={`/admin/locations/${slug}/marketing/messaging`} label="Send message" />
             <QuickAction href={`/admin/locations/${slug}/billing/payments`} label="Payments" />
           </div>
+          {upcomingBookings > 0 && (
+            <div className="mt-4 rounded-apple-sm bg-apple-fill-secondary px-3 py-2 text-apple-sm">
+              <span className="font-semibold tabular-nums text-apple-text">{upcomingBookings}</span>{" "}
+              <span className="text-apple-text-secondary">upcoming booking{upcomingBookings === 1 ? "" : "s"}</span>
+            </div>
+          )}
         </Card>
       </div>
 
       <Card>
-        <CardHeader
-          title="Recent notifications"
-          action={
-            upcomingBookings > 0 && (
-              <span className="text-apple-xs text-apple-text-tertiary">
-                {upcomingBookings} upcoming booking{upcomingBookings === 1 ? "" : "s"}
-              </span>
-            )
-          }
-        />
+        <CardHeader title="Recent notifications" />
         <div className="mt-4 space-y-2">
           {recentNotifications.length === 0 ? (
             <p className="text-apple-sm text-apple-text-tertiary">No notifications yet.</p>
@@ -156,16 +251,6 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
       </Card>
     </div>
   );
-}
-
-function KpiCard({ label, value, href }: { label: string; value: string; href?: string }) {
-  const inner = (
-    <div className="rounded-apple bg-white p-4 shadow-apple transition-shadow hover:shadow-apple-md">
-      <div className="text-apple-xs uppercase tracking-wide text-apple-text-tertiary">{label}</div>
-      <div className="mt-1 text-apple-2xl font-semibold tabular-nums text-apple-text">{value}</div>
-    </div>
-  );
-  return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
 function QuickAction({ href, label }: { href: string; label: string }) {

@@ -1,7 +1,9 @@
 import { Card, CardHeader, EmptyState, StatusBadge, Money } from "@/components/ui";
+import { BarChart, KpiCard } from "@/components/ui/charts";
 import { getCurrentMember } from "@/lib/member-session";
 import { getPrisma } from "@/lib/db";
 import { Receipt } from "lucide-react";
+import { lastNMonths } from "@/lib/chart-data";
 
 export const dynamic = "force-dynamic";
 
@@ -10,14 +12,67 @@ export default async function PortalBilling() {
   if (!member) return null;
   const prisma = getPrisma();
 
-  const [invoices, methods] = await Promise.all([
+  const yearAgo = new Date();
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+
+  const [invoices, methods, paidYearInvoices] = await Promise.all([
     prisma.invoice.findMany({ where: { memberId: member.id }, orderBy: { createdAt: "desc" }, take: 25 }),
     prisma.paymentMethod.findMany({ where: { memberId: member.id }, orderBy: { isDefault: "desc" } }),
+    prisma.invoice.findMany({
+      where: { memberId: member.id, status: "PAID", paidAt: { gte: yearAgo } },
+      select: { totalCents: true, paidAt: true },
+    }),
   ]);
+
+  const months = lastNMonths(12);
+  const billingHistory = months.map((m) => {
+    const total = paidYearInvoices
+      .filter((i) => i.paidAt && i.paidAt >= m.start && i.paidAt < m.end)
+      .reduce((s, i) => s + i.totalCents, 0);
+    return { month: m.label, paid: Math.round(total / 100) };
+  });
+
+  const totalPaidYear = paidYearInvoices.reduce((s, i) => s + i.totalCents, 0);
+  const upcomingDue = invoices
+    .filter((i) => i.status === "SCHEDULED")
+    .reduce((s, i) => s + i.totalCents, 0);
+  const pastDue = invoices
+    .filter((i) => i.status === "PAST_DUE" || i.status === "FAILED")
+    .reduce((s, i) => s + i.totalCents, 0);
 
   return (
     <div className="space-y-6">
       <h1 className="text-apple-2xl font-semibold tracking-tight">Billing</h1>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <KpiCard
+          label="Paid this year"
+          value={`$${(totalPaidYear / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        />
+        <KpiCard
+          label="Upcoming"
+          value={`$${(upcomingDue / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        />
+        <KpiCard
+          label="Past due"
+          value={`$${(pastDue / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+          hint={pastDue > 0 ? "Please update payment method" : undefined}
+        />
+      </div>
+
+      <Card>
+        <CardHeader title="Billing history" subtitle="Last 12 months" />
+        <div className="mt-4">
+          <BarChart
+            data={billingHistory}
+            xKey="month"
+            series={[{ key: "paid", label: "Paid" }]}
+            yFormatter={(v) => `$${v.toLocaleString()}`}
+            height={200}
+            colorByCell
+          />
+        </div>
+      </Card>
 
       <Card>
         <CardHeader title="Payment methods" subtitle="We charge your default card on the billing date of each cycle." />
@@ -47,7 +102,11 @@ export default async function PortalBilling() {
               <li key={i.id} className="flex items-center justify-between py-2 text-apple-sm">
                 <div>
                   <div className="font-medium text-apple-text">Invoice #{i.number}</div>
-                  <div className="text-apple-xs text-apple-text-tertiary">{i.paidAt ? `Paid ${new Date(i.paidAt).toLocaleDateString()}` : `Due ${new Date(i.dueDate).toLocaleDateString()}`}</div>
+                  <div className="text-apple-xs text-apple-text-tertiary">
+                    {i.paidAt
+                      ? `Paid ${new Date(i.paidAt).toLocaleDateString()}`
+                      : `Due ${new Date(i.dueDate).toLocaleDateString()}`}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Money cents={i.totalCents} />

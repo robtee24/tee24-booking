@@ -1,9 +1,17 @@
 import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { BarChart, KpiCard } from "@/components/ui/charts";
 import { Activity } from "lucide-react";
 import { AttendanceHeatmap, TimeOfDayChart } from "./AttendanceCharts";
+import {
+  visitFrequencyDistribution,
+  topMembersByVisits,
+  visitsByDay,
+} from "@/lib/chart-data";
 
 export const dynamic = "force-dynamic";
+
+const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default async function AttendancePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -17,7 +25,7 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
   const yearAgo = new Date(now.getTime() - 365 * 86_400_000);
   const ninetyAgo = new Date(now.getTime() - 90 * 86_400_000);
 
-  const [todayCount, monthCount, last10, year, ninety, noShowsMtd] = await Promise.all([
+  const [todayCount, monthCount, last10, year, ninety, noShowsMtd, freqDist, topMembers, last7d] = await Promise.all([
     prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: todayStart } } }),
     prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: monthStart } } }),
     prisma.visit.findMany({
@@ -31,7 +39,7 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
     }),
     prisma.visit.findMany({
       where: { locationId: location.id, enteredAt: { gte: yearAgo } },
-      select: { enteredAt: true },
+      select: { enteredAt: true, type: true },
     }),
     prisma.visit.findMany({
       where: { locationId: location.id, enteredAt: { gte: ninetyAgo } },
@@ -45,21 +53,26 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
         end: { lt: now, gte: monthStart },
       },
     }),
+    visitFrequencyDistribution({ locationId: location.id }),
+    topMembersByVisits({ locationId: location.id, limit: 10 }),
+    visitsByDay({ locationId: location.id, days: 7 }),
   ]);
 
-  // Build heatmap (last 365 days) and time-of-day distribution (last 90d)
   const heatmap = bucketByDay(year, yearAgo, now);
   const tod = bucketByHour(ninety);
+  const dayOfWeek = bucketByDayOfWeek(year);
+
+  const visitsTrend = last7d.map((v) => ({ y: v.visits }));
 
   return (
     <div className="space-y-6">
       <PageHeader title="Attendance" description="Member visits, demographics, and traffic patterns." />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card><div className="text-apple-xs uppercase text-apple-text-tertiary">Today</div><div className="mt-1 text-apple-2xl font-semibold tabular-nums">{todayCount}</div></Card>
-        <Card><div className="text-apple-xs uppercase text-apple-text-tertiary">Month-to-date</div><div className="mt-1 text-apple-2xl font-semibold tabular-nums">{monthCount}</div></Card>
-        <Card><div className="text-apple-xs uppercase text-apple-text-tertiary">90-day visits</div><div className="mt-1 text-apple-2xl font-semibold tabular-nums">{ninety.length}</div></Card>
-        <Card><div className="text-apple-xs uppercase text-apple-text-tertiary">No-shows MTD</div><div className="mt-1 text-apple-2xl font-semibold tabular-nums">{noShowsMtd}</div></Card>
+        <KpiCard label="Today" value={todayCount.toLocaleString()} trend={visitsTrend} />
+        <KpiCard label="Month-to-date" value={monthCount.toLocaleString()} />
+        <KpiCard label="90-day visits" value={ninety.length.toLocaleString()} />
+        <KpiCard label="No-shows MTD" value={noShowsMtd.toLocaleString()} hint="Bookings without check-in" />
       </div>
 
       <Card>
@@ -69,12 +82,63 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
         </div>
       </Card>
 
-      <Card>
-        <CardHeader title="Time of day" subtitle="Last 90 days · visits per hour" />
-        <div className="mt-4">
-          <TimeOfDayChart data={tod} />
-        </div>
-      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Day of week" subtitle="Last 365 days · visit type breakdown" />
+          <div className="mt-4">
+            <BarChart
+              data={dayOfWeek}
+              xKey="day"
+              series={[
+                { key: "checkIn", label: "Check-ins" },
+                { key: "booking", label: "Bookings" },
+              ]}
+              stacked
+              showLegend
+              height={220}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Time of day" subtitle="Last 90 days · visits per hour" />
+          <div className="mt-4">
+            <TimeOfDayChart data={tod} />
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Visit frequency" subtitle="Members by visits this month" />
+          <div className="mt-4">
+            <BarChart
+              data={freqDist}
+              xKey="range"
+              series={[{ key: "members", label: "Members" }]}
+              height={220}
+              colorByCell
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Most active members" subtitle="Top 10 this month" />
+          <div className="mt-4">
+            {topMembers.length === 0 ? (
+              <p className="text-apple-sm text-apple-text-tertiary">No member visits yet this month.</p>
+            ) : (
+              <BarChart
+                data={topMembers}
+                xKey="name"
+                series={[{ key: "visits", label: "Visits" }]}
+                layout="vertical"
+                height={Math.max(220, topMembers.length * 28)}
+              />
+            )}
+          </div>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader title="Recent visits" subtitle="From Kisi door unlocks and Bay App check-ins (deduped per location window)" />
@@ -125,6 +189,16 @@ function bucketByHour(visits: Array<{ enteredAt: Date }>) {
   for (const v of visits) {
     const h = v.enteredAt.getHours();
     buckets[h].count++;
+  }
+  return buckets;
+}
+
+function bucketByDayOfWeek(visits: Array<{ enteredAt: Date; type: string }>) {
+  const buckets = DAYS_OF_WEEK.map((day) => ({ day, checkIn: 0, booking: 0 }));
+  for (const v of visits) {
+    const dow = v.enteredAt.getDay();
+    if (v.type === "BOOKING") buckets[dow].booking++;
+    else buckets[dow].checkIn++;
   }
   return buckets;
 }

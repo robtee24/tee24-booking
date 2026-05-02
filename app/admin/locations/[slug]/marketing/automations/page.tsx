@@ -1,5 +1,6 @@
 import { getPrisma } from "@/lib/db";
-import { Card, EmptyState, PageHeader, Button, StatusBadge } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader, Button, StatusBadge } from "@/components/ui";
+import { BarChart, KpiCard } from "@/components/ui/charts";
 import { Plus, Workflow } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +17,38 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
     include: { _count: { select: { enrollments: true, steps: true } } },
   });
 
+  const totalEnrolled = automations.reduce((s, a) => s + a._count.enrollments, 0);
+  const activeCount = automations.filter((a) => a.active).length;
+  const topByEnrollment = [...automations]
+    .sort((a, b) => b._count.enrollments - a._count.enrollments)
+    .slice(0, 8)
+    .map((a) => ({ name: a.name, enrolled: a._count.enrollments }));
+
   return (
     <div className="space-y-6">
       <PageHeader title="Automations" description="Triggered flows: signup welcome, failed-payment recovery, win-back, birthday wishes, and more." actions={<Button iconLeft={<Plus className="h-4 w-4" />}>New automation</Button>} />
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <KpiCard label="Active automations" value={activeCount.toLocaleString()} hint={`of ${automations.length}`} />
+        <KpiCard label="Total enrolled" value={totalEnrolled.toLocaleString()} />
+        <KpiCard label="Avg per flow" value={automations.length > 0 ? Math.round(totalEnrolled / automations.length).toLocaleString() : "0"} />
+      </div>
+
+      {topByEnrollment.length > 0 && (
+        <Card>
+          <CardHeader title="Most-used automations" subtitle="By active enrollments" />
+          <div className="mt-4">
+            <BarChart
+              data={topByEnrollment}
+              xKey="name"
+              series={[{ key: "enrolled", label: "Enrolled" }]}
+              layout="vertical"
+              height={Math.max(220, topByEnrollment.length * 28)}
+            />
+          </div>
+        </Card>
+      )}
+
       {automations.length === 0 ? (
         <EmptyState
           icon={<Workflow className="h-6 w-6" />}
