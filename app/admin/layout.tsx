@@ -126,6 +126,9 @@ const LOCATION_SECTIONS: LocationSection[] = [
   },
 ];
 
+const OPEN_SECTIONS_STORAGE_KEY = 'tee24-admin-sidebar-open-sections';
+const LOC_OPEN_STORAGE_KEY = 'tee24-admin-sidebar-loc-open';
+
 export default function AdminLayout({ children }: PropsWithChildren) {
   const pathname = usePathname();
 
@@ -139,32 +142,69 @@ export default function AdminLayout({ children }: PropsWithChildren) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [locations, setLocations] = useState<SidebarLocation[]>([]);
 
-  // Auto-open the section that contains the current path
+  // Restore expand/collapse state from localStorage on first mount so navigation
+  // never resets what the user manually opened.
   useEffect(() => {
-    if (!activeSlug || !pathname) return;
-    const next: Record<string, boolean> = { ...openSections };
-    for (const section of LOCATION_SECTIONS) {
-      const sectionRoot = section.href(activeSlug);
-      if (pathname === sectionRoot || pathname.startsWith(sectionRoot + '/')) {
-        next[section.key] = true;
-      }
-    }
-    setOpenSections(next);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, activeSlug]);
+    try {
+      const raw = window.localStorage.getItem(OPEN_SECTIONS_STORAGE_KEY);
+      if (raw) setOpenSections(JSON.parse(raw));
+      const locRaw = window.localStorage.getItem(LOC_OPEN_STORAGE_KEY);
+      if (locRaw != null) setLocOpen(locRaw === '1');
+    } catch {}
+  }, []);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(OPEN_SECTIONS_STORAGE_KEY, JSON.stringify(openSections));
+    } catch {}
+  }, [openSections]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LOC_OPEN_STORAGE_KEY, locOpen ? '1' : '0');
+    } catch {}
+  }, [locOpen]);
+
+  // Auto-open the section that contains the current path. Only writes state if
+  // the relevant section isn't already open — prevents needless re-renders that
+  // make the menu visibly shift on navigation.
+  useEffect(() => {
+    if (!activeSlug || !pathname) return;
+    setOpenSections((cur) => {
+      let changed = false;
+      const next = { ...cur };
+      for (const section of LOCATION_SECTIONS) {
+        const sectionRoot = section.href(activeSlug);
+        const onSection =
+          pathname === sectionRoot || pathname.startsWith(sectionRoot + '/');
+        if (onSection && !next[section.key]) {
+          next[section.key] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : cur;
+    });
+  }, [pathname, activeSlug]);
+
+  // Fetch the location list ONCE on mount. Refetching on every navigation was
+  // re-rendering the whole location accordion and causing the visible bounce.
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch('/api/admin/location-settings', { cache: 'no-store' });
-        if (!res.ok) return;
+        if (!res.ok || cancelled) return;
         const json = await res.json();
+        if (cancelled) return;
         setLocations(
           (json?.locations ?? []).map((r: any) => ({ name: r.name, slug: r.slug }))
         );
       } catch {}
     })();
-  }, [pathname]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -225,7 +265,10 @@ export default function AdminLayout({ children }: PropsWithChildren) {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3">
+        <nav
+          className="flex-1 overflow-y-auto p-3"
+          style={{ overflowAnchor: 'none', scrollBehavior: 'auto' }}
+        >
           {/* Org-wide */}
           <SectionHeader>Organization</SectionHeader>
           <ul className="space-y-0.5">
@@ -253,6 +296,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                     ? 'bg-apple-blue/5 text-apple-text'
                     : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text',
                 ].join(' ')}
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setLocOpen((v) => !v)}
                 aria-expanded={locOpen}
               >
@@ -290,6 +334,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                                   <>
                                     <button
                                       type="button"
+                                      onMouseDown={(e) => e.preventDefault()}
                                       onClick={() => toggleSection(section.key)}
                                       className={[
                                         'flex w-full items-center gap-2 rounded-apple-sm px-3 py-1.5 text-apple-xs font-medium transition-colors',
