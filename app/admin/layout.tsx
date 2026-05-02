@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
@@ -128,9 +128,11 @@ const LOCATION_SECTIONS: LocationSection[] = [
 
 const OPEN_SECTIONS_STORAGE_KEY = 'tee24-admin-sidebar-open-sections';
 const LOC_OPEN_STORAGE_KEY = 'tee24-admin-sidebar-loc-open';
+const EXPANDED_LOC_STORAGE_KEY = 'tee24-admin-sidebar-expanded-loc';
 
 export default function AdminLayout({ children }: PropsWithChildren) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const activeSlug = useMemo(() => {
     const m = pathname?.match(/\/admin\/locations\/([^/]+)/);
@@ -139,17 +141,18 @@ export default function AdminLayout({ children }: PropsWithChildren) {
 
   const [locOpen, setLocOpen] = useState(true);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [expandedLocSlug, setExpandedLocSlug] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [locations, setLocations] = useState<SidebarLocation[]>([]);
 
-  // Restore expand/collapse state from localStorage on first mount so navigation
-  // never resets what the user manually opened.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(OPEN_SECTIONS_STORAGE_KEY);
       if (raw) setOpenSections(JSON.parse(raw));
       const locRaw = window.localStorage.getItem(LOC_OPEN_STORAGE_KEY);
       if (locRaw != null) setLocOpen(locRaw === '1');
+      const expRaw = window.localStorage.getItem(EXPANDED_LOC_STORAGE_KEY);
+      if (expRaw) setExpandedLocSlug(expRaw);
     } catch {}
   }, []);
 
@@ -164,6 +167,26 @@ export default function AdminLayout({ children }: PropsWithChildren) {
       window.localStorage.setItem(LOC_OPEN_STORAGE_KEY, locOpen ? '1' : '0');
     } catch {}
   }, [locOpen]);
+
+  useEffect(() => {
+    try {
+      if (expandedLocSlug) {
+        window.localStorage.setItem(EXPANDED_LOC_STORAGE_KEY, expandedLocSlug);
+      } else {
+        window.localStorage.removeItem(EXPANDED_LOC_STORAGE_KEY);
+      }
+    } catch {}
+  }, [expandedLocSlug]);
+
+  // When the user navigates to a different location (i.e. activeSlug changes),
+  // auto-expand that location. Toggling collapse for the same location is a
+  // separate user action that this effect doesn't override.
+  useEffect(() => {
+    if (activeSlug && expandedLocSlug !== activeSlug) {
+      setExpandedLocSlug(activeSlug);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlug]);
 
   // Auto-open the section that contains the current path. Only writes state if
   // the relevant section isn't already open — prevents needless re-renders that
@@ -269,14 +292,8 @@ export default function AdminLayout({ children }: PropsWithChildren) {
           className="flex-1 overflow-y-auto p-3"
           style={{ overflowAnchor: 'none', scrollBehavior: 'auto' }}
         >
-          {/* Org-wide */}
-          <SectionHeader>Organization</SectionHeader>
+          {/* Top-level: Franchise standalone */}
           <ul className="space-y-0.5">
-            <li>
-              <NavLink href="/admin" currentPath={pathname} icon={<LayoutDashboard className="h-4 w-4" />} exact>
-                Overview
-              </NavLink>
-            </li>
             <li>
               <NavLink href="/admin/franchise" currentPath={pathname} icon={<Building2 className="h-4 w-4" />}>
                 Franchise
@@ -314,13 +331,39 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                       All Locations
                     </SubNavLink>
                   </li>
-                  {locations.map((loc) => (
+                  {locations.map((loc) => {
+                    const isActive = loc.slug === activeSlug;
+                    const isExpanded = expandedLocSlug === loc.slug;
+                    return (
                     <li key={loc.slug}>
-                      <SubNavLink href={`/admin/locations/${loc.slug}/dashboard`} currentPath={pathname}>
-                        {loc.name}
-                      </SubNavLink>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (isActive) {
+                            // Already viewing this location → toggle its sub-tree
+                            setExpandedLocSlug(isExpanded ? null : loc.slug);
+                          } else {
+                            // Different location → navigate; auto-expand effect
+                            // will handle expansion once activeSlug updates.
+                            router.push(`/admin/locations/${loc.slug}/dashboard`);
+                          }
+                        }}
+                        className={[
+                          'flex w-full items-center gap-2 rounded-apple-sm px-3 py-1.5 text-apple-xs transition-colors duration-150',
+                          isActive
+                            ? 'font-semibold text-apple-blue bg-apple-blue/5'
+                            : 'text-apple-text-secondary hover:bg-apple-fill-secondary hover:text-apple-text',
+                        ].join(' ')}
+                        aria-expanded={isExpanded}
+                      >
+                        <span className="flex-1 text-left">{loc.name}</span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 text-apple-text-tertiary transition-transform ${isExpanded ? 'rotate-0' : '-rotate-90'}`}
+                        />
+                      </button>
 
-                      {activeSlug === loc.slug && (
+                      {isExpanded && (
                         <ul className="mt-0.5 space-y-0.5">
                           {LOCATION_SECTIONS.map((section) => {
                             const sectionHref = section.href(loc.slug);
@@ -385,14 +428,20 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                         </ul>
                       )}
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </li>
           </ul>
 
-          <SectionHeader className="mt-6">Settings</SectionHeader>
+          <SectionHeader className="mt-6">Organization Settings</SectionHeader>
           <ul className="space-y-0.5">
+            <li>
+              <NavLink href="/admin" currentPath={pathname} icon={<LayoutDashboard className="h-4 w-4" />} exact>
+                Overview
+              </NavLink>
+            </li>
             <li>
               <NavLink href="/admin/admins" currentPath={pathname} icon={<ShieldCheck className="h-4 w-4" />}>
                 Admins
@@ -405,7 +454,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
             </li>
             <li>
               <NavLink href="/admin/settings" currentPath={pathname} icon={<SettingsIcon className="h-4 w-4" />}>
-                Org Settings
+                General
               </NavLink>
             </li>
           </ul>
