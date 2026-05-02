@@ -12,7 +12,11 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
-    "prisma:reset": "prisma migrate reset --force"
+    "prisma:reset": "prisma migrate reset --force",
+    "migration:dry-run": "ts-node --transpile-only scripts/migration/dryRun.ts",
+    "migration:import": "ts-node --transpile-only scripts/migration/import.ts",
+    "migration:sync": "ts-node --transpile-only scripts/migration/sync.ts",
+    "migration:cutover": "ts-node --transpile-only scripts/migration/cutover.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",

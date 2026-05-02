@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 /**
@@ -19,8 +20,8 @@ enum AdminRole {
 }
 
 enum BayKind {
-  SINGLE // one golfer, handedness-specific
-  GROUP  // multi-golfer, either handedness
+  SINGLE
+  GROUP
 }
 
 enum Handedness {
@@ -30,52 +31,110 @@ enum Handedness {
 
 /**
  * =========================
- * Models
+ * Organization (multi-org boundary; v1 has one row)
+ * =========================
+ */
+model Organization {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  brandColor       String?
+  logoUrl          String?
+  contactEmail     String?
+  contactPhone     String?
+  defaultTimezone  String   @default("America/New_York")
+  paypalAccount    String?
+  squareLocationId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  locations       Location[]
+  membershipPlans MembershipPlan[]
+  documents       Document[]
+  emailTemplates  MessageTemplate[]
+  tags            Tag[]
+  signupForms     SignupForm[]
+  customFields    CustomFieldDefinition[]
+  automations     Automation[]
+  auditLogs       AuditLog[]
+  permissions     AdminPermission[]
+}
+
+/**
+ * =========================
+ * Location
  * =========================
  */
 model Location {
-  id                          String    @id @default(uuid())
-  name                        String
-  slug                        String    @unique
-  disabled                    Boolean   @default(false)
-  bookingNote                 String?
-  passAccessUrl               String?
-  open24Hours                 Boolean   @default(false)
-  hours                       Json      // init to [] in app if null
-  timezone                    String    @default("America/New_York")
-  minBookingMinutes           Int       @default(60)
-  maxBookingMinutes           Int       @default(120)
-  maxActiveBookingsPerGuest   Int       @default(2)
-  activeBookingIdentifyBy     String    @default("either")
-  activeBookingWindowHours    Int       @default(24)
-  maxConsecutiveBookingsPerGuest Int    @default(2)
+  id                             String        @id @default(uuid())
+  organizationId                 String?
+  organization                   Organization? @relation(fields: [organizationId], references: [id])
+  name                           String
+  slug                           String        @unique
+  disabled                       Boolean       @default(false)
+  bookingNote                    String?
+  passAccessUrl                  String?
+  open24Hours                    Boolean       @default(false)
+  hours                          Json
+  timezone                       String        @default("America/New_York")
+  minBookingMinutes              Int           @default(60)
+  maxBookingMinutes              Int           @default(120)
+  maxActiveBookingsPerGuest      Int           @default(2)
+  activeBookingIdentifyBy        String        @default("either")
+  activeBookingWindowHours       Int           @default(24)
+  maxConsecutiveBookingsPerGuest Int           @default(2)
 
-  bayAppEnabled              Boolean @default(false)
-  bayAppUnlockMinutes        Int     @default(10)
-  bayAppWarningMinutes       Int     @default(5)
-  bayAppAutoCancelOnTimeout  Boolean @default(true)
+  bayAppEnabled             Boolean @default(false)
+  bayAppUnlockMinutes       Int     @default(10)
+  bayAppWarningMinutes      Int     @default(5)
+  bayAppAutoCancelOnTimeout Boolean @default(true)
 
-  bays                Bay[]
-  bookings            Booking[]
-  adminLinks          AdminLocation[]
-  notifications       Notification[]
-  bayAppRegistrations BayAppRegistration[]
-  members             Member[]
+  // Attendance / Door dedupe window (hours between unlocks counted as same visit)
+  attendanceDedupeHours     Int @default(8)
+  // Reservation matching buffer (minutes around booking window to count as a Reservation visit)
+  reservationMatchBufferMin Int @default(15)
+
+  // Address (for receipts/invoices/CAN-SPAM footer)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  zip          String?
+  country      String? @default("US")
+
+  bays                    Bay[]
+  bookings                Booking[]
+  adminLinks              AdminLocation[]
+  notifications           Notification[]
+  bayAppRegistrations     BayAppRegistration[]
+  members                 Member[]
+  visits                  Visit[]
+  visitors                Visitor[]
+  invoices                Invoice[]
+  signupForms             SignupForm[]
+  permissions             AdminPermission[]
+  membershipSubscriptions MembershipSubscription[]
+  maintenanceLogs         MaintenanceLog[]
+  checklists              Checklist[]
+  tasks                   Task[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Bay {
-  id           String      @id @default(uuid())
-  number       Int
-  name         String?
-  locationId   String
-  location     Location    @relation(fields: [locationId], references: [id])
-  kind         BayKind     @default(GROUP)
-  handedness   Handedness? // only set when kind = SINGLE
-  capacity     Int         @default(4)
-  disabled     Boolean     @default(false)
+  id         String      @id @default(uuid())
+  number     Int
+  name       String?
+  locationId String
+  location   Location    @relation(fields: [locationId], references: [id])
+  kind       BayKind     @default(GROUP)
+  handedness Handedness?
+  capacity   Int         @default(4)
+  disabled   Boolean     @default(false)
+
+  visits          Visit[]
+  maintenanceLogs MaintenanceLog[]
 
   @@unique([locationId, number])
   @@index([locationId])
@@ -95,31 +154,46 @@ model Booking {
   canceledAt      DateTime?
   checkedInAt     DateTime?
 
+  // Optional link to the member who made this booking
+  memberId String?
+
   createdAt DateTime @default(now())
-  Location  Location  @relation(fields: [locationId], references: [id])
+  Location  Location @relation(fields: [locationId], references: [id])
 
   @@index([locationId, bayNumber, start])
   @@index([locationId, start, end])
   @@index([email, start])
+  @@index([memberId])
 }
 
-// --- Admins & Access Control ---
+/**
+ * =========================
+ * Admins, Permissions & RBAC
+ * =========================
+ */
 model Admin {
-  id        String    @id @default(cuid())
-  phone     String    @unique
-  name      String?
-  role      AdminRole @default(SCOPED)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  phone            String    @unique
+  email            String?   @unique
+  name             String?
+  role             AdminRole @default(SCOPED)
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  locations AdminLocation[]
+  locations   AdminLocation[]
+  permissions AdminPermission[]
+  auditLogs   AuditLog[]
+  tasks       Task[]
 }
 
 model AdminLocation {
-  id          String    @id @default(cuid())
-  adminId     String
-  locationId  String
-  createdAt   DateTime  @default(now())
+  id         String   @id @default(cuid())
+  adminId    String
+  locationId String
+  createdAt  DateTime @default(now())
 
   admin    Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
@@ -128,29 +202,51 @@ model AdminLocation {
 }
 
 /**
+ * Granular permissions per admin (org-wide and/or per-location).
+ * If locationId is null, the permission applies org-wide.
+ */
+model AdminPermission {
+  id             String   @id @default(cuid())
+  adminId        String
+  organizationId String?
+  locationId     String?
+  permission     String // e.g. "billing.refund", "member.impersonate", "member.view-churn-risk"
+  grantedAt      DateTime @default(now())
+  grantedById    String?
+
+  admin        Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location     Location?     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, locationId, permission])
+  @@index([adminId])
+  @@index([locationId])
+}
+
+/**
  * =========================
- * Notifications — kind & channel are TEXT in DB
+ * Notifications (booking notifications — existing)
  * =========================
  */
 model Notification {
-  id           String @id @default(cuid())
-  locationId   String
-  location     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  kind         String   @default("NOTIFICATION")
-  channel      String   @default("EMAIL")
-  hoursBefore  Int      @default(0)
-  template     String
-  enabled      Boolean  @default(true)
-  order        Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  kind        String   @default("NOTIFICATION")
+  channel     String   @default("EMAIL")
+  hoursBefore Int      @default(0)
+  template    String
+  enabled     Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([locationId, kind, channel, hoursBefore])
   @@index([locationId, kind, channel])
 }
 
 model NotificationLog {
-  id             String @id @default(cuid())
+  id             String   @id @default(cuid())
   bookingId      String
   notificationId String
   channel        String
@@ -166,42 +262,1189 @@ model NotificationLog {
 
 /**
  * =========================
- * Gymdesk Members
+ * Admin notifications inbox + dashboard stream
+ * =========================
+ */
+model AdminNotification {
+  id             String    @id @default(cuid())
+  organizationId String?
+  locationId     String?
+  kind           String // payment_received, door_opened, membership_expired, etc.
+  severity       String    @default("INFO") // INFO | WARN | ERROR
+  title          String
+  body           String?
+  link           String? // deep link into admin UI
+  data           Json?
+  readAt         DateTime?
+  snoozeUntil    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, readAt, createdAt])
+  @@index([locationId, readAt, createdAt])
+}
+
+/**
+ * =========================
+ * Member (extended)
  * =========================
  */
 model Member {
-  id                     String    @id @default(cuid())
-  locationId             String
-  location               Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  gymDeskId              String?
-  firstName              String
-  lastName               String
-  fullName               String?
-  email                  String
-  phone                  String
-  dob                    DateTime?
-  gender                 String?
-  status                 String    @default("ACTIVE")
-  membershipType         String?
-  membershipStartDate    DateTime?
-  signupFee              String?
-  membershipFees         String?
-  membershipRecurrence   String?
-  loginLink              String?
-  joinDate               DateTime?
-  source                 String    @default("CSV")
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id               String   @id @default(cuid())
+  organizationId   String?
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  homeLocationId   String?
+  gymDeskId        String?
+  squareCustomerId String?
+  kisiUserId       String?
+
+  firstName       String
+  lastName        String
+  fullName        String?
+  email           String
+  phone           String
+  // Multi entry stored in normalized contact rows below for primary; keep for legacy/CSV inflow
+  secondaryEmails Json?
+  secondaryPhones Json?
+
+  dob      DateTime?
+  gender   String?
+  photoUrl String?
+
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  zip          String?
+  country      String? @default("US")
+
+  // Status: PENDING | ACTIVE | VISITOR | FROZEN | CANCELLED
+  status               String    @default("ACTIVE")
+  // Free-form snapshot of current membership for legacy CSV imports
+  membershipType       String?
+  membershipStartDate  DateTime?
+  signupFee            String?
+  membershipFees       String?
+  membershipRecurrence String?
+  loginLink            String?
+  joinDate             DateTime?
+  source               String    @default("CSV")
+
+  // Member auth
+  passwordHash        String?
+  magicLinkLastSentAt DateTime?
+
+  // Communication preferences
+  optInEmailMarketing Boolean   @default(true)
+  optInSmsMarketing   Boolean   @default(false)
+  smsConsentAt        DateTime?
+  smsConsentSource    String?
+
+  // Referral
+  referralCode String? @unique
+  referredById String?
+
+  // Family
+  familyAccountId String?
+
+  // Door access state mirror (read from AccessSync)
+  kisiAccessEnabled   Boolean   @default(false)
+  kisiAccessReason    String?
+  kisiAccessUpdatedAt DateTime?
+
+  // Tags
+  memberTags              MemberTag[]
+  emergencyContacts       EmergencyContact[]
+  paymentMethods          PaymentMethod[]
+  invoices                Invoice[]
+  charges                 Charge[]
+  visits                  Visit[]
+  documentAssignments     DocumentAssignment[]
+  signatureEvents         SignatureEvent[]
+  membershipSubscriptions MembershipSubscription[]
+  customFieldValues       CustomFieldValue[]
+  automationEnrollments   AutomationEnrollment[]
+  messages                Message[]
+  conversations           Conversation[]
+  notes                   MemberNote[]
+  internalNotes           InternalNote[]
+  paypalAccount           PaypalAccount?
+  memberCredits           MemberCredit[]
+  usageTierSnapshots      UsageTierSnapshot[]
+  churnRiskScores         ChurnRiskScore[]
+
+  family        FamilyMember?
+  visitorRecord Visitor?      @relation("VisitorMemberLink")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([locationId, email])
   @@index([locationId, status])
   @@index([locationId, phone])
   @@index([email])
+  @@index([referralCode])
+  @@index([referredById])
+  @@index([familyAccountId])
+  @@index([squareCustomerId])
+}
+
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  memberId     String
+  name         String
+  relationship String?
+  phone        String?
+  email        String?
+  isEmergency  Boolean  @default(true)
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
 }
 
 /**
  * =========================
- * One time passcode
+ * Family Accounts
+ * =========================
+ */
+model FamilyAccount {
+  id               String   @id @default(cuid())
+  name             String
+  primaryMemberId  String?  @unique
+  squareCustomerId String?
+  balanceCents     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  members FamilyMember[]
+}
+
+model FamilyMember {
+  id              String   @id @default(cuid())
+  familyAccountId String
+  memberId        String   @unique
+  role            String // PRIMARY | SPOUSE | CHILD | PARENT | GUARDIAN | OTHER
+  isPrimary       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  family FamilyAccount @relation(fields: [familyAccountId], references: [id], onDelete: Cascade)
+  member Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([familyAccountId])
+}
+
+/**
+ * =========================
+ * Memberships
+ * =========================
+ */
+model MembershipPlan {
+  id                      String        @id @default(cuid())
+  organizationId          String?
+  organization            Organization? @relation(fields: [organizationId], references: [id])
+  name                    String
+  description             String?
+  // PRODUCT_TYPE: RECURRING | ONE_OFF | DAY_PASS | PUNCH_CARD | BUNDLE | COMP
+  productType             String        @default("RECURRING")
+  // CATEGORY: MEMBER | VISITOR
+  category                String        @default("MEMBER")
+  signupFeeCents          Int           @default(0)
+  priceCents              Int           @default(0)
+  // BILLING_CADENCE: MONTHLY | YEARLY | WEEKLY | ONE_OFF
+  billingCadence          String        @default("MONTHLY")
+  // Duration in days for non-recurring plans (e.g. 1 for day pass, 30 for monthly)
+  durationDays            Int?
+  // Cancellation/freeze policies (free-form JSON, schema enforced in code)
+  cancellationPolicy      Json?
+  freezePolicy            Json?
+  refundPolicy            Json?
+  // Family discount/bundle settings
+  familyBundle            Boolean       @default(false)
+  familyDiscountConfig    Json?
+  // Eligibility
+  archived                Boolean       @default(false)
+  // Comma-separated location IDs allowed to sell this plan (null = all locations of org)
+  allowedLocations        String?
+  // Tags to auto-apply on subscribe
+  autoApplyTagIds         Json?
+  // Auto-enroll automations
+  autoEnrollAutomationIds Json?
+  // Kisi door groups granted by this plan (per location, JSON map)
+  kisiDoorGroups          Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions        MembershipSubscription[]
+  pricingOverrides     MembershipPricingOverride[]
+  discountRestrictions DiscountPlanRestriction[]
+}
+
+model MembershipPricingOverride {
+  id             String @id @default(cuid())
+  planId         String
+  locationId     String
+  priceCents     Int
+  signupFeeCents Int    @default(0)
+
+  plan MembershipPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, locationId])
+}
+
+model MembershipSubscription {
+  id                   String    @id @default(cuid())
+  memberId             String
+  planId               String
+  locationId           String
+  // STATUS: PENDING | ACTIVE | FROZEN | CANCELLED | CANCEL_SCHEDULED | COMP
+  status               String    @default("ACTIVE")
+  startDate            DateTime
+  endDate              DateTime?
+  paidThroughDate      DateTime?
+  // Square subscription id (null for COMP/manual)
+  squareSubscriptionId String?
+  // Pricing snapshot at signup
+  priceCents           Int
+  signupFeeCents       Int       @default(0)
+  billingCadence       String
+
+  // Cancellation tracking
+  cancelScheduledFor DateTime?
+  cancellationReason String?
+  cancellationNotes  String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+
+  // Freeze tracking
+  freezeStartDate  DateTime?
+  freezeResumeDate DateTime?
+  freezeReason     String?
+  freezeFeeCents   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  plan     MembershipPlan @relation(fields: [planId], references: [id])
+  location Location       @relation(fields: [locationId], references: [id])
+  invoices Invoice[]
+  charges  Charge[]
+
+  @@index([memberId, status])
+  @@index([planId])
+  @@index([locationId, status])
+  @@index([squareSubscriptionId])
+}
+
+/**
+ * =========================
+ * Billing — invoices, charges, refunds, chargebacks, methods
+ * =========================
+ */
+model PaymentMethod {
+  id             String   @id @default(cuid())
+  memberId       String
+  // Square card on file token
+  squareCardId   String?  @unique
+  // SOURCE: CARD | ACH
+  source         String   @default("CARD")
+  brand          String?
+  last4          String?
+  expMonth       Int?
+  expYear        Int?
+  isDefault      Boolean  @default(false)
+  isFamilyShared Boolean  @default(false)
+  status         String   @default("ACTIVE") // ACTIVE | EXPIRED | FAILING
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  member  Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  charges Charge[]
+
+  @@index([memberId, isDefault])
+}
+
+model Invoice {
+  id              String    @id @default(cuid())
+  number          Int       @default(autoincrement())
+  organizationId  String?
+  locationId      String
+  memberId        String
+  subscriptionId  String?
+  // STATUS: SCHEDULED | PAID | PAST_DUE | FAILED | CANCELLED | REFUNDED | PARTIALLY_REFUNDED | CHARGEBACK
+  status          String    @default("SCHEDULED")
+  dueDate         DateTime
+  scheduledFor    DateTime?
+  paidAt          DateTime?
+  description     String?
+  subtotalCents   Int       @default(0)
+  discountCents   Int       @default(0)
+  taxCents        Int       @default(0)
+  refundedCents   Int       @default(0)
+  totalCents      Int       @default(0)
+  squareInvoiceId String?   @unique
+
+  // Internal/admin only notes (not visible to member)
+  adminNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  location     Location                @relation(fields: [locationId], references: [id])
+  member       Member                  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  subscription MembershipSubscription? @relation(fields: [subscriptionId], references: [id])
+  lineItems    InvoiceLineItem[]
+  charges      Charge[]
+  refunds      Refund[]
+
+  @@index([locationId, status, dueDate])
+  @@index([memberId, status])
+  @@index([subscriptionId])
+}
+
+model InvoiceLineItem {
+  id          String @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int    @default(1)
+  unitCents   Int
+  totalCents  Int
+  sortOrder   Int    @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Charge {
+  id              String  @id @default(cuid())
+  organizationId  String?
+  locationId      String?
+  memberId        String?
+  invoiceId       String?
+  subscriptionId  String?
+  paymentMethodId String?
+
+  // STATUS: PENDING | SUCCEEDED | FAILED | REFUNDED | PARTIALLY_REFUNDED | DISPUTED
+  status          String  @default("PENDING")
+  amountCents     Int
+  currency        String  @default("USD")
+  squarePaymentId String? @unique
+  failureReason   String?
+  attempt         Int     @default(1)
+  idempotencyKey  String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  member        Member?                 @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  invoice       Invoice?                @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  subscription  MembershipSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  paymentMethod PaymentMethod?          @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  refunds       Refund[]
+
+  @@index([memberId, status])
+  @@index([invoiceId])
+  @@index([subscriptionId])
+}
+
+model Refund {
+  id             String   @id @default(cuid())
+  chargeId       String
+  invoiceId      String?
+  amountCents    Int
+  reason         String?
+  squareRefundId String?  @unique
+  status         String   @default("PENDING")
+  refundedById   String?
+  createdAt      DateTime @default(now())
+
+  charge  Charge   @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([chargeId])
+}
+
+/**
+ * =========================
+ * Discounts
+ * =========================
+ */
+model Discount {
+  id               String    @id @default(cuid())
+  organizationId   String?
+  code             String    @unique
+  name             String
+  // TYPE: PERCENT | FIXED
+  type             String    @default("PERCENT")
+  value            Int // percent (1-100) or cents
+  // SCOPE: ONE_TIME | RECURRING (apply forever) | LIMITED_RECURRING
+  scope            String    @default("ONE_TIME")
+  recurringMonths  Int?
+  // Limits
+  maxRedemptions   Int?
+  perMemberLimit   Int?
+  totalRedemptions Int       @default(0)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  active           Boolean   @default(true)
+  // Restrict to specific signup forms
+  signupFormIds    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  planRestrictions DiscountPlanRestriction[]
+  applications     DiscountApplication[]
+
+  @@index([code])
+}
+
+model DiscountPlanRestriction {
+  id         String @id @default(cuid())
+  discountId String
+  planId     String
+
+  discount Discount       @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  plan     MembershipPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([discountId, planId])
+}
+
+model DiscountApplication {
+  id          String   @id @default(cuid())
+  discountId  String
+  memberId    String?
+  invoiceId   String?
+  appliedAt   DateTime @default(now())
+  amountCents Int
+
+  discount Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([invoiceId])
+}
+
+/**
+ * =========================
+ * Member credits ledger
+ * =========================
+ */
+model MemberCredit {
+  id          String   @id @default(cuid())
+  memberId    String
+  // TYPE: REFERRAL | COMP | REFUND_AS_CREDIT | ADJUSTMENT
+  type        String
+  amountCents Int
+  // POSITIVE = credit added, NEGATIVE = credit spent
+  reason      String?
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, createdAt])
+}
+
+/**
+ * =========================
+ * Documents
+ * =========================
+ */
+model Document {
+  id                   String        @id @default(cuid())
+  organizationId       String?
+  organization         Organization? @relation(fields: [organizationId], references: [id])
+  name                 String
+  description          String?
+  // Source Word file (parsed -> HTML for rendering)
+  sourceFileUrl        String?
+  bodyHtml             String? // Rendered HTML with merge field placeholders {field}
+  // Field placement metadata: positions of signature/initial blocks
+  fieldsConfig         Json?
+  version              Int           @default(1)
+  // Lifecycle
+  active               Boolean       @default(true)
+  requiredAtSignup     Boolean       @default(false)
+  // expiresAfterDays = expire signed copy after N days from signing (e.g., annual waiver)
+  expiresAfterDays     Int?
+  // If member's signed doc is expired beyond this, schedule Kisi access disable
+  graceAfterExpiryDays Int?          @default(7)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments DocumentAssignment[]
+}
+
+model DocumentAssignment {
+  id              String    @id @default(cuid())
+  documentId      String
+  memberId        String
+  // STATUS: SENT | VIEWED | SIGNED | DECLINED | EXPIRED | VOIDED | AWAITING_COUNTER
+  status          String    @default("SENT")
+  versionAtAssign Int
+  signingToken    String?   @unique
+  expiresAt       DateTime?
+  pdfUrl          String?
+  pdfHash         String?
+  signedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  member   Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  events   SignatureEvent[]
+
+  @@index([memberId, status])
+  @@index([documentId])
+}
+
+model SignatureEvent {
+  id               String   @id @default(cuid())
+  assignmentId     String
+  memberId         String
+  // KIND: SENT | VIEWED | SIGNED | DECLINED | VOIDED | RESENT
+  kind             String
+  signatureSvg     String?
+  initialsSvg      String?
+  ipAddress        String?
+  userAgent        String?
+  signedOnBehalfBy String?
+  createdAt        DateTime @default(now())
+
+  assignment DocumentAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  member     Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId])
+}
+
+/**
+ * =========================
+ * Tags
+ * =========================
+ */
+model Tag {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  name           String
+  color          String?       @default("#16a34a")
+  createdAt      DateTime      @default(now())
+
+  members MemberTag[]
+
+  @@unique([organizationId, name])
+}
+
+model MemberTag {
+  id         String   @id @default(cuid())
+  memberId   String
+  tagId      String
+  taggedAt   DateTime @default(now())
+  taggedById String?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, tagId])
+}
+
+/**
+ * =========================
+ * Custom fields
+ * =========================
+ */
+model CustomFieldDefinition {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  name           String
+  key            String
+  // TYPE: TEXT | NUMBER | DATE | SELECT | MULTI_SELECT | FILE | BOOLEAN
+  type           String
+  options        Json?
+  required       Boolean       @default(false)
+  showOnSignup   Boolean       @default(false)
+  showOnProfile  Boolean       @default(true)
+  adminOnly      Boolean       @default(false)
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+
+  values CustomFieldValue[]
+
+  @@unique([organizationId, key])
+}
+
+model CustomFieldValue {
+  id          String    @id @default(cuid())
+  fieldId     String
+  memberId    String
+  valueText   String?
+  valueNumber Float?
+  valueDate   DateTime?
+  valueJson   Json?
+  updatedAt   DateTime  @updatedAt
+
+  field  CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  member Member                @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, memberId])
+}
+
+/**
+ * =========================
+ * Notes
+ * =========================
+ */
+model MemberNote {
+  id        String   @id @default(cuid())
+  memberId  String
+  body      String
+  authorId  String?
+  createdAt DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, createdAt])
+}
+
+model InternalNote {
+  id        String   @id @default(cuid())
+  memberId  String
+  body      String
+  authorId  String?
+  createdAt DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, createdAt])
+}
+
+/**
+ * =========================
+ * Visits / Attendance
+ * =========================
+ */
+model Visit {
+  id          String    @id @default(cuid())
+  memberId    String?
+  visitorId   String?
+  locationId  String
+  bayId       String?
+  // TYPE: RESERVATION | WALK_IN | DAY_PASS | CLASS | MANUAL
+  type        String    @default("WALK_IN")
+  // SOURCE: KISI | MANUAL | BAY_APP
+  source      String    @default("KISI")
+  enteredAt   DateTime
+  exitedAt    DateTime?
+  bookingId   String?
+  kisiEventId String?   @unique
+  notes       String?
+
+  // De-dupe: visits within the configured window roll into a single Visit row
+  dedupedFromAt DateTime?
+  unlockCount   Int       @default(1)
+
+  createdAt DateTime @default(now())
+
+  member   Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  visitor  Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  location Location @relation(fields: [locationId], references: [id])
+  bay      Bay?     @relation(fields: [bayId], references: [id])
+
+  @@index([memberId, enteredAt])
+  @@index([locationId, enteredAt])
+  @@index([visitorId, enteredAt])
+  @@index([bookingId])
+}
+
+model UsageTierSnapshot {
+  id               String   @id @default(cuid())
+  memberId         String
+  // TIER: ABOVE_AVG | AVERAGE | LIGHT | AT_RISK | INACTIVE
+  tier             String
+  visits30d        Int
+  visits90d        Int
+  cohortPercentile Float?
+  computedAt       DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, computedAt])
+}
+
+model ChurnRiskScore {
+  id           String   @id @default(cuid())
+  memberId     String
+  score        Float // 0-100
+  modelVersion String   @default("v1-rules")
+  features     Json
+  computedAt   DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, computedAt])
+}
+
+model ChurnLabel {
+  id          String   @id @default(cuid())
+  memberId    String
+  cancelledAt DateTime
+  reason      String?
+  features30d Json
+  features60d Json
+  features90d Json
+  createdAt   DateTime @default(now())
+
+  @@index([memberId])
+}
+
+/**
+ * =========================
+ * Visitors funnel
+ * =========================
+ */
+model Visitor {
+  id             String  @id @default(cuid())
+  organizationId String?
+  locationId     String?
+  // STAGE: NEW | ENGAGED | CONVERTED | LOST
+  stage          String  @default("NEW")
+  source         String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  utmTerm        String?
+  utmContent     String?
+
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+
+  notes               String?
+  convertedToMemberId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  location Location?      @relation(fields: [locationId], references: [id])
+  events   VisitorEvent[]
+  visits   Visit[]
+  member   Member?        @relation("VisitorMemberLink", fields: [convertedToMemberId], references: [id])
+
+  @@index([organizationId, stage])
+  @@index([locationId, stage])
+  @@index([email])
+  @@index([phone])
+}
+
+model VisitorEvent {
+  id        String   @id @default(cuid())
+  visitorId String
+  // KIND: PAGEVIEW | FORM_START | FORM_STEP | FORM_ABANDONED | DAY_PASS_PURCHASED | EMAIL_OPENED | etc.
+  kind      String
+  data      Json?
+  createdAt DateTime @default(now())
+
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([visitorId, createdAt])
+}
+
+/**
+ * =========================
+ * Signup forms (configurable per URL)
+ * =========================
+ */
+model SignupForm {
+  id                      String        @id @default(cuid())
+  organizationId          String?
+  organization            Organization? @relation(fields: [organizationId], references: [id])
+  locationId              String?
+  slug                    String        @unique
+  name                    String
+  description             String?
+  active                  Boolean       @default(true)
+  // Allowed plan IDs (JSON array)
+  allowedPlanIds          Json?
+  defaultPlanId           String?
+  // Required fields override (JSON array of field keys)
+  requiredFields          Json?
+  // Custom fields shown (JSON array of CustomFieldDefinition IDs)
+  customFieldIds          Json?
+  // Required documents (JSON array of Document IDs)
+  requiredDocumentIds     Json?
+  // Discount config
+  allowDiscountCode       Boolean       @default(true)
+  autoApplyDiscountId     String?
+  // Photo required?
+  photoRequired           Boolean       @default(false)
+  // Auth setup: NONE | MAGIC_LINK | PASSWORD
+  authSetup               String        @default("MAGIC_LINK")
+  // Theme overrides (within tokens) - JSON
+  themeOverrides          Json?
+  // Confirmation page (URL or null = default)
+  confirmationUrl         String?
+  // Tax handling
+  collectTax              Boolean       @default(false)
+  // Tags to auto-apply on signup
+  autoTagIds              Json?
+  // Automations to auto-enroll
+  autoEnrollAutomationIds Json?
+  // Embed mode
+  embedAllowed            Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId, active])
+}
+
+/**
+ * =========================
+ * Messaging — unified email + SMS log
+ * =========================
+ */
+model MessageTemplate {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  name           String
+  // CHANNEL: EMAIL | SMS | PUSH
+  channel        String
+  // CATEGORY: TRANSACTIONAL | MARKETING | SYSTEM
+  category       String        @default("MARKETING")
+  subject        String? // for email
+  body           String // text or HTML
+  // Merge fields documented in code; not enforced in schema
+  active         Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  memberId      String?
+  visitorId     String?
+  locationId    String?
+  subject       String?
+  // STATUS: OPEN | RESOLVED
+  status        String   @default("OPEN")
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  member   Member?   @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@index([memberId, status, lastMessageAt])
+}
+
+model Message {
+  id                 String    @id @default(cuid())
+  conversationId     String?
+  memberId           String?
+  // CHANNEL: EMAIL | SMS | PUSH | INTERNAL
+  channel            String
+  // DIRECTION: OUTBOUND | INBOUND
+  direction          String
+  // STATUS: QUEUED | SENT | DELIVERED | OPENED | CLICKED | BOUNCED | FAILED | REPLIED | UNSUBSCRIBED
+  status             String    @default("QUEUED")
+  category           String    @default("MARKETING") // TRANSACTIONAL | MARKETING | SYSTEM
+  subject            String?
+  body               String
+  fromAddress        String?
+  toAddress          String?
+  providerId         String? // Resend or Quo provider id
+  providerError      String?
+  templateId         String?
+  sentByAdminId      String?
+  sentByAutomationId String?
+  scheduledFor       DateTime?
+
+  // Stats
+  openedAt  DateTime?
+  clickedAt DateTime?
+  bouncedAt DateTime?
+  repliedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  member       Member?       @relation(fields: [memberId], references: [id])
+
+  @@index([memberId, createdAt])
+  @@index([conversationId])
+  @@index([providerId])
+}
+
+/**
+ * =========================
+ * Automations
+ * =========================
+ */
+model Automation {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  name           String
+  description    String?
+  // TRIGGER: SIGNUP | PAYMENT_FAILED | PAYMENT_SUCCESS | PLAN_CHANGE | FREEZE | CANCEL | DOC_SIGNED |
+  // DOC_EXPIRED | TAG_ADDED | TAG_REMOVED | STATUS_CHANGE | ATTENDANCE_MILESTONE | NO_SHOW |
+  // USAGE_TIER_CHANGE | CHURN_RISK_THRESHOLD | BIRTHDAY | ANNIVERSARY | SCHEDULED
+  trigger        String
+  triggerConfig  Json?
+  // GOAL: TAG_ADDED | STATUS_CHANGE | etc. (exit when met)
+  goalConfig     Json?
+  active         Boolean       @default(false)
+  maxSteps       Int           @default(50)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps       AutomationStep[]
+  enrollments AutomationEnrollment[]
+}
+
+model AutomationStep {
+  id           String @id @default(cuid())
+  automationId String
+  order        Int
+  // KIND: SEND_EMAIL | SEND_SMS | SEND_PUSH | ADD_TAG | REMOVE_TAG | CHANGE_STATUS |
+  // APPLY_DISCOUNT | CREATE_TASK | WEBHOOK | WAIT | SPLIT | EXIT
+  kind         String
+  config       Json
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, order])
+  @@index([automationId])
+}
+
+model AutomationEnrollment {
+  id           String    @id @default(cuid())
+  automationId String
+  memberId     String
+  // STATUS: ACTIVE | COMPLETED | EXITED | PAUSED | FAILED
+  status       String    @default("ACTIVE")
+  currentStep  Int       @default(0)
+  nextRunAt    DateTime?
+  exitReason   String?
+
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  automation Automation        @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  member     Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  events     AutomationEvent[]
+
+  @@unique([automationId, memberId])
+  @@index([automationId, status])
+  @@index([memberId, status])
+}
+
+model AutomationEvent {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  step         Int
+  kind         String // STEP_STARTED | STEP_COMPLETED | STEP_FAILED | EXITED
+  detail       Json?
+  createdAt    DateTime @default(now())
+
+  enrollment AutomationEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+}
+
+/**
+ * =========================
+ * Referrals
+ * =========================
+ */
+model Referral {
+  id                String   @id @default(cuid())
+  referrerId        String
+  referredMemberId  String   @unique
+  signupFormId      String?
+  discountAppliedId String?
+  payoutId          String?
+  earnedCents       Int      @default(0)
+  earnedKind        String // PAYMENT | CREDIT
+  createdAt         DateTime @default(now())
+
+  @@index([referrerId])
+  @@index([payoutId])
+}
+
+model ReferralPayout {
+  id          String    @id @default(cuid())
+  referrerId  String
+  amountCents Int
+  // STATUS: PENDING | APPROVED | SENT | PAID | FAILED
+  status      String    @default("PENDING")
+  paypalTxnId String?
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+
+  @@index([referrerId, status])
+}
+
+model PaypalAccount {
+  id          String    @id @default(cuid())
+  memberId    String    @unique
+  paypalEmail String
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/**
+ * =========================
+ * Tasks (staff CRM)
+ * =========================
+ */
+model Task {
+  id             String    @id @default(cuid())
+  organizationId String?
+  locationId     String?
+  memberId       String?
+  title          String
+  body           String?
+  assignedToId   String?
+  // STATUS: OPEN | IN_PROGRESS | DONE | CANCELLED
+  status         String    @default("OPEN")
+  priority       String    @default("NORMAL")
+  dueAt          DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  location Location? @relation(fields: [locationId], references: [id])
+  assignee Admin?    @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([assignedToId, status])
+  @@index([locationId, status])
+  @@index([memberId])
+}
+
+/**
+ * =========================
+ * Operational logs
+ * =========================
+ */
+model MaintenanceLog {
+  id         String    @id @default(cuid())
+  locationId String
+  bayId      String?
+  // KIND: ISSUE | RESOLVED | INSPECTION | NOTE
+  kind       String
+  body       String
+  reporterId String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  bay      Bay?     @relation(fields: [bayId], references: [id])
+
+  @@index([locationId, createdAt])
+  @@index([bayId])
+}
+
+model Checklist {
+  id          String   @id @default(cuid())
+  locationId  String
+  // KIND: OPENING | CLOSING | DAILY | WEEKLY | CUSTOM
+  kind        String
+  name        String
+  itemsConfig Json // array of items
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  location Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  runs     ChecklistRun[]
+}
+
+model ChecklistRun {
+  id            String   @id @default(cuid())
+  checklistId   String
+  completedById String?
+  responses     Json
+  completedAt   DateTime @default(now())
+
+  checklist Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId, completedAt])
+}
+
+/**
+ * =========================
+ * Audit log + Webhook delivery
+ * =========================
+ */
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  actorRole      String?
+  // ACTION: kebab-case e.g. "member.cancel", "billing.refund"
+  action         String
+  // ENTITY_TYPE: Member, Invoice, MembershipSubscription, etc.
+  entityType     String
+  entityId       String
+  before         Json?
+  after          Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  actor        Admin?        @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model WebhookDelivery {
+  id         String  @id @default(cuid())
+  // PROVIDER: SQUARE | KISI | QUO | RESEND | PAYPAL
+  provider   String
+  eventType  String
+  externalId String?
+  payload    Json
+  // STATUS: RECEIVED | PROCESSED | FAILED | RETRYING
+  status     String  @default("RECEIVED")
+  attempts   Int     @default(0)
+  lastError  String?
+  signature  String?
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@unique([provider, externalId])
+  @@index([provider, status, createdAt])
+}
+
+/**
+ * =========================
+ * One-time passcode (existing)
  * =========================
  */
 model Otp {
@@ -216,7 +1459,7 @@ model Otp {
 
 /**
  * =========================
- * Bay App Registration
+ * Bay App Registration (existing)
  * =========================
  */
 model BayAppRegistration {
@@ -230,4 +1473,21 @@ model BayAppRegistration {
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@unique([locationId, bayNumber])
+}
+
+/**
+ * =========================
+ * ML Models (Churn Risk v2 etc.)
+ * =========================
+ */
+model MlModel {
+  id        String   @id @default(cuid())
+  kind      String // e.g. "churn-risk"
+  version   String   @unique
+  payload   String // serialized model JSON
+  active    Boolean  @default(false)
+  trainedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([kind, active])
 }
