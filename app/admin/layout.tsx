@@ -318,7 +318,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                 aria-expanded={locOpen}
               >
                 <MapPin className="h-4 w-4 text-apple-text-tertiary" />
-                <span className="flex-1 text-left">All Locations</span>
+                <span className="flex-1 text-left">Locations</span>
                 <ChevronDown
                   className={`h-4 w-4 text-apple-text-tertiary transition-transform duration-200 ${locOpen ? 'rotate-0' : '-rotate-90'}`}
                 />
@@ -326,11 +326,6 @@ export default function AdminLayout({ children }: PropsWithChildren) {
 
               {locOpen && (
                 <ul className="mt-1 ml-4 space-y-0.5 border-l-2 border-apple-divider pl-3">
-                  <li>
-                    <SubNavLink href="/admin/locations" currentPath={pathname} exact>
-                      All Locations
-                    </SubNavLink>
-                  </li>
                   {locations.map((loc) => {
                     const isActive = loc.slug === activeSlug;
                     const isExpanded = expandedLocSlug === loc.slug;
@@ -440,6 +435,11 @@ export default function AdminLayout({ children }: PropsWithChildren) {
             <li>
               <NavLink href="/admin" currentPath={pathname} icon={<LayoutDashboard className="h-4 w-4" />} exact>
                 Overview
+              </NavLink>
+            </li>
+            <li>
+              <NavLink href="/admin/locations" currentPath={pathname} icon={<MapPin className="h-4 w-4" />} exact>
+                Locations
               </NavLink>
             </li>
             <li>
