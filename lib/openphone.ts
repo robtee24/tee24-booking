@@ -2,10 +2,12 @@
 import { ENV } from "@/lib/env";
 
 /**
- * OpenPhone API helpers
- * - Some OpenPhone environments expect the key in `Authorization` (raw key, not Bearer)
- * - Others accept `X-API-Key`
- * We send BOTH to be safe.
+ * Quo (OpenPhone) API helpers.
+ *
+ * Auth: raw API key in the `Authorization` header — no "Bearer" prefix.
+ *
+ * Key API constraint: POST /v1/messages only accepts maxItems: 1 in `to`.
+ * sendSms() loops and fires one request per recipient.
  */
 
 function assertEnv() {
@@ -22,7 +24,12 @@ function maskKey(k: string) {
 }
 
 function isE164(n: string) {
-  return /^\+\d{7,15}$/.test(n);
+  return /^\+[1-9]\d{1,14}$/.test(n);
+}
+
+/** Also accept phoneNumberId format (PN...) as a valid `from` value */
+function isValidFrom(n: string) {
+  return isE164(n) || /^PN/.test(n);
 }
 
 type OpenPhoneInit = Omit<RequestInit, "headers"> & {
@@ -33,11 +40,8 @@ async function openphoneFetch(path: string, init: OpenPhoneInit = {}) {
   const key = assertEnv();
 
   const headers: Record<string, string> = {
-    // Per docs / observed behavior: accept either/both
-    Authorization: key,            // RAW key (not "Bearer ...")
-    "X-API-Key": key,              // Some setups require this instead
+    Authorization: key,  // raw key — no "Bearer" prefix per Quo API spec
     "Content-Type": "application/json",
-    "User-Agent": "tee24-booking/1.0",
     ...(init.headers ?? {}),
   };
 
@@ -48,11 +52,8 @@ async function openphoneFetch(path: string, init: OpenPhoneInit = {}) {
 
   if (!res.ok) {
     const text = await res.text();
-    // Include masked key in error to confirm which value was used
     throw new Error(
-      `OpenPhone ${init.method ?? "GET"} ${path} failed: ${res.status} ${text} (key:${maskKey(
-        key
-      )})`
+      `OpenPhone ${init.method ?? "GET"} ${path} failed: ${res.status} ${text} (key:${maskKey(key)})`
     );
   }
   return res;
@@ -65,26 +66,48 @@ export async function listPhoneNumbers(): Promise<any> {
 }
 
 type SendSmsArgs = {
-  from: string;     // E.164 number in your workspace, e.g. "+15024102382"
-  to: string[];     // Array of E.164 numbers, e.g. ["+13364205540"]
-  content: string;  // Message body
+  from: string;     // E.164 ("+15024102382") or phoneNumberId ("PN...")
+  to: string[];     // One or more E.164 recipient numbers
+  content: string;  // Message body (max 1600 chars)
+  userId?: string;  // Optional Quo user ID ("US...") — defaults to phone number owner
 };
 
-/** Send an SMS via OpenPhone */
-export async function sendSms({ from, to, content }: SendSmsArgs): Promise<void> {
-  if (!from || !isE164(from)) {
-    throw new Error(`Invalid 'from' number (must be E.164), got: ${from}`);
+/**
+ * Send an SMS via Quo (OpenPhone).
+ *
+ * The API only accepts one recipient per request (maxItems: 1 on `to`).
+ * This function fires one request per number and settles all in parallel.
+ * If any individual send fails the error is rethrown after all settle.
+ */
+export async function sendSms({ from, to, content, userId }: SendSmsArgs): Promise<void> {
+  if (!from || !isValidFrom(from)) {
+    throw new Error(`Invalid 'from' value (must be E.164 or phoneNumberId), got: ${from}`);
   }
-  if (!Array.isArray(to) || to.length === 0 || !to.every(isE164)) {
-    throw new Error(`Invalid 'to' numbers (must be E.164 array), got: ${JSON.stringify(to)}`);
+  if (!Array.isArray(to) || to.length === 0) {
+    throw new Error(`'to' must be a non-empty array, got: ${JSON.stringify(to)}`);
+  }
+  if (!to.every(isE164)) {
+    throw new Error(`All 'to' numbers must be E.164 format, got: ${JSON.stringify(to)}`);
   }
   if (!content || !content.trim()) {
     throw new Error("SMS 'content' must be a non-empty string");
   }
 
-  await openphoneFetch("/v1/messages", {
-    method: "POST",
-    body: JSON.stringify({ from, to, content }),
-  });
+  // Quo API: to maxItems = 1 — send one request per recipient
+  const results = await Promise.allSettled(
+    to.map((recipient) => {
+      const body: Record<string, unknown> = { from, to: [recipient], content };
+      if (userId) body.userId = userId;
+      return openphoneFetch("/v1/messages", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    })
+  );
+
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failures.length > 0) {
+    throw new Error(failures.map((f) => f.reason?.message ?? String(f.reason)).join("; "));
+  }
 }
 

@@ -623,12 +623,10 @@ async function sendConfirmations({
 
     if (phones.length > 0) {
       try {
+        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
+        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({
-          from: process.env.OPENPHONE_FROM || "system",
-          to: phones,
-          content: text,
-        });
+        await sendSms({ from: smsFrom, to: phones, content: text });
       } catch (e) {
         console.error("SMS failed:", e);
       }
@@ -688,12 +686,10 @@ async function sendChangeNotifications({
 
     if (phones.length > 0) {
       try {
+        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
+        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({
-          from: process.env.OPENPHONE_FROM || "system",
-          to: phones,
-          content: text,
-        });
+        await sendSms({ from: smsFrom, to: phones, content: text });
       } catch (e) {
         console.error("Change notification SMS failed:", e);
       }

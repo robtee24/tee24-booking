@@ -10,13 +10,13 @@ export async function sendSms(toE164: string, text: string) {
   const res = await fetch(`${OPENPHONE_API_BASE}/messages`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: apiKey,          // raw key — no "Bearer" prefix
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from,        // E.164
-      to: [toE164],
-      text,
+      from,           // E.164
+      to: [toE164],   // must be an array
+      content: text,  // field is "content", not "text"
     }),
   });
 

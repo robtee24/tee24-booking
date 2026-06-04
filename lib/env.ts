@@ -24,9 +24,11 @@ function reqNum(name: string, fallback: number): number {
 
 export const ENV = {
   AUTH_SECRET: req("AUTH_SECRET"),
-  // OpenPhone
+  // Quo (OpenPhone) — OPENPHONE_NUMBER is the sending number in E.164 or phoneNumberId format
   OPENPHONE_API_KEY: req("OPENPHONE_API_KEY"),
   OPENPHONE_NUMBER: req("OPENPHONE_NUMBER"),
+  // Optional: Quo user ID ("US...") — if set, included in every message send
+  OPENPHONE_USER_ID: process.env.OPENPHONE_USER_ID || "",
   // App
   APP_BASE_URL: process.env.APP_BASE_URL || "http://localhost:3000",
   // OTP

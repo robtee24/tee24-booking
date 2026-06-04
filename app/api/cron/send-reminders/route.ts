@@ -311,12 +311,10 @@ async function sendAllUnsent(): Promise<Array<{
       }
 
       try {
+        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
+        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(n.template ?? "", vars);
-        await sendSms({
-          from: process.env.OPENPHONE_FROM || "system",
-          to: [normalized],
-          content: text,
-        });
+        await sendSms({ from: smsFrom, to: [normalized], content: text });
 
         await getPrisma().notificationLog.update({
           where: { id: log.id },

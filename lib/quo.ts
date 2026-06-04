@@ -42,10 +42,14 @@ export async function sendQuoSms({ to, text, category = "TRANSACTIONAL" }: SendA
     const res = await fetch("https://api.openphone.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: apiKey,          // raw key — no "Bearer" prefix
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to, text }),
+      body: JSON.stringify({
+        from,
+        to: [to],         // must be an array
+        content: text,    // field is "content", not "text"
+      }),
     });
 
     if (!res.ok) {
