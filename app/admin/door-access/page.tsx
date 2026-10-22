@@ -37,7 +37,7 @@ export default async function DoorAccessPage() {
         meta={
           !configured ? undefined : unassigned > 0 && full ? (
             <span className="text-apple-sm text-apple-orange">
-              {unassigned} door{unassigned === 1 ? "" : "s"} not assigned to a location — unlocks there won't count as check-ins until assigned.
+              {unassigned} door{unassigned === 1 ? "" : "s"} not assigned to a location — unlocks there won&apos;t count as check-ins until assigned.
             </span>
           ) : undefined
         }

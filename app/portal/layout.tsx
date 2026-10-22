@@ -15,13 +15,16 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const isImpersonating = session?.role === "IMPERSONATED";
   const tabs = [
-    { href: "/portal", label: "Profile" },
+    { href: "/portal", label: "Home" },
+    { href: "/portal/profile", label: "Profile" },
+    { href: "/portal/membership", label: "Membership" },
+    { href: "/portal/card", label: "Card" },
     { href: "/portal/billing", label: "Billing" },
     { href: "/portal/attendance", label: "Attendance" },
     { href: "/portal/schedule", label: "Schedule" },
     { href: "/portal/documents", label: "Documents" },
     { href: "/portal/contact", label: "Contact" },
-    { href: "/portal/ranks", label: "Ranks" },
+    { href: "/portal/settings", label: "Settings" },
   ];
 
   return (

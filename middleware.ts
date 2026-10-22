@@ -9,6 +9,7 @@ const PUBLIC_ADMIN_PATHS = new Set([
   // Login/session endpoints must be reachable without a session.
   "/api/admin/auth/start",
   "/api/admin/auth/verify",
+  "/api/admin/auth/2fa/login-verify",
   "/api/admin/auth/session",
   "/api/admin/auth/logout",
   // Dev ping; authenticates itself with CRON_SECRET.

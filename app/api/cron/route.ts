@@ -8,7 +8,7 @@
  *  - apply-freezes              : transition freeze schedules
  *  - score-churn                 : recompute ChurnRiskScore for all members
  *  - usage-tier                  : nightly cohort percentile snapshots
- *  - automation-tick             : run due automation steps
+ *  - automation-tick             : run due automation steps, inactivity triggers, scheduled messages
  *  - expire-documents            : flip expired signed docs
  *  - build-referral-batch        : build monthly referral payout batch
  *  - reconcile-access            : nightly Kisi access state reconciliation
@@ -24,7 +24,8 @@ import { generateDueInvoices } from "@/services/recurring-billing.service";
 import { retryFailedPayments, sendUpcomingPaymentReminders } from "@/services/dunning.service";
 import { computeUsageTierSnapshots } from "@/services/usage-tier.service";
 import { scoreAllMembers } from "@/services/churn-risk.service";
-import { runDueAutomationSteps } from "@/services/automation.service";
+import { runAutomationTick } from "@/services/automation.service";
+import { sendDueScheduledMessages } from "@/services/marketing.service";
 import { expireOldDocumentSignings } from "@/services/document.service";
 import { buildMonthlyPayoutBatch } from "@/services/referral.service";
 import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
@@ -74,8 +75,9 @@ async function run(req: NextRequest) {
         return NextResponse.json({ ok: true, ...r });
       }
       case "automation-tick": {
-        const n = await runDueAutomationSteps();
-        return NextResponse.json({ ok: true, executed: n });
+        // Due automation steps (+ hourly inactivity triggers) and scheduled bulk messages.
+        const [tick, scheduled] = await Promise.all([runAutomationTick(), sendDueScheduledMessages()]);
+        return NextResponse.json({ ok: true, ...tick, scheduledMessagesSent: scheduled });
       }
       case "expire-documents": {
         const n = await expireOldDocumentSignings();
