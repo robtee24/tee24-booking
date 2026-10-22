@@ -6,7 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { adminRoutes } from "@/lib/admin/routes";
 import { Card, CardHeader, StatusBadge, Money, Badge } from "@/components/ui";
 import { TagsEditor, KisiAccessCard, CheckinCodeCard } from "@/components/admin/members/OverviewWidgets";
-import { ageFromDob, fmtDate, fmtDateTime, relTime } from "@/components/admin/members/shared";
+import { ageFromDob, fmtDate, fmtDateTime, relTime } from "@/components/admin/members/format";
 
 export const dynamic = "force-dynamic";
 
