@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { createBay, getAdminBayRows } from "@/services/bay.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,6 +14,8 @@ export async function GET(
 ) {
   try {
     const { slug } = await context.params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
 
     const location = await getPrisma().location.findUnique({
       where: { slug },
@@ -38,6 +41,8 @@ export async function POST(
 ) {
   try {
     const { slug } = await context.params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
 
     const location = await getPrisma().location.findUnique({
       where: { slug },

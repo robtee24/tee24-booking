@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!locationSlug) {
       return NextResponse.json({ error: "locationSlug is required" }, { status: 400 });
     }
+    const guard = await requireLocationAdminApi({ locationSlug });
+    if (!guard.ok) return guard.response;
 
     const location = await getPrisma().location.findUnique({
       where: { slug: locationSlug },

@@ -1,6 +1,7 @@
 // app/api/admin/bookings/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createBooking } from "@/services/booking.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const guard = await requireLocationAdminApi({ locationId: body.locationId, locationSlug: body.locationSlug ?? body.slug });
+    if (!guard.ok) return guard.response;
 
     const result = await createBooking({
       startLocal: body.startLocal ?? body.start,

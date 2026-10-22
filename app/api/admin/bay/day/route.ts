@@ -1,6 +1,8 @@
 // app/api/bay/day/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getBaySchedule } from "@/services/bay.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
+import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,10 @@ export async function GET(req: NextRequest) {
     if (!bayId) {
       return new NextResponse("Missing bay id", { status: 400 });
     }
+    const bay = await getPrisma().bay.findUnique({ where: { id: bayId }, select: { locationId: true } });
+    if (!bay) return new NextResponse("Bay not found", { status: 404 });
+    const guard = await requireLocationAdminApi({ locationId: bay.locationId });
+    if (!guard.ok) return guard.response;
 
     const schedule = await getBaySchedule(bayId, date);
 

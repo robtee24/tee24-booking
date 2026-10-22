@@ -2,17 +2,28 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const ADMIN_PATHS = /^\/admin(\/.*)?$/;
-const PUBLIC_ADMIN_PATHS = ["/admin/login"];
+const ADMIN_PAGE_PATHS = /^\/admin(\/.*)?$/;
+const ADMIN_API_PATHS = /^\/api\/admin(\/.*)?$/;
+const PUBLIC_ADMIN_PATHS = new Set([
+  "/admin/login",
+  // Login/session endpoints must be reachable without a session.
+  "/api/admin/auth/start",
+  "/api/admin/auth/verify",
+  "/api/admin/auth/session",
+  "/api/admin/auth/logout",
+  // Dev ping; authenticates itself with CRON_SECRET.
+  "/api/admin/admins/ping",
+]);
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_ADMIN_PATHS.includes(pathname)) {
+  if (PUBLIC_ADMIN_PATHS.has(pathname)) {
     return NextResponse.next();
   }
 
-  if (!ADMIN_PATHS.test(pathname)) {
+  const isApi = ADMIN_API_PATHS.test(pathname);
+  if (!isApi && !ADMIN_PAGE_PATHS.test(pathname)) {
     return NextResponse.next();
   }
 
@@ -28,6 +39,9 @@ export async function middleware(request: NextRequest) {
   );
 
   if (!sessionRes.ok) {
+    if (isApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const loginUrl = new URL("/admin/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
@@ -42,5 +56,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/admin/:path*",
+  matcher: ["/admin/:path*", "/api/admin/:path*"],
 };

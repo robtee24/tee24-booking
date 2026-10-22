@@ -24,13 +24,27 @@ import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+function authorized(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const got = req.headers.get("x-tee24-cron-secret");
-    if (got !== secret) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!secret) return process.env.NODE_ENV !== "production";
+  const header = req.headers.get("x-tee24-cron-secret");
+  const bearer = req.headers.get("authorization");
+  if (header === secret) return true;
+  if (bearer?.startsWith("Bearer ") && bearer.slice(7) === secret) return true; // Vercel Cron
+  return false;
+}
 
+/** Vercel Cron invokes with GET + `Authorization: Bearer $CRON_SECRET`. */
+export async function GET(req: NextRequest) {
+  return run(req);
+}
+
+export async function POST(req: NextRequest) {
+  return run(req);
+}
+
+async function run(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const job = req.nextUrl.searchParams.get("job");
   try {
     switch (job) {
@@ -59,10 +73,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, expired: n });
       }
       case "build-referral-batch": {
+        if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) {
+          return NextResponse.json({ ok: true, skipped: "PayPal not configured" });
+        }
         const r = await buildMonthlyPayoutBatch({});
         return NextResponse.json({ ok: true, batches: r });
       }
       case "reconcile-access": {
+        if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
         const r = await reconcileAllMemberAccess();
         return NextResponse.json({ ok: true, ...r });
       }

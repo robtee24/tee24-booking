@@ -1,6 +1,14 @@
 // app/api/admin/bookings/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminUpdateBooking, cancelBooking } from "@/services/booking.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
+import { getPrisma } from "@/lib/db";
+
+async function guardBooking(id: string) {
+  const booking = await getPrisma().booking.findUnique({ where: { id }, select: { locationId: true } });
+  if (!booking) return { ok: false as const, response: new NextResponse("Booking not found", { status: 404 }) };
+  return requireLocationAdminApi({ locationId: booking.locationId });
+}
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +20,9 @@ export async function PATCH(req: NextRequest) {
     if (!id || id === "[id]") {
       return new NextResponse("Invalid or missing booking ID", { status: 400 });
     }
+
+    const guard = await guardBooking(id);
+    if (!guard.ok) return guard.response;
 
     const body = await req.json();
 
@@ -46,6 +57,9 @@ export async function DELETE(req: NextRequest) {
     if (!id || id === "[id]") {
       return new NextResponse("Invalid or missing booking ID", { status: 400 });
     }
+
+    const guard = await guardBooking(id);
+    if (!guard.ok) return guard.response;
 
     await cancelBooking(id);
     return new NextResponse(null, { status: 204 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { requireFullAdminApi, requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ function parseMembershipField(raw: string): { title: string; startDate: Date | n
 export async function POST(req: NextRequest) {
   try {
     const { locationSlug } = await req.json();
+    const guard = locationSlug ? await requireLocationAdminApi({ locationSlug }) : await requireFullAdminApi();
+    if (!guard.ok) return guard.response;
 
     const where: any = {};
     if (locationSlug) {

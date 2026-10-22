@@ -68,7 +68,8 @@ export async function GET(req: Request) {
         start: b.start.toISOString(),
         end: b.end.toISOString(),
         firstName: b.firstName,
-        lastName: b.lastName,
+        // Public endpoint: never expose full surnames.
+        lastName: b.lastName ? `${b.lastName.trim().charAt(0).toUpperCase()}.` : "",
       })),
     });
   } catch (err: any) {

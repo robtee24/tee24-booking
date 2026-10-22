@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
 import { MERGE_FIELDS } from "@/lib/template-vars";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,9 @@ export async function GET(
   ctx: { params: Promise<{ slug: string }> } // In Next.js 16, params is a Promise
 ) {
   try {
-    const { slug } = await ctx.params; // Await it
+    const { slug } = await ctx.params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response; // Await it
     if (!slug) {
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }
@@ -140,6 +143,8 @@ export async function POST(
 ) {
   try {
     const { slug } = await ctx.params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
     if (!slug) {
       return NextResponse.json({ error: 'Missing location slug' }, { status: 400 });
     }

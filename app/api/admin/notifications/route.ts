@@ -1,6 +1,7 @@
 // app/api/admin/notifications/route.ts
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,8 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const slug = (searchParams.get('locationSlug') || '').trim();
     if (!slug) return NextResponse.json({ error: 'Missing locationSlug' }, { status: 400 });
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
 
     const loc = await getPrisma().location.findUnique({ where: { slug }, select: { id: true } });
     if (!loc) return NextResponse.json({ error: 'Location not found' }, { status: 404 });
@@ -43,6 +46,8 @@ export async function POST(req: Request) {
     const enabled = Boolean(body?.enabled ?? true);
 
     if (!slug) return NextResponse.json({ error: 'Missing locationSlug' }, { status: 400 });
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
     if (channel !== 'EMAIL' && channel !== 'TEXT')
       return NextResponse.json({ error: 'Invalid channel' }, { status: 400 });
 
@@ -83,6 +88,10 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const id = String(body?.id ?? '').trim();
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+    const existing = await getPrisma().notification.findUnique({ where: { id }, select: { locationId: true } });
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const guard = await requireLocationAdminApi({ locationId: existing.locationId });
+    if (!guard.ok) return guard.response;
 
     const data: any = {};
     if (body.hoursBefore !== undefined)
@@ -111,6 +120,10 @@ export async function DELETE(req: Request) {
     const body = await req.json();
     const id = String(body?.id ?? '').trim();
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+    const existing = await getPrisma().notification.findUnique({ where: { id }, select: { locationId: true } });
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const guard = await requireLocationAdminApi({ locationId: existing.locationId });
+    if (!guard.ok) return guard.response;
 
     await getPrisma().notification.delete({ where: { id } });
     return NextResponse.json({ ok: true });

@@ -1,6 +1,7 @@
 // app/api/admin/bookings/day/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getBookingsForAdminDay } from "@/services/booking.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest) {
     if (!date || !locationSlug) {
       return new NextResponse("Missing date or locationSlug", { status: 400 });
     }
+
+    const guard = await requireLocationAdminApi({ locationSlug });
+    if (!guard.ok) return guard.response;
 
     const result = await getBookingsForAdminDay(locationSlug, date);
 

@@ -3,6 +3,38 @@
     {
       "path": "/api/cron/send-reminders",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron?job=apply-cancellations",
+      "schedule": "10 5 * * *"
+    },
+    {
+      "path": "/api/cron?job=apply-freezes",
+      "schedule": "15 5 * * *"
+    },
+    {
+      "path": "/api/cron?job=expire-documents",
+      "schedule": "20 5 * * *"
+    },
+    {
+      "path": "/api/cron?job=score-churn",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron?job=usage-tier",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron?job=reconcile-access",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron?job=build-referral-batch",
+      "schedule": "0 7 1 * *"
+    },
+    {
+      "path": "/api/cron?job=automation-tick",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

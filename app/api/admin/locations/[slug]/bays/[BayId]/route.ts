@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { updateBay, deleteBay } from "@/services/bay.service";
+import { requireLocationAdminApi } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ export async function PATCH(
 ) {
   try {
     const { slug, BayId } = await params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
 
     const location = await getPrisma().location.findUnique({
       where: { slug },
@@ -62,6 +65,8 @@ export async function DELETE(
 ) {
   try {
     const { slug, BayId } = await params;
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
 
     const location = await getPrisma().location.findUnique({
       where: { slug },
