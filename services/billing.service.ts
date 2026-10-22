@@ -7,8 +7,8 @@
  *  - propagate to AccessSync when payment status crosses grace
  *
  * Square interactions:
- *  - Every call is gated on `isSquareConfigured()`; when Square is not set up
- *    only manual (cash/other) collection is possible.
+ *  - Credentials are resolved per location (`getSquareCreds(locationId)`); when a
+ *    location has no Square connection only manual (cash/other) collection is possible.
  *  - All charges/refunds carry an idempotency key derived from invoice/charge id + attempt
  *  - Payment / refund IDs are stored to reconcile against Square webhook events
  *
@@ -28,7 +28,8 @@ import { sendEmail } from "@/lib/notify";
 import { ENV } from "@/lib/env";
 import { adminRoutes } from "@/lib/admin/routes";
 import {
-  isSquareConfigured,
+  getSquareCreds,
+  requireSquare,
   squareCreateCardOnFile,
   squareCreateCustomer,
   squareCreatePayment,
@@ -472,13 +473,13 @@ export type RunChargeInput = {
  * even if our webhook retries).
  */
 export async function runCharge(input: RunChargeInput) {
-  if (!isSquareConfigured()) throw new Error("Square is not configured — collect this payment manually (cash/other).");
   const prisma = getPrisma();
   const inv = await prisma.invoice.findUnique({
     where: { id: input.invoiceId },
     include: { member: { select: { id: true, firstName: true, lastName: true, email: true, organizationId: true, locationId: true, squareCustomerId: true } } },
   });
   if (!inv) throw new Error("Invoice not found");
+  const square = await requireSquare(inv.locationId, "Square is not connected for this location — collect this payment manually (cash/other).");
   if ((PAID_STATUSES as readonly string[]).includes(inv.status)) throw new Error("Invoice already paid");
   if (inv.status === "CANCELLED") throw new Error("Invoice was written off");
 
@@ -510,7 +511,7 @@ export async function runCharge(input: RunChargeInput) {
   });
 
   try {
-    const result = await squareCreatePayment({
+    const result = await squareCreatePayment(square, {
       amountCents,
       sourceId: pm.squareCardId,
       customerId: inv.member.squareCustomerId ?? undefined,
@@ -591,9 +592,9 @@ export async function chargeInvoiceWithSource(input: {
   actorId?: string | null;
   note?: string;
 }) {
-  if (!isSquareConfigured()) throw new Error("Online payments are not available right now.");
   const prisma = getPrisma();
   const inv = await loadInvoiceWithMember(input.invoiceId);
+  const square = await requireSquare(inv.locationId, "Online payments are not available right now.");
   if ((PAID_STATUSES as readonly string[]).includes(inv.status)) throw new Error("Invoice already paid");
   if (inv.status === "CANCELLED") throw new Error("Invoice was cancelled");
   const amountCents = invoiceRemainingCents(inv);
@@ -616,7 +617,7 @@ export async function chargeInvoiceWithSource(input: {
   });
 
   try {
-    const result = await squareCreatePayment({
+    const result = await squareCreatePayment(square, {
       amountCents,
       sourceId: input.sourceId,
       idempotencyKey,
@@ -770,9 +771,10 @@ export async function refundCharge(input: RefundInput) {
   if (input.asCredit) {
     await addCredit({ memberId: charge.memberId!, amountCents: input.amountCents, type: "REFUND_AS_CREDIT", reason: input.reason ?? `Refund of charge ${charge.id}`, actorId: input.actorId });
   } else if (charge.squarePaymentId) {
-    if (!isSquareConfigured()) throw new Error("Square is not configured — issue the refund as account credit or record it manually");
+    const square = charge.locationId ? await getSquareCreds(charge.locationId) : null;
+    if (!square) throw new Error("Square is not connected for this location — issue the refund as account credit or record it manually");
     const idempotencyKey = `refund_${charge.id}_${alreadyRefunded + input.amountCents}`;
-    const sq = await squareCreateRefund({
+    const sq = await squareCreateRefund(square, {
       paymentId: charge.squarePaymentId,
       amountCents: input.amountCents,
       idempotencyKey,
@@ -916,12 +918,12 @@ export async function setDefaultPaymentMethod(memberId: string, paymentMethodId:
 
 /** Create the Square customer for a member if we don't have one yet. */
 export async function ensureSquareCustomer(memberId: string): Promise<string> {
-  if (!isSquareConfigured()) throw new Error("Square is not configured");
   const prisma = getPrisma();
   const member = await prisma.member.findUnique({ where: { id: memberId } });
   if (!member) throw new Error("Member not found");
   if (member.squareCustomerId) return member.squareCustomerId;
-  const customer = await squareCreateCustomer({
+  const square = await requireSquare(member.locationId);
+  const customer = await squareCreateCustomer(square, {
     emailAddress: member.email,
     givenName: member.firstName,
     familyName: member.lastName,
@@ -944,11 +946,12 @@ export async function vaultCard(input: {
   actorId?: string | null;
   source?: "admin" | "portal" | "signup";
 }) {
-  if (!isSquareConfigured()) throw new Error("Square is not configured");
   const prisma = getPrisma();
-  const customerId = await ensureSquareCustomer(input.memberId);
   const member = await prisma.member.findUnique({ where: { id: input.memberId }, select: { firstName: true, lastName: true, organizationId: true, locationId: true } });
-  const card = await squareCreateCardOnFile({
+  if (!member) throw new Error("Member not found");
+  const square = await requireSquare(member.locationId);
+  const customerId = await ensureSquareCustomer(input.memberId);
+  const card = await squareCreateCardOnFile(square, {
     customerId,
     sourceId: input.sourceId,
     verificationToken: input.verificationToken,
@@ -992,10 +995,11 @@ export async function vaultCard(input: {
 /** Disable a card at Square and remove it locally (promotes another card to default). */
 export async function removePaymentMethod(paymentMethodId: string, actorId?: string | null) {
   const prisma = getPrisma();
-  const pm = await prisma.paymentMethod.findUnique({ where: { id: paymentMethodId } });
+  const pm = await prisma.paymentMethod.findUnique({ where: { id: paymentMethodId }, include: { member: { select: { locationId: true } } } });
   if (!pm) throw new Error("Payment method not found");
-  if (pm.squareCardId && isSquareConfigured()) {
-    await squareDisableCard(pm.squareCardId).catch((e) => console.warn("[billing] square disable card failed", e));
+  if (pm.squareCardId) {
+    const square = await getSquareCreds(pm.member.locationId);
+    if (square) await squareDisableCard(square, pm.squareCardId).catch((e) => console.warn("[billing] square disable card failed", e));
   }
   await prisma.paymentMethod.delete({ where: { id: paymentMethodId } });
   if (pm.isDefault) {

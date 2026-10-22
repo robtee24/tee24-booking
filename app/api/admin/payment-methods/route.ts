@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
   const g = await guardBilling({ locationId: member.locationId }, "billing.view");
   if (!g.ok) return g.response;
-  return NextResponse.json({ paymentMethods: await listPaymentMethods(memberId), squareConfigured: isSquareConfigured() });
+  return NextResponse.json({ paymentMethods: await listPaymentMethods(memberId), squareConfigured: await isSquareConfigured(member.locationId) });
 }
 
 export async function POST(req: NextRequest) {

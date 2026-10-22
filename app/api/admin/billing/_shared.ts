@@ -5,21 +5,13 @@ import { requireLocationAdminApi } from "@/lib/api-auth";
 import { getActorContext } from "@/lib/actor";
 import { assertCan, ForbiddenError, type Permission } from "@/lib/permissions";
 import { ENV } from "@/lib/env";
-import { getSquareEnv, getSquareMissingEnv, isSquareConfigured, SQUARE_OPTIONAL_ENV, SQUARE_REQUIRED_ENV } from "@/lib/square";
+import { getSquareConnectionStatus, type SquareConnectionStatus } from "@/lib/square";
 
-export type SquareStatus = ReturnType<typeof squareStatusPayload>;
+export type SquareStatus = SquareConnectionStatus;
 
-/** Square connection status for the admin UI (never includes secrets). */
-export function squareStatusPayload() {
-  return {
-    configured: isSquareConfigured(),
-    env: getSquareEnv(),
-    missingEnv: getSquareMissingEnv(),
-    requiredEnv: [...SQUARE_REQUIRED_ENV] as string[],
-    optionalEnv: [...SQUARE_OPTIONAL_ENV] as string[],
-    webhookSignatureKeySet: Boolean(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY),
-    webhookUrl: `${ENV.APP_BASE_URL.replace(/\/$/, "")}/api/webhooks/square`,
-  };
+/** Square connection status for one location (never includes secrets). */
+export function squareStatusPayload(locationId: string): Promise<SquareStatus> {
+  return getSquareConnectionStatus(locationId, ENV.APP_BASE_URL);
 }
 
 export type BillingGuard =

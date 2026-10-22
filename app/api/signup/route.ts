@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
     });
 
     // First invoice: first period + signup fee (− discount, + tax, + surcharge when paying by card)
-    const squareReady = isSquareConfigured();
+    const squareReady = await isSquareConfigured(location.id);
     const payingByCard = squareReady && Boolean(sourceId);
     const lines = [{ description: `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: priceCents }];
     if (signupFeeCents > 0) lines.push({ description: "Signup fee", unitCents: signupFeeCents });

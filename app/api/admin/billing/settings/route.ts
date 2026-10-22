@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
   const loc = await getPrisma().location.findUnique({ where: { id: g.location.id } });
   if (!loc) return NextResponse.json({ error: "Location not found" }, { status: 404 });
-  return NextResponse.json({ settings: billingSettingsOf(loc), square: squareStatusPayload() });
+  return NextResponse.json({ settings: billingSettingsOf(loc), square: await squareStatusPayload(loc.id) });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest) {
       },
       g.actorId,
     );
-    return NextResponse.json({ ok: true, settings, square: squareStatusPayload() });
+    return NextResponse.json({ ok: true, settings, square: await squareStatusPayload(g.location.id) });
   } catch (e) {
     return errorResponse(e);
   }

@@ -37,7 +37,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     prisma.discountApplication.findMany({ where: { invoiceId: invoice.id }, include: { discount: { select: { code: true, name: true } } } }),
   ]);
 
-  const square = getSquarePublicConfig();
+  const [square, squareStatus] = await Promise.all([getSquarePublicConfig(invoice.locationId), squareStatusPayload(invoice.locationId)]);
   const remaining = invoice.totalCents - invoice.refundedCents;
   const isOpen = ["SCHEDULED", "PAST_DUE", "FAILED"].includes(invoice.status);
 
@@ -102,7 +102,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         }
       />
 
-      {isOpen && !square.configured && <SquareConnectCallout status={squareStatusPayload()} />}
+      {isOpen && !squareStatus.configured && <SquareConnectCallout status={squareStatus} slug={slug} />}
       {invoice.status === "PAST_DUE" && invoice.lastFailureReason && (
         <div className="rounded-apple border border-apple-red/30 bg-apple-red/5 p-3 text-apple-sm text-apple-red">
           Last decline: {invoice.lastFailureReason} · {invoice.attemptCount} attempt{invoice.attemptCount === 1 ? "" : "s"}

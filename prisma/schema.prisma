@@ -130,6 +130,17 @@ model Location {
   lateFeeCents     Int    @default(0)
   overdueBlockDays Int? // null = never block access for overdue invoices
 
+  // Square account for this location (each location can use its own Square
+  // business). Secrets are encrypted at rest via lib/secrets.ts. When unset,
+  // the SQUARE_* env vars act as a fallback for every location.
+  squareEnv                    String? // "production" | "sandbox"
+  squareApplicationId          String?
+  squareLocationId             String? // Square's location id inside that account
+  squareAccessTokenEnc         String?
+  squareWebhookSignatureKeyEnc String?
+  squareMerchantName           String? // cached from the last successful connection test
+  squareConnectedAt            DateTime?
+
   bays                    Bay[]
   doors                   Door[]
   bookings                Booking[]

@@ -4,7 +4,6 @@ import { Card, CardHeader, PageHeader, Money, StatusBadge } from "@/components/u
 import { AreaChart, DonutChart, KpiCard } from "@/components/ui/charts";
 import { billingRevenueByMonth } from "@/lib/chart-data";
 import { adminRoutes } from "@/lib/admin/routes";
-import { isSquareConfigured } from "@/lib/square";
 import { OVERDUE_STATUSES, queryInvoices } from "@/services/billing.service";
 import { InvoiceTable, toInvoiceTableRow } from "@/components/admin/billing/InvoiceTable";
 import { SquareConnectCallout } from "@/components/admin/billing/SquareConnectCallout";
@@ -57,12 +56,12 @@ export default async function BillingOverviewPage({ params }: { params: Promise<
   const deltaVsPrev = prev > 0 ? ((paidNet - prev) / prev) * 100 : undefined;
   const revenueTrend = revenue12mo.slice(-6).map((m) => ({ y: m.revenue }));
   const invoiceStatusSlices = statusMix.map((s) => ({ name: String(s.status), value: s._count._all })).filter((s) => s.value > 0);
-  const square = squareStatusPayload();
+  const square = await squareStatusPayload(location.id);
 
   return (
     <div className="space-y-6">
       <PageHeader title="Billing" description="Income, recurring revenue, and overdue accounts." />
-      <SquareConnectCallout status={square} />
+      <SquareConnectCallout status={square} slug={slug} />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <KpiCard label="Paid this month" value={money(paidNet)} delta={deltaVsPrev} trend={revenueTrend} hint={`${paidMtd._count} invoice${paidMtd._count === 1 ? "" : "s"} · net of refunds`} href={`${adminRoutes.loc.billing.payments(slug)}?tab=PAID`} />
@@ -102,7 +101,7 @@ export default async function BillingOverviewPage({ params }: { params: Promise<
           slug={slug}
           rows={overdueRows.map(toInvoiceTableRow)}
           currency={location.currency}
-          squareConfigured={isSquareConfigured()}
+          squareConfigured={square.configured}
           showDeclineReason
           emptyTitle="Nothing overdue"
           emptyDescription="Failed recurring charges and past-due invoices will show up here with their decline reason."

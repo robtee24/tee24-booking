@@ -41,7 +41,7 @@ export default async function DayPassPage({
     prisma.membershipPricingOverride.findMany({ where: { locationId: location.id } }),
   ]);
   const overrideByPlan = new Map(overrides.map((o) => [o.planId, o.priceCents]));
-  const square = getSquarePublicConfig();
+  const square = await getSquarePublicConfig(location.id);
 
   return (
     <DayPassClient

@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { getPrisma } from "@/lib/db";
 import { PageHeader } from "@/components/ui";
 import { KpiCard } from "@/components/ui/charts";
-import { isSquareConfigured } from "@/lib/square";
 import { AD_HOC_PLAN_DESCRIPTION, cadenceLabel, previewNextInvoiceCents } from "@/services/recurring-billing.service";
 import { QueryTabs } from "@/components/admin/billing/QueryTabs";
 import { SquareConnectCallout } from "@/components/admin/billing/SquareConnectCallout";
@@ -72,7 +71,8 @@ export default async function RecurringPage({ params, searchParams }: { params: 
     return u === "WEEKLY" ? 52 / 12 : u === "QUARTERLY" ? 1 / 3 : u === "YEARLY" || u === "ANNUAL" ? 1 / 12 : u === "ONE_OFF" ? 0 : 1;
   };
   const mrrCents = Math.round(mrr.reduce((s, x) => s + x.priceCents * monthlyFactor(x.billingCadence), 0));
-  const squareConfigured = isSquareConfigured();
+  const square = await squareStatusPayload(location.id);
+  const squareConfigured = square.configured;
   const in30Days = new Date();
   in30Days.setDate(in30Days.getDate() + 30);
   const next30 = rows.filter((r) => r.nextInvoiceDate && new Date(r.nextInvoiceDate) < in30Days && r.status === "ACTIVE");
@@ -84,7 +84,7 @@ export default async function RecurringPage({ params, searchParams }: { params: 
         description="Subscriptions and recurring charges. Invoices are generated daily at 09:00 UTC and charged to the default card on file."
         actions={<RecurringHeaderActions slug={slug} members={members} squareConfigured={squareConfigured} currency={location.currency} />}
       />
-      <SquareConnectCallout status={squareStatusPayload()} />
+      <SquareConnectCallout status={square} slug={slug} />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <KpiCard label="Monthly recurring revenue" value={`$${(mrrCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} hint="normalised to monthly" />

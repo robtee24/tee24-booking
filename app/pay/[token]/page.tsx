@@ -30,7 +30,7 @@ export default async function HostedPayPage({ params }: { params: Promise<{ toke
   return (
     <PayClient
       token={token}
-      square={getSquarePublicConfig()}
+      square={await getSquarePublicConfig(inv.locationId)}
       invoice={{
         number: inv.number,
         status: inv.status,

@@ -44,9 +44,9 @@ export function maxAttemptsFor(location: Pick<Location, "dunningRetryDays">): nu
 }
 
 async function hasDefaultCard(memberId: string): Promise<boolean> {
-  if (!isSquareConfigured()) return false;
-  const pm = await getPrisma().paymentMethod.findFirst({ where: { memberId, status: { not: "EXPIRED" }, squareCardId: { not: null } }, select: { id: true } });
-  return Boolean(pm);
+  const pm = await getPrisma().paymentMethod.findFirst({ where: { memberId, status: { not: "EXPIRED" }, squareCardId: { not: null } }, select: { id: true, member: { select: { locationId: true } } } });
+  if (!pm) return false;
+  return isSquareConfigured(pm.member.locationId);
 }
 
 /**

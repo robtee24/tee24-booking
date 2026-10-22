@@ -196,7 +196,7 @@ export async function issueInvoiceForSubscription(
     return { invoiceId: existing.id, charged: false, failureReason: null, skippedReason: "invoice already exists for this period" };
   }
 
-  const squareReady = isSquareConfigured();
+  const squareReady = await isSquareConfigured(sub.locationId);
   const defaultCard = squareReady
     ? await prisma.paymentMethod.findFirst({ where: { memberId: sub.memberId, status: { not: "EXPIRED" }, squareCardId: { not: null } }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] })
     : null;

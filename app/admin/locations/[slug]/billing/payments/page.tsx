@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { getPrisma } from "@/lib/db";
 import { PageHeader } from "@/components/ui";
-import { isSquareConfigured } from "@/lib/square";
 import { countInvoicesByTab, queryInvoices, type InvoiceTab } from "@/services/billing.service";
 import { InvoiceTable, toInvoiceTableRow } from "@/components/admin/billing/InvoiceTable";
 import { InvoiceFilters } from "@/components/admin/billing/InvoiceFilters";
@@ -57,7 +56,7 @@ export default async function PaymentsPage({
   ]);
 
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
-  const square = squareStatusPayload();
+  const square = await squareStatusPayload(location.id);
 
   return (
     <div className="space-y-6">
@@ -66,7 +65,7 @@ export default async function PaymentsPage({
         description="Every invoice: paid, scheduled, overdue, refunded. Select rows for bulk actions."
         actions={<NewInvoiceButton slug={slug} members={members} taxRateBps={location.taxRateBps} currency={location.currency} />}
       />
-      <SquareConnectCallout status={square} />
+      <SquareConnectCallout status={square} slug={slug} />
 
       <Suspense>
         <QueryTabs
@@ -80,7 +79,7 @@ export default async function PaymentsPage({
         slug={slug}
         rows={rows.map(toInvoiceTableRow)}
         currency={location.currency}
-        squareConfigured={isSquareConfigured()}
+        squareConfigured={square.configured}
         showDeclineReason={tab === "OVERDUE" || tab === "ALL"}
         emptyTitle={tab === "ALL" ? "No invoices yet" : `No ${TAB_LABEL[tab].toLowerCase()} invoices`}
         emptyDescription={tab === "ALL" ? "Invoices are generated automatically from recurring subscriptions, signups, and day passes." : undefined}

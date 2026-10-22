@@ -5,7 +5,7 @@
 //  - CASH / OTHER: recorded only.
 //  - CREDIT: debits the member credit ledger (negative MemberCredit row via addCredit).
 //  - GIFT_CARD: debits GiftCard.balanceCents (full coverage required).
-//  - CARD: env-gated behind `squareReady()`; charges via `squareCreatePayment`
+//  - CARD: gated on the location's Square connection; charges via `squareCreatePayment`
 //    with a Web Payments SDK `sourceId` and stores a Charge row.
 //
 // Schema has no column for tendered/change/reference or partial refunds, so
@@ -16,7 +16,7 @@ import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
-import { squareCreatePayment, squareCreateRefund } from "@/lib/square";
+import { getSquareCreds, publicConfigFromCreds, squareCreatePayment, squareCreateRefund, squareSupportsCardEntry } from "@/lib/square";
 import { addCredit, getCreditBalanceCents } from "@/services/billing.service";
 import { sendSaleReceipt, type ReceiptLocation } from "@/lib/pos-receipt";
 import { computeSaleTotals } from "@/components/admin/sales/pos-math";
@@ -41,8 +41,10 @@ import type {
   StaffDTO,
 } from "@/components/admin/sales/types";
 
-/** Local Square readiness check (lib/square.ts is owned by the billing worker). */
-export const squareReady = () => !!(process.env.SQUARE_ACCESS_TOKEN && process.env.SQUARE_LOCATION_ID);
+/** Card entry at the register needs the location's Square connection incl. the Web Payments application id. */
+export async function squareReady(locationId: string): Promise<boolean> {
+  return squareSupportsCardEntry(await getSquareCreds(locationId));
+}
 
 export class PosError extends Error {
   constructor(message: string, public status = 400) {
@@ -350,12 +352,14 @@ export function toCsv(rows: Array<Array<string | number | null | undefined>>): s
 /* ───────────────────────────── POS context ────────────────────────────── */
 
 export async function getPosContext(loc: LocationCtx): Promise<PosContextDTO> {
-  const [categories, products] = await Promise.all([listCategories(loc), listProducts(loc, { active: "active" })]);
+  const [categories, products, square] = await Promise.all([listCategories(loc), listProducts(loc, { active: "active" }), getSquareCreds(loc.id)]);
+  const pub = publicConfigFromCreds(square);
   return {
     location: { id: loc.id, name: loc.name, slug: loc.slug, taxRateBps: loc.taxRateBps, currency: loc.currency, timezone: loc.timezone },
     categories,
     products,
-    squareReady: squareReady(),
+    squareReady: squareSupportsCardEntry(square),
+    square: pub,
   };
 }
 
@@ -602,7 +606,7 @@ export async function createSale(loc: LocationFull, req: CreateSaleRequest, acto
       break;
     }
     case "CARD": {
-      if (!squareReady()) throw new PosError("Card payments require Square — configure SQUARE_* env", 409);
+      if (!(await squareReady(loc.id))) throw new PosError("Card payments require Square — connect it under Billing → Settings for this location", 409);
       if (!payment.sourceId) throw new PosError("Missing card token");
       if (totals.totalCents <= 0) throw new PosError("Card payments require a positive total");
       break;
@@ -619,7 +623,9 @@ export async function createSale(loc: LocationFull, req: CreateSaleRequest, acto
       data: { organizationId: loc.organizationId, locationId: loc.id, memberId, amountCents: totals.totalCents, currency: loc.currency, status: "PENDING", idempotencyKey },
     });
     try {
-      const sq = await squareCreatePayment({ amountCents: totals.totalCents, currency: loc.currency, sourceId: payment.sourceId, idempotencyKey, note: `POS sale at ${loc.name}` });
+      const square = await getSquareCreds(loc.id);
+      if (!square) throw new PosError("Square is not connected for this location", 409);
+      const sq = await squareCreatePayment(square, { amountCents: totals.totalCents, currency: loc.currency, sourceId: payment.sourceId, idempotencyKey, note: `POS sale at ${loc.name}` });
       await prisma.charge.update({ where: { id: charge.id }, data: { status: sq.status === "COMPLETED" ? "SUCCEEDED" : sq.status, squarePaymentId: sq.id } });
       if (sq.status !== "COMPLETED" && sq.status !== "APPROVED") throw new PosError(`Card payment ${sq.status.toLowerCase()}`, 402);
     } catch (e) {
@@ -776,9 +782,10 @@ export async function refundSale(
         if (!sale.chargeId) break;
         const charge = await prisma.charge.findUnique({ where: { id: sale.chargeId } });
         if (!charge?.squarePaymentId) throw new PosError("Card charge has no Square payment id — cannot refund automatically");
-        if (!squareReady()) throw new PosError("Square is not configured — card refunds unavailable", 409);
+        const square = await getSquareCreds(loc.id);
+        if (!square) throw new PosError("Square is not connected for this location — card refunds unavailable", 409);
         const idempotencyKey = `pos_refund_${sale.id}_${Date.now()}`;
-        const sq = await squareCreateRefund({ paymentId: charge.squarePaymentId, amountCents, currency: loc.currency, idempotencyKey, reason: input.reason ?? `POS sale #${sale.number} ${mode}` });
+        const sq = await squareCreateRefund(square, { paymentId: charge.squarePaymentId, amountCents, currency: loc.currency, idempotencyKey, reason: input.reason ?? `POS sale #${sale.number} ${mode}` });
         await prisma.refund.create({ data: { chargeId: charge.id, amountCents, reason: input.reason ?? null, squareRefundId: sq.id, status: sq.status, refundedById: actor.id } });
         await prisma.charge.update({ where: { id: charge.id }, data: { status: fullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED" } });
         break;

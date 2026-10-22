@@ -25,6 +25,7 @@ export type AuditAction =
   | "billing.payment-method-add" | "billing.payment-method-remove" | "billing.payment-method-default"
   | "billing.credit-add" | "billing.credit-spend"
   | "billing.discount-apply"
+  | "billing.square-connect" | "billing.square-disconnect"
   // Documents
   | "document.create" | "document.assign" | "document.sign" | "document.void"
   | "document.resend" | "document.delete"

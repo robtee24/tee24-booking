@@ -14,12 +14,14 @@
  *   dispute.created                     → CHARGEBACK + access block
  *   invoice.payment_made / subscription.updated → legacy Square-hosted objects
  *
- * Env: SQUARE_WEBHOOK_SIGNATURE_KEY (required to accept), optional
- *      SQUARE_WEBHOOK_NOTIFICATION_URL (defaults to the request URL).
+ * Signature: each location's Square account has its own webhook subscription
+ * (all pointing here) and signing key — stored encrypted on the Location row.
+ * SQUARE_WEBHOOK_SIGNATURE_KEY is the env fallback. Optional
+ * SQUARE_WEBHOOK_NOTIFICATION_URL overrides the URL used for verification.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { verifySquareSignature } from "@/lib/square";
+import { verifySquareWebhook } from "@/lib/square";
 import { audit } from "@/lib/audit";
 import { applyAccessState } from "@/lib/access-sync";
 import { adminNotify } from "@/lib/admin-notify";
@@ -43,10 +45,9 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-square-hmacsha256-signature") ?? "";
   const notificationUrl = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ?? new URL(req.url).toString();
 
-  if (!process.env.SQUARE_WEBHOOK_SIGNATURE_KEY) {
-    return NextResponse.json({ error: "SQUARE_WEBHOOK_SIGNATURE_KEY not configured" }, { status: 503 });
-  }
-  if (!verifySquareSignature({ body, signature, notificationUrl })) {
+  const verified = await verifySquareWebhook({ body, signature, notificationUrl });
+  if (!verified.ok) {
+    if (verified.reason === "no-keys") return NextResponse.json({ error: "No Square webhook signature key configured" }, { status: 503 });
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 

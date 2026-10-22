@@ -5,7 +5,7 @@ import { adminRoutes } from "@/lib/admin/routes";
 import { billingSettingsOf } from "@/services/billing.service";
 import { getActorContext } from "@/lib/actor";
 import { can } from "@/lib/permissions";
-import { SquareConnectCallout } from "@/components/admin/billing/SquareConnectCallout";
+import { SquareConnectForm } from "@/components/admin/billing/SquareConnectForm";
 import { BillingSettingsForm, TaxSettingsSection } from "@/components/admin/billing/BillingSettingsForm";
 import { squareStatusPayload } from "@/app/api/admin/billing/_shared";
 
@@ -20,17 +20,17 @@ export default async function BillingSettingsPage({ params }: { params: Promise<
   const actor = await getActorContext().catch(() => null);
   const canEdit = actor ? can(actor, "billing.configure", { locationId: location.id }) : false;
   const settings = billingSettingsOf(location);
-  const square = squareStatusPayload();
+  const square = await squareStatusPayload(location.id);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Billing settings"
-        description="Square connection, dunning policy, late fees, card surcharge, and sales tax for this location."
+        description="This location's Square account, dunning policy, late fees, card surcharge, and sales tax."
         actions={<Link href={adminRoutes.loc.settings.tax(slug)} className="text-apple-sm text-apple-blue hover:underline">Tax settings →</Link>}
       />
 
-      <SquareConnectCallout status={square} full />
+      <SquareConnectForm slug={slug} status={square} canEdit={canEdit} />
 
       <section className="rounded-apple border border-apple-divider bg-white p-4 shadow-apple sm:p-5">
         <h2 className="text-apple-lg font-semibold text-apple-text">Automated jobs</h2>

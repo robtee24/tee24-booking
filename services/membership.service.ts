@@ -16,7 +16,7 @@ import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { adminNotify } from "@/lib/admin-notify";
-import { squareCancelSubscription } from "@/lib/square";
+import { getSquareCreds, squareCancelSubscription } from "@/lib/square";
 import type { MembershipSubscription, MembershipPlan } from "@prisma/client";
 
 export type CreatePlanInput = {
@@ -171,9 +171,9 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
   });
 
   if (sub.squareSubscriptionId) {
-    squareCancelSubscription(sub.squareSubscriptionId).catch((err) =>
-      console.warn("[membership.cancel] Square sync failed; will be retried", err)
-    );
+    getSquareCreds(sub.locationId)
+      .then((square) => (square ? squareCancelSubscription(square, sub.squareSubscriptionId!) : undefined))
+      .catch((err) => console.warn("[membership.cancel] Square sync failed; will be retried", err));
   }
 
   void audit({

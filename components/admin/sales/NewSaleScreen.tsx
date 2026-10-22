@@ -11,7 +11,7 @@ import { adminRoutes } from "@/lib/admin/routes";
 import { CardSlot } from "./CardSlot";
 import { posFetch, qs } from "./api";
 import { centsToDollarsInput, computeSaleTotals, lineTotal, parseDollarsToCents } from "./pos-math";
-import type { CartLineInput, CreateSaleRequest, CustomerDTO, DiscountInput, GiftCardLookupDTO, PaymentInput, PaymentKind, PosContextDTO, ProductDTO, SaleDTO } from "./types";
+import type { CartLineInput, CreateSaleRequest, CustomerDTO, DiscountInput, GiftCardLookupDTO, PaymentInput, PaymentKind, PosContextDTO, ProductDTO, SaleDTO, SquarePublicConfigDTO } from "./types";
 import { PAYMENT_KIND_LABELS } from "./types";
 
 type CartLine = CartLineInput & { key: string; product?: ProductDTO };
@@ -217,7 +217,7 @@ export function NewSaleScreen({ slug }: { slug: string }) {
     tendered, setTendered, changeCents,
     reference, setReference,
     giftCode, setGiftCode: (v) => { setGiftCode(v); setGiftLookup(null); setGiftLookupError(null); }, giftLookup, giftLookupError, onLookupGift: lookupGift,
-    squareReady: !!ctx?.squareReady, sourceId, setSourceId,
+    squareReady: !!ctx?.squareReady, square: ctx?.square ?? null, sourceId, setSourceId,
     sendReceipt, setSendReceipt,
     onQty: changeQty, onRemove: removeLine,
     blocker, submitting, onComplete: complete,
@@ -362,6 +362,7 @@ type CartPanelProps = {
   giftLookupError: string | null;
   onLookupGift: () => void;
   squareReady: boolean;
+  square: SquarePublicConfigDTO | null;
   sourceId: string | null;
   setSourceId: (v: string | null) => void;
   sendReceipt: boolean;
@@ -508,7 +509,7 @@ function CartBody(p: CartPanelProps) {
               </div>
             )}
             {p.payment === "CARD" && (
-              <CardSlot ready={p.squareReady} amountCents={p.totals.totalCents} currency={p.currency} sourceId={p.sourceId} onSourceId={p.setSourceId} />
+              <CardSlot ready={p.squareReady} square={p.square} amountCents={p.totals.totalCents} currency={p.currency} sourceId={p.sourceId} onSourceId={p.setSourceId} />
             )}
           </div>
         </section>

@@ -184,6 +184,16 @@ export type PosContextDTO = {
   categories: CategoryDTO[];
   products: ProductDTO[];
   squareReady: boolean;
+  /** Browser-safe Square config for this location's account (drives the card form). */
+  square: SquarePublicConfigDTO;
+};
+
+export type SquarePublicConfigDTO = {
+  configured: boolean;
+  applicationId: string | null;
+  locationId: string | null;
+  env: "production" | "sandbox";
+  sdkUrl: string;
 };
 
 export type SalesListFilters = {

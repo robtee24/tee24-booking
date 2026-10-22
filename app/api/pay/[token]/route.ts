@@ -30,7 +30,7 @@ async function loadByToken(token: string) {
   });
 }
 
-function summary(inv: NonNullable<Awaited<ReturnType<typeof loadByToken>>>) {
+function summary(inv: NonNullable<Awaited<ReturnType<typeof loadByToken>>>, squareConfigured: boolean) {
   return {
     id: inv.id,
     number: inv.number,
@@ -51,7 +51,7 @@ function summary(inv: NonNullable<Awaited<ReturnType<typeof loadByToken>>>) {
     location: { name: inv.location.businessName ?? inv.location.name, logoUrl: inv.location.logoUrl, phone: inv.location.phone, email: inv.location.email },
     planName: inv.subscription?.plan.name ?? null,
     payable: !(PAID_STATUSES as readonly string[]).includes(inv.status) && inv.status !== "CANCELLED" && invoiceRemainingCents(inv) > 0,
-    squareConfigured: isSquareConfigured(),
+    squareConfigured: squareConfigured,
   };
 }
 
@@ -59,7 +59,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const { token } = await ctx.params;
   const inv = await loadByToken(token);
   if (!inv) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  return NextResponse.json({ invoice: summary(inv), square: getSquarePublicConfig() });
+  const square = await getSquarePublicConfig(inv.locationId);
+  return NextResponse.json({ invoice: summary(inv, square.configured), square });
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -67,16 +68,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const inv = await loadByToken(token);
   if (!inv) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   const body = await req.json().catch(() => ({}));
+  const squareConfigured = await isSquareConfigured(inv.locationId);
 
   try {
     if (body.action === "apply-discount") {
       const r = await applyDiscountCodeToInvoice(inv.id, String(body.code ?? ""), null);
       const fresh = await loadByToken(token);
-      return NextResponse.json({ ok: true, code: r.discount.code, amountCents: r.amountCents, invoice: fresh ? summary(fresh) : null });
+      return NextResponse.json({ ok: true, code: r.discount.code, amountCents: r.amountCents, invoice: fresh ? summary(fresh, squareConfigured) : null });
     }
 
-    if (!isSquareConfigured()) return NextResponse.json({ error: "Online payments are not available. Please contact the front desk." }, { status: 503 });
-    const s = summary(inv);
+    if (!squareConfigured) return NextResponse.json({ error: "Online payments are not available. Please contact the front desk." }, { status: 503 });
+    const s = summary(inv, squareConfigured);
     if (!s.payable) return NextResponse.json({ error: "This invoice is no longer payable." }, { status: 409 });
     const sourceId = String(body.sourceId ?? "");
     if (!sourceId) return NextResponse.json({ error: "Missing card token" }, { status: 400 });
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const fresh = await loadByToken(token);
-    return NextResponse.json({ ok: true, invoice: fresh ? summary(fresh) : null, receiptUrl: r.receiptUrl, savedCard });
+    return NextResponse.json({ ok: true, invoice: fresh ? summary(fresh, squareConfigured) : null, receiptUrl: r.receiptUrl, savedCard });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Payment failed";
     return NextResponse.json({ error: message }, { status: 400 });

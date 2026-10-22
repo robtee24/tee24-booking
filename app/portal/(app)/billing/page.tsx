@@ -16,7 +16,7 @@ export default async function PortalBilling() {
   if (!member) return null;
   const prisma = getPrisma();
   const readOnly = session?.role === "IMPERSONATED";
-  const square = getSquarePublicConfig();
+  const square = await getSquarePublicConfig(member.locationId);
 
   const yearAgo = new Date();
   yearAgo.setFullYear(yearAgo.getFullYear() - 1);

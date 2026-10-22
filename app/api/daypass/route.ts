@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const normalizedEmail = String(email).trim().toLowerCase();
 
     // ---- Payment (only when Square is configured) ----------------------------
-    const squareReady = isSquareConfigured();
+    const squareReady = await isSquareConfigured(location.id);
     let invoiceId: string | null = null;
     let memberId: string | null = null;
     if (squareReady && priceCents > 0) {

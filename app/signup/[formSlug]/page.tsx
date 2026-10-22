@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
-import { getSquarePublicConfig } from "@/lib/square";
+import { getSquarePublicConfig, publicConfigFromCreds } from "@/lib/square";
 import { SignupClient } from "./SignupClient";
 import { requiredSignupInputKeys } from "@/lib/signup-form-config";
 
@@ -49,7 +49,7 @@ export default async function PublicSignupPage({
   };
 
   const referralCode = typeof sp.ref === "string" ? sp.ref : null;
-  const square = getSquarePublicConfig();
+  const square = form.location ? await getSquarePublicConfig(form.location.id) : publicConfigFromCreds(null);
 
   return (
     <SignupClient

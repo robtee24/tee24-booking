@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getMemberSession } from "@/lib/member-session";
-import { getSquarePublicConfig } from "@/lib/square";
+import { getSquarePublicConfig, publicConfigFromCreds } from "@/lib/square";
 import { listPaymentMethods, removePaymentMethod, setDefaultPaymentMethod, vaultCard } from "@/services/billing.service";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,9 @@ function readOnly(s: { role: string }) {
 export async function GET() {
   const { s, error } = await session();
   if (error) return error;
-  return NextResponse.json({ paymentMethods: await listPaymentMethods(s.sub), square: getSquarePublicConfig() });
+  const member = await getPrisma().member.findUnique({ where: { id: s.sub }, select: { locationId: true } });
+  const square = member ? await getSquarePublicConfig(member.locationId) : publicConfigFromCreds(null);
+  return NextResponse.json({ paymentMethods: await listPaymentMethods(s.sub), square });
 }
 
 export async function POST(req: NextRequest) {
