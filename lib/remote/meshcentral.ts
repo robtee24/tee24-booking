@@ -94,5 +94,6 @@ export function encodeLoginToken(userid: string, keyHex: string): string {
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const payload = JSON.stringify({ u: userid, a: 3, time: Math.floor(Date.now() / 1000) });
   const enc = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
-  return Buffer.concat([iv, enc, cipher.getAuthTag()]).toString("base64").replace(/\+/g, "@").replace(/\//g, "$");
+  // MeshCentral's decodeCookieAESGCM expects iv(12) + authTag(16) + ciphertext.
+  return Buffer.concat([iv, cipher.getAuthTag(), enc]).toString("base64").replace(/\+/g, "@").replace(/\//g, "$");
 }
