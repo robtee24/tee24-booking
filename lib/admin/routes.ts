@@ -16,6 +16,17 @@
 
 const enc = (s: string) => encodeURIComponent(s);
 
+export const MEMBER_PROFILE_TABS = [
+  "memberships",
+  "payments",
+  "documents",
+  "attendance",
+  "messaging",
+  "family",
+  "notes",
+] as const;
+export type MemberProfileTab = (typeof MEMBER_PROFILE_TABS)[number];
+
 export const adminRoutes = {
   // ── Auth ────────────────────────────────────────────────────────────────
   login: () => "/admin/login",
@@ -36,12 +47,14 @@ export const adminRoutes = {
   settingsHealth: () => "/admin/settings/health",
   settingsMigration: () => "/admin/settings/migration",
   settingsChurnModel: () => "/admin/settings/churn-model",
+  settingsEmail: () => "/admin/settings/email",
 
   // ── Per-location ────────────────────────────────────────────────────────
   loc: {
     root: (slug: string) => `/admin/locations/${enc(slug)}`,
     dashboard: (slug: string) => `/admin/locations/${enc(slug)}/dashboard`,
     troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
+    frontDesk: (slug: string) => `/admin/locations/${enc(slug)}/front-desk`,
 
     scheduling: {
       root: (slug: string) => `/admin/locations/${enc(slug)}/scheduling`,
@@ -56,6 +69,10 @@ export const adminRoutes = {
       list: (slug: string) => `/admin/locations/${enc(slug)}/members/list`,
       new: (slug: string) => `/admin/locations/${enc(slug)}/members/list/new`,
       detail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/members/list/${enc(id)}`,
+      detailTab: (slug: string, id: string, tab: MemberProfileTab) =>
+        `/admin/locations/${enc(slug)}/members/list/${enc(id)}/${tab}`,
+      import: (slug: string) => `/admin/locations/${enc(slug)}/members/settings/import`,
+      merge: (slug: string) => `/admin/locations/${enc(slug)}/members/settings/merge`,
       memberships: (slug: string) => `/admin/locations/${enc(slug)}/members/memberships`,
       membershipNew: (slug: string) => `/admin/locations/${enc(slug)}/members/memberships/new`,
       documents: (slug: string) => `/admin/locations/${enc(slug)}/members/documents`,
@@ -71,6 +88,9 @@ export const adminRoutes = {
       payments: (slug: string) => `/admin/locations/${enc(slug)}/billing/payments`,
       recurring: (slug: string) => `/admin/locations/${enc(slug)}/billing/recurring`,
       discounts: (slug: string) => `/admin/locations/${enc(slug)}/billing/discounts`,
+      discountNew: (slug: string) => `/admin/locations/${enc(slug)}/billing/discounts/new`,
+      discountDetail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/billing/discounts/${enc(id)}`,
+      invoiceDetail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/billing/invoices/${enc(id)}`,
       accounting: (slug: string) => `/admin/locations/${enc(slug)}/billing/accounting`,
       settings: (slug: string) => `/admin/locations/${enc(slug)}/billing/settings`,
     },
@@ -82,9 +102,24 @@ export const adminRoutes = {
       compose: (slug: string) => `/admin/locations/${enc(slug)}/marketing/messaging/compose`,
       templates: (slug: string) => `/admin/locations/${enc(slug)}/marketing/templates`,
       automations: (slug: string) => `/admin/locations/${enc(slug)}/marketing/automations`,
+      automationNew: (slug: string) => `/admin/locations/${enc(slug)}/marketing/automations/new`,
+      automationDetail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/marketing/automations/${enc(id)}`,
+      inbox: (slug: string) => `/admin/locations/${enc(slug)}/marketing/inbox`,
       referrals: (slug: string) => `/admin/locations/${enc(slug)}/marketing/referrals`,
       signupForms: (slug: string) => `/admin/locations/${enc(slug)}/marketing/signup-forms`,
+      signupFormNew: (slug: string) => `/admin/locations/${enc(slug)}/marketing/signup-forms/new`,
+      signupFormDetail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/marketing/signup-forms/${enc(id)}`,
       settings: (slug: string) => `/admin/locations/${enc(slug)}/marketing/settings`,
+    },
+
+    sales: {
+      root: (slug: string) => `/admin/locations/${enc(slug)}/sales`,
+      list: (slug: string) => `/admin/locations/${enc(slug)}/sales/list`,
+      products: (slug: string) => `/admin/locations/${enc(slug)}/sales/products`,
+      productNew: (slug: string) => `/admin/locations/${enc(slug)}/sales/products/new`,
+      productDetail: (slug: string, id: string) => `/admin/locations/${enc(slug)}/sales/products/${enc(id)}`,
+      giftCards: (slug: string) => `/admin/locations/${enc(slug)}/sales/gift-cards`,
+      report: (slug: string) => `/admin/locations/${enc(slug)}/sales/report`,
     },
 
     settings: {
@@ -133,6 +168,13 @@ export const LOCATION_NAV: NavSection[] = [
     items: [],
   },
   {
+    key: "front-desk",
+    label: "Front Desk",
+    icon: "check-square",
+    href: adminRoutes.loc.frontDesk,
+    items: [],
+  },
+  {
     key: "scheduling",
     label: "Scheduling",
     icon: "calendar",
@@ -174,6 +216,19 @@ export const LOCATION_NAV: NavSection[] = [
     ],
   },
   {
+    key: "sales",
+    label: "Sales",
+    icon: "card",
+    href: adminRoutes.loc.sales.root,
+    items: [
+      { label: "New Sale", href: adminRoutes.loc.sales.root, exact: true },
+      { label: "Sales", href: adminRoutes.loc.sales.list },
+      { label: "Products", href: adminRoutes.loc.sales.products },
+      { label: "Gift Cards", href: adminRoutes.loc.sales.giftCards },
+      { label: "Report", href: adminRoutes.loc.sales.report },
+    ],
+  },
+  {
     key: "marketing",
     label: "Marketing",
     icon: "megaphone",
@@ -182,6 +237,7 @@ export const LOCATION_NAV: NavSection[] = [
       { label: "Dashboard", href: adminRoutes.loc.marketing.root, exact: true },
       { label: "Visitors", href: adminRoutes.loc.marketing.visitors },
       { label: "Messaging", href: adminRoutes.loc.marketing.messaging },
+      { label: "Inbox", href: adminRoutes.loc.marketing.inbox },
       { label: "Templates", href: adminRoutes.loc.marketing.templates },
       { label: "Automations", href: adminRoutes.loc.marketing.automations },
       { label: "Referrals", href: adminRoutes.loc.marketing.referrals },
@@ -296,6 +352,18 @@ export const SEGMENT_LABELS: Record<string, string> = {
   health: "Integration Health",
   migration: "Migration",
   "churn-model": "Churn Model",
+  "front-desk": "Front Desk",
+  sales: "Sales",
+  products: "Products",
+  "gift-cards": "Gift Cards",
+  report: "Report",
+  inbox: "Inbox",
+  invoices: "Invoices",
+  import: "Import",
+  merge: "Merge Duplicates",
+  email: "Email",
+  family: "Family",
+  notes: "Notes",
 };
 
 export function labelForSegment(seg: string): string {
@@ -316,7 +384,11 @@ export function enumerateRoutePaths(): string[] {
       const fn = node as (...a: string[]) => string;
       // Most routes take (slug) or (); a few take (slug, id) or (id).
       try {
-        out.add(fn(SLUG, ID));
+        if (fn.length >= 3) {
+          for (const tab of MEMBER_PROFILE_TABS) out.add(fn(SLUG, ID, tab));
+        } else {
+          out.add(fn(SLUG, ID));
+        }
       } catch {
         out.add(fn(SLUG));
       }
