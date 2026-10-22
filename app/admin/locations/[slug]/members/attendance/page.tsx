@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { getPrisma } from "@/lib/db";
+import { adminRoutes } from "@/lib/admin/routes";
 import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { BarChart, KpiCard } from "@/components/ui/charts";
-import { Activity } from "lucide-react";
+import { Activity, X } from "lucide-react";
 import { AttendanceHeatmap, TimeOfDayChart } from "./AttendanceCharts";
 import {
   visitFrequencyDistribution,
@@ -13,11 +15,24 @@ export const dynamic = "force-dynamic";
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default async function AttendancePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function AttendancePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ memberId?: string }>;
+}) {
   const { slug } = await params;
+  const memberId = (await searchParams)?.memberId || null;
   const prisma = getPrisma();
   const location = await prisma.location.findUnique({ where: { slug } });
   if (!location) return null;
+
+  // Optional ?memberId= scopes every stat to one member.
+  const focusMember = memberId
+    ? await prisma.member.findFirst({ where: { id: memberId, locationId: location.id }, select: { id: true, firstName: true, lastName: true } })
+    : null;
+  const scope = focusMember ? { locationId: location.id, memberId: focusMember.id } : { locationId: location.id };
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -26,35 +41,36 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
   const ninetyAgo = new Date(now.getTime() - 90 * 86_400_000);
 
   const [todayCount, monthCount, last10, year, ninety, noShowsMtd, freqDist, topMembers, last7d] = await Promise.all([
-    prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: todayStart } } }),
-    prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: monthStart } } }),
+    prisma.visit.count({ where: { ...scope, enteredAt: { gte: todayStart } } }),
+    prisma.visit.count({ where: { ...scope, enteredAt: { gte: monthStart } } }),
     prisma.visit.findMany({
-      where: { locationId: location.id },
+      where: scope,
       orderBy: { enteredAt: "desc" },
-      take: 10,
+      take: focusMember ? 25 : 10,
       include: {
         member: { select: { id: true, firstName: true, lastName: true } },
         bay: { select: { number: true } },
       },
     }),
     prisma.visit.findMany({
-      where: { locationId: location.id, enteredAt: { gte: yearAgo } },
+      where: { ...scope, enteredAt: { gte: yearAgo } },
       select: { enteredAt: true, type: true },
     }),
     prisma.visit.findMany({
-      where: { locationId: location.id, enteredAt: { gte: ninetyAgo } },
+      where: { ...scope, enteredAt: { gte: ninetyAgo } },
       select: { enteredAt: true },
     }),
     prisma.booking.count({
       where: {
         locationId: location.id,
+        ...(focusMember ? { memberId: focusMember.id } : {}),
         canceledAt: null,
         checkedInAt: null,
         end: { lt: now, gte: monthStart },
       },
     }),
-    visitFrequencyDistribution({ locationId: location.id }),
-    topMembersByVisits({ locationId: location.id, limit: 10 }),
+    focusMember ? Promise.resolve([]) : visitFrequencyDistribution({ locationId: location.id }),
+    focusMember ? Promise.resolve([]) : topMembersByVisits({ locationId: location.id, limit: 10 }),
     visitsByDay({ locationId: location.id, days: 7 }),
   ]);
 
@@ -66,10 +82,25 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Attendance" description="Member visits, demographics, and traffic patterns." />
+      <PageHeader
+        title={focusMember ? `Attendance · ${focusMember.firstName} ${focusMember.lastName}` : "Attendance"}
+        description={focusMember ? "Visits for a single member. Clear the filter to see the whole location." : "Member visits, demographics, and traffic patterns."}
+        actions={
+          focusMember ? (
+            <>
+              <Link href={adminRoutes.loc.members.detailTab(slug, focusMember.id, "attendance")} className="inline-flex h-10 items-center rounded-apple-sm border border-apple-border bg-white px-4 text-apple-sm font-medium text-apple-text hover:bg-apple-fill-secondary">
+                Open profile
+              </Link>
+              <Link href={adminRoutes.loc.members.attendance(slug)} className="inline-flex h-10 items-center gap-1 rounded-apple-sm bg-apple-blue px-4 text-apple-sm font-medium text-white hover:bg-apple-blue-hover">
+                <X className="h-4 w-4" /> Clear filter
+              </Link>
+            </>
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <KpiCard label="Today" value={todayCount.toLocaleString()} trend={visitsTrend} />
+        <KpiCard label="Today" value={todayCount.toLocaleString()} trend={focusMember ? undefined : visitsTrend} />
         <KpiCard label="Month-to-date" value={monthCount.toLocaleString()} />
         <KpiCard label="90-day visits" value={ninety.length.toLocaleString()} />
         <KpiCard label="No-shows MTD" value={noShowsMtd.toLocaleString()} hint="Bookings without check-in" />
@@ -108,7 +139,7 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {!focusMember && <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader title="Visit frequency" subtitle="Members by visits this month" />
           <div className="mt-4">
@@ -138,10 +169,10 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
             )}
           </div>
         </Card>
-      </div>
+      </div>}
 
       <Card>
-        <CardHeader title="Recent visits" subtitle="From Kisi door unlocks and Bay App check-ins (deduped per location window)" />
+        <CardHeader title="Recent visits" subtitle="From Kisi door unlocks, Front Desk and Bay App check-ins (deduped per location window)" />
         {last10.length === 0 ? (
           <EmptyState
             icon={<Activity className="h-6 w-6" />}
@@ -154,7 +185,13 @@ export default async function AttendancePage({ params }: { params: Promise<{ slu
               <li key={v.id} className="flex items-center justify-between py-3 text-apple-sm">
                 <div>
                   <div className="font-medium text-apple-text">
-                    {v.member ? `${v.member.firstName} ${v.member.lastName}` : "Visitor"}
+                    {v.member ? (
+                      <Link href={`${adminRoutes.loc.members.attendance(slug)}?memberId=${v.member.id}`} className="hover:underline">
+                        {v.member.firstName} {v.member.lastName}
+                      </Link>
+                    ) : (
+                      "Visitor"
+                    )}
                   </div>
                   <div className="text-apple-xs text-apple-text-tertiary">
                     {new Date(v.enteredAt).toLocaleString()} {v.bay && `· Bay ${v.bay.number}`}

@@ -27,10 +27,16 @@ export default async function PortalLayout({ children }: { children: React.React
   return (
     <div className="min-h-screen bg-apple-bg">
       {isImpersonating && (
-        <div className="bg-apple-red/10 px-4 py-2 text-center text-apple-sm font-medium text-apple-red">
-          <AlertOctagon className="mr-2 inline h-4 w-4" />
-          Viewing as {member.firstName} {member.lastName}.
-          <Link href="/api/portal/impersonation/end" className="ml-3 underline">End impersonation</Link>
+        <div className="flex items-center justify-center gap-3 bg-apple-red/10 px-4 py-2 text-center text-apple-sm font-medium text-apple-red">
+          <span>
+            <AlertOctagon className="mr-2 inline h-4 w-4" />
+            Viewing as {member.firstName} {member.lastName}.
+          </span>
+          <form method="POST" action="/api/portal/impersonation/stop">
+            <button type="submit" className="rounded-apple-pill border border-apple-red/30 bg-white px-3 py-1 text-apple-xs font-semibold text-apple-red hover:bg-apple-red/5">
+              End impersonation
+            </button>
+          </form>
         </div>
       )}
 

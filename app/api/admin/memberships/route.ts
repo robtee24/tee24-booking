@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { getCurrentAdmin } from "@/lib/access";
+import { requireAdminApi, requireLocationAdminApi } from "@/lib/api-auth";
+import { getActorContext } from "@/lib/actor";
+import { assertCan } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
+import { apiError } from "@/app/api/admin/members/_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +12,8 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const locationSlug = sp.get("locationSlug");
   const includeArchived = sp.get("includeArchived") === "1";
+  const guard = locationSlug ? await requireLocationAdminApi({ locationSlug }) : await requireAdminApi();
+  if (!guard.ok) return guard.response;
 
   const where: any = {};
   if (!includeArchived) where.archived = false;
@@ -33,19 +38,27 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   const { locationSlug, ...rest } = body;
+  const guard = locationSlug ? await requireLocationAdminApi({ locationSlug }) : await requireAdminApi();
+  if (!guard.ok) return guard.response;
+  const admin = guard.admin;
+  const actor = await getActorContext();
 
   let organizationId: string | null = null;
+  let locationId: string | null = null;
   if (locationSlug) {
     const location = await getPrisma().location.findUnique({
       where: { slug: locationSlug },
-      select: { organizationId: true },
+      select: { id: true, organizationId: true },
     });
     organizationId = location?.organizationId ?? null;
+    locationId = location?.id ?? null;
+  }
+  try {
+    assertCan(actor, "membership.create", { locationId });
+  } catch (e) {
+    return apiError(e);
   }
 
   if (!rest.name) return NextResponse.json({ error: "name is required" }, { status: 400 });

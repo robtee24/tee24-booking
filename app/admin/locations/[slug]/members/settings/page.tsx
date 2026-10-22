@@ -1,14 +1,18 @@
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import Link from "next/link";
+import { adminRoutes } from "@/lib/admin/routes";
 
 export default async function MemberSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const links = [
-    { label: "Tags", href: `/admin/locations/${slug}/members/tags`, desc: "Create and manage member tags." },
-    { label: "Custom fields", href: `/admin/locations/${slug}/members/custom-fields`, desc: "Add fields to signup & profile." },
-    { label: "Documents", href: `/admin/locations/${slug}/members/documents`, desc: "Waivers and required forms." },
-    { label: "Signup forms", href: `/admin/locations/${slug}/marketing/signup-forms`, desc: "Public checkout pages." },
-    { label: "Communications", href: `/admin/locations/${slug}/settings/comms`, desc: "Booking & system emails/SMS." },
+    { label: "Tags", href: adminRoutes.loc.members.tags(slug), desc: "Create and manage member tags." },
+    { label: "Custom fields", href: adminRoutes.loc.members.customFields(slug), desc: "Add fields to signup & profile." },
+    { label: "Documents", href: adminRoutes.loc.members.documents(slug), desc: "Waivers and required forms." },
+    { label: "Import members", href: adminRoutes.loc.members.import(slug), desc: "Upload a CSV from GymDesk or another system." },
+    { label: "Merge duplicates", href: adminRoutes.loc.members.merge(slug), desc: "Find and combine duplicate member records." },
+    { label: "Front desk", href: adminRoutes.loc.frontDesk(slug), desc: "Kiosk check-in by code, name or QR." },
+    { label: "Signup forms", href: adminRoutes.loc.marketing.signupForms(slug), desc: "Public checkout pages." },
+    { label: "Communications", href: adminRoutes.loc.settings.comms(slug), desc: "Booking & system emails/SMS." },
   ];
 
   return (
