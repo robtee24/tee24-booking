@@ -294,7 +294,13 @@ export async function loadSigningView(token: string, opts: { markViewed?: boolea
     where: { signingToken: token },
     include: {
       document: { select: { name: true, description: true, bodyHtml: true } },
-      member: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, dob: true, guardianName: true, addressLine1: true, city: true, state: true, zip: true, location: { select: { name: true, businessName: true } } } },
+      member: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true, dob: true, guardianName: true, addressLine1: true, city: true, state: true, zip: true,
+          location: { select: { name: true, businessName: true } },
+          emergencyContacts: { where: { isEmergency: true }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], take: 1, select: { name: true, phone: true, relationship: true } },
+        },
+      },
     },
   });
   if (!a) return { state: "invalid" };
@@ -320,6 +326,9 @@ export async function loadSigningView(token: string, opts: { markViewed?: boolea
     dob: a.member.dob ? a.member.dob.toLocaleDateString() : "",
     address: [a.member.addressLine1, a.member.city, a.member.state, a.member.zip].filter(Boolean).join(", "),
     guardianName: a.member.guardianName ?? "",
+    contactName: a.member.emergencyContacts?.[0]?.name ?? "",
+    contactPhone: a.member.emergencyContacts?.[0]?.phone ?? "",
+    contactRelation: a.member.emergencyContacts?.[0]?.relationship ?? "",
     locationName: a.member.location?.name ?? "Tee24",
     businessName: a.member.location?.businessName ?? a.member.location?.name ?? "Tee24",
     date: now.toLocaleDateString(),

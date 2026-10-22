@@ -1,7 +1,7 @@
 /**
  * Kisi door access integration.
  *
- * Outbound: create user, grant/revoke door group memberships, send mobile credential.
+ * Outbound: ensure member, grant/revoke door-group role assignments (Kisi emails the mobile credential).
  * Inbound webhooks: door unlock events → fed to Visit dedupe pipeline.
  *
  * Env:
@@ -32,61 +32,120 @@ async function kisiFetch<T = any>(path: string, init: RequestInit = {}): Promise
     const text = await res.text().catch(() => "");
     throw new Error(`[kisi] ${path} failed (${res.status}): ${text}`);
   }
-  return res.json();
+  if (res.status === 204) return null as T;
+  const body = await res.text();
+  return (body ? JSON.parse(body) : null) as T;
 }
 
-// ---------- Users ----------
+// ---------- Users / members ----------
+//
+// Kisi's current API (https://api.kisi.io/docs):
+//   • organization members      → /members           (a Member wraps a User; `user_id` is what
+//                                                      role assignments and shares reference)
+//   • group access for a user   → /role_assignments  (role_id "group_basic", applies_to Group)
+//   • legacy email shares       → /shares            (how GymDesk granted access; still valid)
+// There is no /group_users or /users/{id}/groups endpoint.
+
+export type KisiMember = { id: number; user_id: number | null; email: string | null; name: string | null; access_enabled?: boolean | null };
+
+function memberOf(m: any): KisiMember {
+  return { id: m.id, user_id: m.user_id ?? m.user?.id ?? null, email: m.user?.email ?? m.email ?? null, name: m.name ?? m.user?.name ?? null, access_enabled: m.access_enabled ?? null };
+}
+
+/** Exact-match lookup of an organization member by email (case-insensitive). */
+export async function kisiFindMemberByEmail(email: string): Promise<KisiMember | null> {
+  const q = email.trim().toLowerCase();
+  if (!q) return null;
+  const list = await kisiFetch<any[]>(`/members?query=${encodeURIComponent(q)}&limit=50`);
+  const hit = list.find((m) => (m.user?.email ?? m.email ?? "").toLowerCase() === q);
+  return hit ? memberOf(hit) : null;
+}
+
+/**
+ * Ensure a Kisi organization member exists for this email and return the *user id*
+ * (the id used by role assignments / shares). Idempotent: reuses an existing member.
+ * Kisi emails the mobile-credential invitation itself when the member is created.
+ */
 export async function kisiCreateUser(input: {
   email: string;
   name: string;
   phone?: string;
   organizationId?: number;
 }): Promise<{ id: number }> {
-  const data = await kisiFetch<{ id: number }>("/users", {
+  const existing = await kisiFindMemberByEmail(input.email);
+  if (existing) return { id: existing.user_id ?? existing.id };
+  const data = await kisiFetch<any>("/members", {
     method: "POST",
     body: JSON.stringify({
-      user: {
-        email: input.email,
+      member: {
+        email: input.email.trim().toLowerCase(),
         name: input.name,
-        phone: input.phone,
-        organization_id: input.organizationId,
+        send_emails: true,
+        access_enabled: true,
       },
     }),
   });
-  return { id: data.id };
+  return { id: data.user_id ?? data.user?.id ?? data.id };
 }
 
 /**
- * Trigger Kisi to email/SMS the mobile-credential setup link.
- * Returns the credential URL when the API exposes it (for forwarding via our channels).
+ * Kisi has no separate "send credential link" endpoint: the invitation email goes out
+ * when the member is created / first granted access (notify: true). Kept for callers.
  */
-export async function kisiSendCredentialLink(userId: number): Promise<{ url: string | null }> {
-  const data = await kisiFetch<any>(`/users/${userId}/send_invitation`, { method: "POST" });
-  return { url: typeof data?.url === "string" ? data.url : null };
+export async function kisiSendCredentialLink(_userId: number): Promise<{ url: string | null }> {
+  return { url: null };
 }
 
 // ---------- Door groups ----------
-export async function kisiAddUserToGroup(input: { userId: number; groupId: number }): Promise<void> {
-  await kisiFetch(`/group_users`, {
+
+type RoleAssignment = { id: number; role_id: string; applies_to_type: string; applies_to_id: number; applies_to?: { id: number; name: string } | null; assignee_type: string; assignee_id: number };
+
+async function listGroupRoleAssignments(userId: number, groupId?: number): Promise<RoleAssignment[]> {
+  const qs = new URLSearchParams({ user_id: String(userId), applies_to_type: "Group", limit: "100" });
+  if (groupId) qs.set("group_id", String(groupId));
+  return kisiFetch<RoleAssignment[]>(`/role_assignments?${qs}`);
+}
+
+async function listGroupShares(userId: number, groupId: number): Promise<Array<{ id: number }>> {
+  return kisiFetch<Array<{ id: number }>>(`/shares?user_id=${userId}&group_id=${groupId}&limit=100`).catch(() => []);
+}
+
+/** Grant a user access via a door group. Idempotent (skips if an assignment already exists). */
+export async function kisiAddUserToGroup(input: { userId: number; groupId: number; notify?: boolean }): Promise<void> {
+  const existing = await listGroupRoleAssignments(input.userId, input.groupId);
+  if (existing.some((ra) => ra.applies_to_id === input.groupId)) return;
+  await kisiFetch(`/role_assignments`, {
     method: "POST",
-    body: JSON.stringify({ group_user: { user_id: input.userId, group_id: input.groupId } }),
+    body: JSON.stringify({
+      role_assignment: {
+        applies_to_type: "Group",
+        applies_to_id: input.groupId,
+        assignee_type: "User",
+        assignee_id: input.userId,
+        role_id: "group_basic",
+        notify: input.notify ?? true,
+      },
+    }),
   });
 }
 
+/** Revoke a user's access to a door group — removes role assignments *and* legacy shares. */
 export async function kisiRemoveUserFromGroup(input: { userId: number; groupId: number }): Promise<void> {
-  // Kisi requires looking up the group_user record id first. Simplification: we'll
-  // use the listing endpoint and delete by id.
-  const list = await kisiFetch<any[]>(
-    `/groups/${input.groupId}/group_users?user_id=${input.userId}`
-  );
-  for (const gu of list) {
-    await kisiFetch(`/group_users/${gu.id}`, { method: "DELETE" });
+  const ras = await listGroupRoleAssignments(input.userId, input.groupId);
+  for (const ra of ras) {
+    if (ra.applies_to_id !== input.groupId) continue;
+    await kisiFetch(`/role_assignments/${ra.id}`, { method: "DELETE" }).catch((e) => { if (!/\(404\)/.test(String(e))) throw e; });
+  }
+  for (const sh of await listGroupShares(input.userId, input.groupId)) {
+    await kisiFetch(`/shares/${sh.id}`, { method: "DELETE" }).catch((e) => { if (!/\(404\)/.test(String(e))) throw e; });
   }
 }
 
 export async function kisiListUserGroups(userId: number): Promise<Array<{ id: number; name: string }>> {
-  const data = await kisiFetch<any[]>(`/users/${userId}/groups`);
-  return data.map((g: any) => ({ id: g.id, name: g.name }));
+  const ras = await listGroupRoleAssignments(userId);
+  const seen = new Map<number, string>();
+  for (const ra of ras) if (!seen.has(ra.applies_to_id)) seen.set(ra.applies_to_id, ra.applies_to?.name ?? String(ra.applies_to_id));
+  return [...seen].map(([id, name]) => ({ id, name }));
 }
 
 // ---------- Places / Locks (doors) ----------

@@ -22,9 +22,11 @@
  * for outbound retries with provider="KISI_OUTBOUND").
  */
 import { getPrisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import {
   kisiAddUserToGroup,
   kisiCreateUser,
+  kisiListUserGroups,
   kisiRemoveUserFromGroup,
   kisiSendCredentialLink,
 } from "@/lib/kisi";
@@ -119,27 +121,27 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
     }
   }
 
-  // 2. Apply group memberships (no-op for now if no group IDs supplied)
+  // 2. Apply group memberships: grant desired groups, revoke every *managed* group
+  //    (any group referenced by a plan's kisiDoorGroups) that is not desired.
   if (kisiUserId && desired.desiredGroupIds) {
-    const before = await prisma.member.findUnique({
-      where: { id: memberId },
-      select: { kisiAccessEnabled: true },
-    });
+    const want = new Set(desired.enabled ? desired.desiredGroupIds : []);
+    const managed = await managedKisiGroupIds();
+    const current = new Set((await kisiListUserGroups(kisiUserId).catch((e) => { console.warn("[access-sync] list groups failed", e); return []; })).map((g) => g.id));
 
-    if (desired.enabled) {
-      // Add to all desired groups (idempotent server-side; we don't pre-list)
-      for (const groupId of desired.desiredGroupIds) {
-        await kisiAddUserToGroup({ userId: kisiUserId, groupId }).catch((e) => {
-          console.warn(`[access-sync] add user ${kisiUserId} to group ${groupId} failed`, e);
-        });
-      }
-    } else {
-      // Revoke from all currently-granted groups (handled by caller via desiredGroupIds=[])
-      // For full revocation, the caller passes an empty array and we revoke from a
-      // reconciliation lookup of the user's current groups (out of scope for v1 stub).
+    for (const groupId of want) {
+      await kisiAddUserToGroup({ userId: kisiUserId, groupId }).catch((e) => {
+        console.warn(`[access-sync] add user ${kisiUserId} to group ${groupId} failed`, e);
+      });
     }
-
-    void before;
+    for (const groupId of managed) {
+      if (want.has(groupId)) continue;
+      // Legacy GymDesk shares don't always surface as role assignments, so on a full
+      // revoke we attempt removal from every managed group, not just the ones listed.
+      if (!current.has(groupId) && desired.enabled) continue;
+      await kisiRemoveUserFromGroup({ userId: kisiUserId, groupId }).catch((e) => {
+        console.warn(`[access-sync] remove user ${kisiUserId} from group ${groupId} failed`, e);
+      });
+    }
   }
 
   // 3. Persist mirror + audit + admin notification
@@ -169,6 +171,14 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
   });
 
   return result;
+}
+
+/** Every Kisi group id any plan grants (union of MembershipPlan.kisiDoorGroups) — the set we manage. */
+export async function managedKisiGroupIds(): Promise<number[]> {
+  const plans = await getPrisma().membershipPlan.findMany({ where: { kisiDoorGroups: { not: Prisma.DbNull } }, select: { kisiDoorGroups: true } });
+  const ids = new Set<number>();
+  for (const p of plans) for (const arr of Object.values((p.kisiDoorGroups as Record<string, number[]> | null) ?? {})) for (const id of arr ?? []) ids.add(Number(id));
+  return [...ids];
 }
 
 async function persistMirror(memberId: string, enabled: boolean, reason: AccessReason, suffix?: string) {
