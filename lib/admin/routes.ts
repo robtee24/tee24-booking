@@ -40,6 +40,8 @@ export const adminRoutes = {
   adminNew: () => "/admin/admins/new",
   adminDetail: (id: string) => `/admin/admins/${enc(id)}`,
   bayApp: () => "/admin/bay-app",
+  checkIns: () => "/admin/check-ins",
+  doorAccess: () => "/admin/door-access",
   tasks: () => "/admin/tasks",
   notifications: () => "/admin/notifications",
   settings: () => "/admin/settings",
@@ -55,6 +57,7 @@ export const adminRoutes = {
     dashboard: (slug: string) => `/admin/locations/${enc(slug)}/dashboard`,
     troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
     frontDesk: (slug: string) => `/admin/locations/${enc(slug)}/front-desk`,
+    checkIns: (slug: string) => `/admin/locations/${enc(slug)}/check-ins`,
 
     scheduling: {
       root: (slug: string) => `/admin/locations/${enc(slug)}/scheduling`,
@@ -140,7 +143,8 @@ export const adminRoutes = {
 
 export type NavIcon =
   | "dashboard" | "calendar" | "users" | "card" | "megaphone" | "settings"
-  | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench";
+  | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench"
+  | "door-open" | "log-in";
 
 export type NavLeaf = {
   label: string;
@@ -172,6 +176,13 @@ export const LOCATION_NAV: NavSection[] = [
     label: "Front Desk",
     icon: "check-square",
     href: adminRoutes.loc.frontDesk,
+    items: [],
+  },
+  {
+    key: "check-ins",
+    label: "Check Ins",
+    icon: "log-in",
+    href: adminRoutes.loc.checkIns,
     items: [],
   },
   {
@@ -276,6 +287,8 @@ export const ORG_NAV: OrgNavItem[] = [
   { label: "Overview", href: adminRoutes.home(), icon: "dashboard", exact: true },
   { label: "Franchise", href: adminRoutes.franchise(), icon: "building" },
   { label: "Locations", href: adminRoutes.locations(), icon: "map-pin", exact: true },
+  { label: "Check Ins", href: adminRoutes.checkIns(), icon: "log-in" },
+  { label: "Door Access", href: adminRoutes.doorAccess(), icon: "door-open" },
   { label: "Admins", href: adminRoutes.admins(), icon: "shield" },
   { label: "Tasks", href: adminRoutes.tasks(), icon: "check-square" },
   { label: "Notifications", href: adminRoutes.notifications(), icon: "bell" },
@@ -353,6 +366,8 @@ export const SEGMENT_LABELS: Record<string, string> = {
   migration: "Migration",
   "churn-model": "Churn Model",
   "front-desk": "Front Desk",
+  "check-ins": "Check Ins",
+  "door-access": "Door Access",
   sales: "Sales",
   products: "Products",
   "gift-cards": "Gift Cards",

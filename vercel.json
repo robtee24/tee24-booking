@@ -35,6 +35,14 @@
     {
       "path": "/api/cron?job=automation-tick",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron?job=sync-kisi-events",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron?job=sync-kisi-doors",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

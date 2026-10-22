@@ -12,6 +12,8 @@
  *  - expire-documents            : flip expired signed docs
  *  - build-referral-batch        : build monthly referral payout batch
  *  - reconcile-access            : nightly Kisi access state reconciliation
+ *  - sync-kisi-events            : poll Kisi unlock history → check-ins (Visit rows)
+ *  - sync-kisi-doors             : refresh door status/placement from Kisi
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
@@ -21,6 +23,7 @@ import { runDueAutomationSteps } from "@/services/automation.service";
 import { expireOldDocumentSignings } from "@/services/document.service";
 import { buildMonthlyPayoutBatch } from "@/services/referral.service";
 import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
+import { syncDoorsFromKisi, syncKisiUnlockEvents } from "@/services/door.service";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +85,16 @@ async function run(req: NextRequest) {
       case "reconcile-access": {
         if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
         const r = await reconcileAllMemberAccess();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "sync-kisi-events": {
+        if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
+        const r = await syncKisiUnlockEvents();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "sync-kisi-doors": {
+        if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
+        const r = await syncDoorsFromKisi();
         return NextResponse.json({ ok: true, ...r });
       }
       default:

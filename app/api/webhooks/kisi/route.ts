@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
-  const signature = req.headers.get("x-kisi-signature") ?? "";
+  // Kisi's event webhook integration signs the body as HMAC-SHA256 in `X-Signature`.
+  const signature = req.headers.get("x-signature") ?? req.headers.get("x-kisi-signature") ?? "";
 
   if (!verifyKisiSignature({ body, signature })) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   const prisma = getPrisma();
-  const externalId = event.id ?? event.event_id ?? null;
+  const externalId = event.uuid ?? event.id ?? event.event_id ?? null;
 
   const delivery = await prisma.webhookDelivery.upsert({
     where: { provider_externalId: { provider: "KISI", externalId: externalId ?? `${Date.now()}` } },
@@ -43,11 +44,27 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    if (event.type === "unlock" || event.event_type === "unlock") {
+    const type: string = event.type ?? event.event_type ?? "";
+    const isUnlock = type === "lock.unlock" || type === "unlock";
+    const success = event.success !== false;
+    if (isUnlock && success) {
+      // Modern Kisi event shape: actor_* (user), object_* (lock). Legacy shape: user_id / lock_id.
+      const actorIsUser = !event.actor_type || event.actor_type === "User";
+      const kisiUserId = actorIsUser
+        ? event.actor_id ?? event.user_id ?? event.user?.id ?? null
+        : event.user_id ?? null;
+      const lockId =
+        event.object_type === "Lock" || event.object_type == null
+          ? event.object_id ?? event.lock_id ?? event.lock?.id ?? event.door?.id ?? null
+          : event.lock_id ?? null;
       await ingestKisiUnlock({
         kisiEventId: String(externalId ?? `${Date.now()}`),
-        kisiUserId: event.user_id ? String(event.user_id) : event.user?.id ? String(event.user.id) : null,
-        kisiDoorId: event.lock_id ? String(event.lock_id) : event.door?.id ? String(event.door.id) : null,
+        kisiUserId: kisiUserId != null ? String(kisiUserId) : null,
+        kisiDoorId: lockId != null ? String(lockId) : null,
+        actorEmail: event.actor_email ?? event.user?.email ?? null,
+        actorName: event.actor_name ?? event.user?.name ?? null,
+        doorName: event.object_name ?? event.lock?.name ?? event.door?.name ?? null,
+        kisiPlaceId: typeof event.place_id === "number" ? event.place_id : null,
         unlockedAt: new Date(event.created_at ?? event.timestamp ?? Date.now()),
         rawEvent: event,
       });

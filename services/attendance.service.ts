@@ -17,6 +17,12 @@ export type IngestKisiUnlockInput = {
   kisiEventId: string;
   kisiUserId: string | null;
   kisiDoorId: string | null;
+  /** Email of the Kisi actor (preferred match key: Kisi email ↔ Member.email). */
+  actorEmail?: string | null;
+  actorName?: string | null;
+  /** Door name as reported by Kisi (used to auto-register unknown doors). */
+  doorName?: string | null;
+  kisiPlaceId?: number | null;
   unlockedAt: Date;
   rawEvent: any;
 };
@@ -45,14 +51,49 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
   const existing = await prisma.visit.findUnique({ where: { kisiEventId: input.kisiEventId } });
   if (existing) return { visitId: existing.id, deduped: false };
 
-  const member = input.kisiUserId
+  // Door: look up (or auto-register) the Kisi lock so admins can assign it to a location.
+  const lockId = input.kisiDoorId && /^\d+$/.test(input.kisiDoorId) ? Number(input.kisiDoorId) : null;
+  let door =
+    lockId != null
+      ? await prisma.door.findUnique({ where: { kisiLockId: lockId } })
+      : null;
+  if (!door && lockId != null) {
+    door = await prisma.door.create({
+      data: {
+        kisiLockId: lockId,
+        name: input.doorName?.trim() || `Door ${lockId}`,
+        kisiPlaceId: input.kisiPlaceId ?? null,
+      },
+    });
+  }
+
+  // Member: Kisi user id mirror first, then email (the primary key the business uses).
+  const email = input.actorEmail?.trim().toLowerCase() || null;
+  let member = input.kisiUserId
     ? await prisma.member.findFirst({ where: { kisiUserId: input.kisiUserId } })
     : null;
+  let matchedBy: "KISI_USER_ID" | "EMAIL" | "NONE" = member ? "KISI_USER_ID" : "NONE";
+  if (!member && email) {
+    const candidates = await prisma.member.findMany({
+      where: { email: { equals: email, mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (candidates.length) {
+      const preferred = door?.locationId ? candidates.find((m) => m.locationId === door!.locationId) : null;
+      member = preferred ?? candidates[0];
+      matchedBy = "EMAIL";
+    }
+  }
 
-  const locationId = resolveLocationFromDoor(input.kisiDoorId) ?? member?.locationId ?? null;
+  const locationId =
+    door?.locationId ?? resolveLocationFromDoor(input.kisiDoorId) ?? member?.locationId ?? null;
   if (!locationId) {
     console.warn("[attendance] cannot resolve locationId for kisi event", input.kisiEventId);
     return { visitId: null, deduped: false };
+  }
+
+  if (door) {
+    await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
   }
 
   const location = await prisma.location.findUnique({
@@ -62,22 +103,29 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
   if (!location) return { visitId: null, deduped: false };
 
   // De-dupe: same member, same location, within window from a previous visit
+  // Window is symmetric so out-of-order deliveries (webhook retry, backfill) still collapse.
   const dedupeWindowStart = addHours(input.unlockedAt, -location.attendanceDedupeHours);
+  const dedupeWindowEnd = addHours(input.unlockedAt, location.attendanceDedupeHours);
   if (member) {
     const recent = await prisma.visit.findFirst({
       where: {
         memberId: member.id,
         locationId,
-        enteredAt: { gte: dedupeWindowStart, lte: input.unlockedAt },
+        enteredAt: { gte: dedupeWindowStart, lte: dedupeWindowEnd },
       },
       orderBy: { enteredAt: "desc" },
     });
     if (recent) {
+      const earlier = input.unlockedAt < recent.enteredAt;
       await prisma.visit.update({
         where: { id: recent.id },
         data: {
           unlockCount: { increment: 1 },
-          dedupedFromAt: input.unlockedAt,
+          // Keep enteredAt = first unlock, dedupedFromAt = most recent unlock.
+          ...(earlier
+            ? { enteredAt: input.unlockedAt, dedupedFromAt: recent.dedupedFromAt ?? recent.enteredAt }
+            : { dedupedFromAt: input.unlockedAt }),
+          ...(door && !recent.doorId ? { doorId: door.id } : {}),
         },
       });
       return { visitId: recent.id, deduped: true };
@@ -133,7 +181,11 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
       enteredAt: input.unlockedAt,
       bookingId,
       kisiEventId: input.kisiEventId,
+      doorId: door?.id ?? null,
+      actorEmail: email,
+      matchedBy,
       unlockCount: 1,
+      notes: !member && input.actorName ? `Kisi user: ${input.actorName}` : undefined,
     },
   });
 

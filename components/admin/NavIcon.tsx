@@ -12,6 +12,8 @@ import {
   Bell,
   CheckSquare,
   Wrench,
+  DoorOpen,
+  LogIn,
 } from "lucide-react";
 import type { NavIcon as NavIconName } from "@/lib/admin/routes";
 
@@ -29,6 +31,8 @@ const ICONS = {
   bell: Bell,
   "check-square": CheckSquare,
   wrench: Wrench,
+  "door-open": DoorOpen,
+  "log-in": LogIn,
 } as const;
 
 export function NavIcon({ name, className = "h-4 w-4" }: { name: NavIconName; className?: string }) {

@@ -91,6 +91,9 @@ export const PERMISSIONS = {
 
   // Kisi door overrides
   "kisi.override": "Manually override Kisi door access state for a member",
+  "door.view": "View door status and check-ins",
+  "door.unlock": "Remotely unlock a door",
+  "door.manage": "Assign doors to locations / sync with Kisi",
 
   // Franchise / org
   "franchise.view": "View franchise / org-level reports",

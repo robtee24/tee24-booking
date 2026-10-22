@@ -131,6 +131,7 @@ model Location {
   overdueBlockDays Int? // null = never block access for overdue invoices
 
   bays                    Bay[]
+  doors                   Door[]
   bookings                Booking[]
   adminLinks              AdminLocation[]
   notifications           Notification[]
@@ -1001,6 +1002,10 @@ model Visit {
   exitedAt    DateTime?
   bookingId   String?
   kisiEventId String?   @unique
+  doorId      String?
+  door        Door?     @relation(fields: [doorId], references: [id], onDelete: SetNull)
+  actorEmail  String? // email reported by the access provider (Kisi actor_email)
+  matchedBy   String? // KISI_USER_ID | EMAIL | NONE
   notes       String?
 
   // De-dupe: visits within the configured window roll into a single Visit row
@@ -1656,4 +1661,42 @@ model GiftCard {
   expiresAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+// =========================
+// Door access (Kisi)
+// =========================
+
+model Door {
+  id             String    @id @default(cuid())
+  organizationId String?
+  kisiLockId     Int       @unique
+  kisiPlaceId    Int?
+  kisiPlaceName  String?
+  name           String
+  description    String?
+  locationId     String? // which Tee24 location this door belongs to (admin-assigned)
+  configured     Boolean?
+  online         Boolean?
+  open           Boolean?
+  unlocked       Boolean?
+  lockedDown     Boolean?
+  lastStatusAt   DateTime?
+  lastUnlockAt   DateTime?
+  sortOrder      Int       @default(0)
+  hidden         Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  location Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  visits   Visit[]
+
+  @@index([locationId])
+}
+
+/// Generic key/value state for integrations (e.g. Kisi event sync cursor).
+model IntegrationState {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
