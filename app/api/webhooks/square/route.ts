@@ -34,6 +34,7 @@ type SquareEvent = {
   id?: string;
   type?: string;
   created_at?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Square payload shapes vary per event type
   data?: { type?: string; id?: string; object?: Record<string, any> };
 };
 

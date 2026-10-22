@@ -104,8 +104,8 @@ async function run(req: NextRequest) {
       default:
         return NextResponse.json({ error: `Unknown job '${job}'` }, { status: 400 });
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[cron] job failed", job, e);
-    return NextResponse.json({ error: e.message ?? String(e) }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

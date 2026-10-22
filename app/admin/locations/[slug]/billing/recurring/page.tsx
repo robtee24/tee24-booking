@@ -88,7 +88,9 @@ export default async function RecurringPage({ params, searchParams }: { params: 
   };
   const mrrCents = Math.round(mrr.reduce((s, x) => s + x.priceCents * monthlyFactor(x.billingCadence), 0));
   const squareConfigured = isSquareConfigured();
-  const next30 = rows.filter((r) => r.nextInvoiceDate && r.nextInvoiceDate.getTime() - Date.now() < 30 * 86_400_000 && r.status === "ACTIVE");
+  const in30Days = new Date();
+  in30Days.setDate(in30Days.getDate() + 30);
+  const next30 = rows.filter((r) => r.nextInvoiceDate && r.nextInvoiceDate < in30Days && r.status === "ACTIVE");
 
   const cols: Column<Row>[] = [
     {
