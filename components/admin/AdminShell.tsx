@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React from "react";
-import { ChevronDown, ChevronRight, LogOut, Menu, MoreHorizontal, X, Check, MapPin } from "lucide-react";
+import { ChevronDown, ChevronRight, LogOut, Menu, MoreHorizontal, X, Check, MapPin, AlertTriangle } from "lucide-react";
 import {
   adminRoutes,
   LOCATION_NAV,
@@ -20,6 +20,13 @@ import { cn } from "@/lib/utils";
 
 export type ShellLocation = { id: string; name: string; slug: string; disabled: boolean };
 export type ShellAdmin = { id: string; name: string | null; phone: string; role: "ROOT" | "FULL" | "SCOPED" };
+/** Server-resolved extras (optional so other callers don't break). */
+export type ShellMeta = {
+  /** Unread admin notifications for the badge next to "Notifications". */
+  unreadCount?: number;
+  /** Org-level delivery switches; a banner shows when either is off. */
+  comms?: { emailEnabled: boolean; smsEnabled: boolean };
+};
 
 const OPEN_SECTIONS_KEY = "tee24-admin:open-sections";
 const BARE_PATHS = new Set([adminRoutes.login(), adminRoutes.logout()]);
@@ -29,10 +36,12 @@ const BARE_PATHS = new Set([adminRoutes.login(), adminRoutes.logout()]);
 export function AdminShell({
   admin,
   locations,
+  meta,
   children,
 }: {
   admin: ShellAdmin | null;
   locations: ShellLocation[];
+  meta?: ShellMeta;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -44,7 +53,7 @@ export function AdminShell({
 
   return (
     <ToastProvider>
-      <Chrome admin={admin} locations={locations} pathname={pathname ?? "/admin"}>
+      <Chrome admin={admin} locations={locations} pathname={pathname ?? "/admin"} meta={meta}>
         {children}
       </Chrome>
     </ToastProvider>
@@ -57,13 +66,20 @@ function Chrome({
   admin,
   locations,
   pathname,
+  meta,
   children,
 }: {
   admin: ShellAdmin;
   locations: ShellLocation[];
   pathname: string;
+  meta?: ShellMeta;
   children: React.ReactNode;
 }) {
+  const unread = meta?.unreadCount ?? 0;
+  const pausedChannels = [
+    meta?.comms && !meta.comms.emailEnabled ? "email" : null,
+    meta?.comms && !meta.comms.smsEnabled ? "SMS" : null,
+  ].filter((x): x is string => Boolean(x));
   const activeSlug = slugFromPathname(pathname);
   const activeLocation = React.useMemo(
     () => (activeSlug ? locations.find((l) => l.slug === activeSlug) ?? null : null),
@@ -149,7 +165,17 @@ function Chrome({
             {ORG_NAV.map((item) => (
               <li key={item.href}>
                 <NavRow href={item.href} active={isPathActive(pathname, item.href, item.exact)} icon={item.icon}>
-                  {item.label}
+                  <span className="flex flex-1 items-center justify-between gap-2">
+                    {item.label}
+                    {item.href === adminRoutes.notifications() && unread > 0 && (
+                      <span
+                        className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-apple-pill bg-apple-red px-1.5 text-[11px] font-semibold leading-none text-white"
+                        aria-label={`${unread} unread notifications`}
+                      >
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </span>
                 </NavRow>
               </li>
             ))}
@@ -203,6 +229,24 @@ function Chrome({
             )}
           </div>
         </header>
+
+        {pausedChannels.length > 0 && (
+          <div
+            role="status"
+            className="flex items-center gap-2 border-b border-apple-orange/30 bg-apple-orange/10 px-3 py-2 text-apple-xs text-apple-orange sm:px-6"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              Outbound <span className="font-semibold">{pausedChannels.join(" and ")}</span> is paused organization-wide. Members won&apos;t receive messages on{" "}
+              {pausedChannels.length > 1 ? "these channels" : "this channel"}.
+            </span>
+            {(admin.role === "ROOT" || admin.role === "FULL") && (
+              <Link href={adminRoutes.settingsEmail()} className="shrink-0 font-semibold underline-offset-2 hover:underline">
+                Manage
+              </Link>
+            )}
+          </div>
+        )}
 
         <main
           id="admin-main"

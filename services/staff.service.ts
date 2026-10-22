@@ -455,3 +455,78 @@ export async function sendStaffInvite(adminId: string, actorId: string): Promise
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin notification inbox
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type InboxScope = { role: AdminRole; locationIds: string[] };
+
+/** Visibility filter: ROOT/FULL see everything; SCOPED see rows for their locations. */
+export function inboxWhere(scope: InboxScope) {
+  if (scope.role === "ROOT" || scope.role === "FULL") return {};
+  return { locationId: { in: scope.locationIds } };
+}
+
+/** Rows that should currently appear as "unread": not read and not snoozed into the future. */
+export function unreadWhere(scope: InboxScope, now = new Date()) {
+  return {
+    ...inboxWhere(scope),
+    readAt: null,
+    OR: [{ snoozeUntil: null }, { snoozeUntil: { lte: now } }],
+  };
+}
+
+export async function countUnreadNotifications(scope: InboxScope): Promise<number> {
+  return getPrisma().adminNotification.count({ where: unreadWhere(scope) });
+}
+
+export type InboxTab = "unread" | "all" | "snoozed";
+
+export async function listInbox(scope: InboxScope, opts: { tab?: InboxTab; take?: number; cursor?: string | null } = {}) {
+  const prisma = getPrisma();
+  const take = Math.min(Math.max(opts.take ?? 50, 1), 200);
+  const now = new Date();
+  const where =
+    opts.tab === "snoozed"
+      ? { ...inboxWhere(scope), readAt: null, snoozeUntil: { gt: now } }
+      : opts.tab === "all"
+        ? inboxWhere(scope)
+        : unreadWhere(scope, now);
+
+  const rows = await prisma.adminNotification.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+  });
+  const hasMore = rows.length > take;
+  const items = hasMore ? rows.slice(0, take) : rows;
+  return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
+}
+
+export async function markAllNotificationsRead(scope: InboxScope): Promise<number> {
+  const res = await getPrisma().adminNotification.updateMany({
+    where: { ...inboxWhere(scope), readAt: null },
+    data: { readAt: new Date(), snoozeUntil: null },
+  });
+  return res.count;
+}
+
+export async function markNotificationsRead(scope: InboxScope, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await getPrisma().adminNotification.updateMany({
+    where: { ...inboxWhere(scope), id: { in: ids } },
+    data: { readAt: new Date(), snoozeUntil: null },
+  });
+  return res.count;
+}
+
+export async function snoozeNotifications(scope: InboxScope, ids: string[], until: Date): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await getPrisma().adminNotification.updateMany({
+    where: { ...inboxWhere(scope), id: { in: ids } },
+    data: { snoozeUntil: until, readAt: null },
+  });
+  return res.count;
+}

@@ -8,6 +8,18 @@ export type LocationSettings = {
   id: string;
   name: string;
   slug: string;
+  disabled?: boolean | null;
+  businessName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+  timezone?: string | null;
+  logoUrl?: string | null;
   bookingNote?: string | null;
   passAccessUrl?: string | null;
   open24Hours?: boolean | null;
