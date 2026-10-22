@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
+import { getSquarePublicConfig } from "@/lib/square";
 import { SignupClient } from "./SignupClient";
 
 export const dynamic = "force-dynamic";
@@ -17,20 +18,25 @@ export default async function PublicSignupPage({
   const prisma = getPrisma();
   const form = await prisma.signupForm.findUnique({
     where: { slug: formSlug },
-    include: { location: { select: { id: true, name: true, slug: true, organizationId: true } } },
+    include: { location: { select: { id: true, name: true, slug: true, organizationId: true, taxRateBps: true, cardSurchargeBps: true, currency: true } } },
   });
 
   if (!form || !form.active) notFound();
 
-  // Resolve allowed plans
+  // Resolve allowed plans (+ location price overrides)
   const allowedPlanIds = (form.allowedPlanIds as string[] | null) ?? null;
-  const planWhere: any = { archived: false };
+  const planWhere: Record<string, unknown> = { archived: false, productType: { not: "DAY_PASS" } };
   if (allowedPlanIds && allowedPlanIds.length > 0) planWhere.id = { in: allowedPlanIds };
 
-  const plans = await prisma.membershipPlan.findMany({
-    where: planWhere,
-    orderBy: { name: "asc" },
-  });
+  const [plans, overrides, customFieldDefs] = await Promise.all([
+    prisma.membershipPlan.findMany({ where: planWhere, orderBy: { name: "asc" } }),
+    form.location ? prisma.membershipPricingOverride.findMany({ where: { locationId: form.location.id } }) : Promise.resolve([]),
+    (() => {
+      const ids = (form.customFieldIds as string[] | null) ?? [];
+      return ids.length ? prisma.customFieldDefinition.findMany({ where: { id: { in: ids } }, orderBy: { sortOrder: "asc" } }) : Promise.resolve([]);
+    })(),
+  ]);
+  const overrideByPlan = new Map(overrides.map((o) => [o.planId, o]));
 
   // UTM capture for downstream attribution
   const utm = {
@@ -42,6 +48,7 @@ export default async function PublicSignupPage({
   };
 
   const referralCode = typeof sp.ref === "string" ? sp.ref : null;
+  const square = getSquarePublicConfig();
 
   return (
     <SignupClient
@@ -54,20 +61,37 @@ export default async function PublicSignupPage({
         allowDiscountCode: form.allowDiscountCode,
         photoRequired: form.photoRequired,
         authSetup: form.authSetup,
-        location: form.location,
+        collectTax: form.collectTax,
+        requiredFields: (form.requiredFields as string[] | null) ?? [],
+        location: form.location
+          ? {
+              id: form.location.id,
+              name: form.location.name,
+              slug: form.location.slug,
+              organizationId: form.location.organizationId,
+              taxRateBps: form.location.taxRateBps,
+              cardSurchargeBps: square.configured ? form.location.cardSurchargeBps : 0,
+              currency: form.location.currency,
+            }
+          : null,
       }}
-      plans={plans.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        priceCents: p.priceCents,
-        signupFeeCents: p.signupFeeCents,
-        billingCadence: p.billingCadence,
-        productType: p.productType,
-        category: p.category,
-      }))}
+      plans={plans.map((p) => {
+        const o = overrideByPlan.get(p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          priceCents: o?.priceCents ?? p.priceCents,
+          signupFeeCents: o?.signupFeeCents ?? p.signupFeeCents,
+          billingCadence: p.billingCadence,
+          productType: p.productType,
+          category: p.category,
+        };
+      })}
+      customFields={customFieldDefs.map((d) => ({ id: d.id, name: d.name, type: d.type, required: d.required, options: (d.options as string[] | null) ?? null }))}
       utm={utm}
       referralCode={referralCode}
+      square={square}
     />
   );
 }
