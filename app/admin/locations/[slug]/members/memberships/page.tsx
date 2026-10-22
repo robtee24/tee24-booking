@@ -1,24 +1,12 @@
 import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { Button, Card, CardHeader, DataTable, EmptyState, PageHeader, StatusBadge, Money, type Column } from "@/components/ui";
+import { Button, Card, CardHeader, PageHeader } from "@/components/ui";
 import { AreaChart, BarChart, DonutChart, KpiCard } from "@/components/ui/charts";
-import { Plus, Package } from "lucide-react";
+import { Plus } from "lucide-react";
 import { subscriptionsByPlan, subscriptionStatusOverTime } from "@/lib/chart-data";
+import { PlansTable, type PlanRow } from "./PlansTable";
 
 export const dynamic = "force-dynamic";
-
-type PlanRow = {
-  id: string;
-  name: string;
-  productType: string;
-  category: string;
-  priceCents: number;
-  signupFeeCents: number;
-  billingCadence: string;
-  archived: boolean;
-  durationDays: number | null;
-  _count: { subscriptions: number };
-};
 
 export default async function MembershipsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -56,49 +44,6 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
 
   const mrrTrend = statusOverTime.map((s) => ({ y: s.active }));
 
-  const cols: Column<PlanRow>[] = [
-    {
-      key: "name",
-      header: "Plan",
-      cell: (r) => (
-        <div>
-          <div className="font-medium text-apple-text">{r.name}</div>
-          <div className="text-apple-xs text-apple-text-tertiary">{r.productType.replace("_", " ")} · {r.category}</div>
-        </div>
-      ),
-    },
-    {
-      key: "price",
-      header: "Price",
-      cell: (r) => (
-        <div>
-          <Money cents={r.priceCents} className="font-medium text-apple-text" />
-          <div className="text-apple-xs text-apple-text-tertiary">/ {r.billingCadence.toLowerCase()}</div>
-        </div>
-      ),
-    },
-    {
-      key: "signup",
-      header: "Signup fee",
-      cell: (r) => <Money cents={r.signupFeeCents} className="text-apple-sm text-apple-text-secondary" />,
-    },
-    {
-      key: "duration",
-      header: "Duration",
-      cell: (r) => <span className="text-apple-sm text-apple-text-secondary">{r.durationDays ? `${r.durationDays} days` : "—"}</span>,
-    },
-    {
-      key: "subs",
-      header: "Active subs",
-      align: "right",
-      cell: (r) => <span className="tabular-nums text-apple-text">{r._count.subscriptions}</span>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (r) => r.archived ? <StatusBadge status="CANCELLED" size="sm" /> : <StatusBadge status="ACTIVE" size="sm" />,
-    },
-  ];
 
   return (
     <div className="space-y-6">
@@ -181,23 +126,7 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
       )}
 
       <Card padded={false}>
-        <DataTable
-          columns={cols}
-          rows={plans}
-          rowKey={(p) => p.id}
-          empty={
-            <EmptyState
-              icon={<Package className="h-6 w-6" />}
-              title="No plans yet"
-              description="Create your first membership, day pass, or visitor pass."
-              action={
-                <Link href={`/admin/locations/${slug}/members/memberships/new`}>
-                  <Button iconLeft={<Plus className="h-4 w-4" />}>New plan</Button>
-                </Link>
-              }
-            />
-          }
-        />
+        <PlansTable plans={plans} newHref={`/admin/locations/${slug}/members/memberships/new`} />
       </Card>
     </div>
   );

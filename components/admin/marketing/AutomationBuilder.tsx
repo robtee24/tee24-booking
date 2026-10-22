@@ -59,13 +59,13 @@ export function draftFromAutomation(a: AutomationLike): AutomationDraft {
   };
 }
 
-export function AutomationBuilder({ initial, options }: { initial: AutomationDraft; options: BuilderOptions }) {
+export function AutomationBuilder({ initial, options }: { initial?: AutomationDraft; options: BuilderOptions }) {
   const api = useMarketingApi();
   const router = useRouter();
   const { slug } = useAdminLocation();
   const { toast } = useToast();
   const onError = useErrorToast();
-  const [d, setD] = React.useState<AutomationDraft>(initial);
+  const [d, setD] = React.useState<AutomationDraft>(() => initial ?? emptyDraft());
   const [saving, setSaving] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const isNew = !d.id;
