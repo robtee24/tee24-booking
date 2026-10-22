@@ -53,6 +53,12 @@ model Organization {
   defaultTimezone  String   @default("America/New_York")
   paypalAccount    String?
   squareLocationId String?
+  // Comms settings
+  emailEnabled     Boolean  @default(true)
+  smsEnabled       Boolean  @default(true)
+  bccEmail         String?
+  replyToEmail     String?
+  emailFooter      String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -109,6 +115,20 @@ model Location {
   state        String?
   zip          String?
   country      String? @default("US")
+
+  // Contact / branding
+  phone        String?
+  email        String?
+  businessName String?
+  logoUrl      String?
+
+  // Billing settings
+  currency         String @default("USD")
+  taxRateBps       Int    @default(0) // basis points, 825 = 8.25%
+  cardSurchargeBps Int    @default(0)
+  dunningRetryDays Json? // e.g. [1, 3, 7]
+  lateFeeCents     Int    @default(0)
+  overdueBlockDays Int? // null = never block access for overdue invoices
 
   bays                    Bay[]
   bookings                Booking[]
@@ -192,6 +212,9 @@ model Admin {
   role             AdminRole @default(SCOPED)
   twoFactorEnabled Boolean   @default(false)
   twoFactorSecret  String?
+  frontDeskPinHash String?
+  inviteStatus     String    @default("ACTIVE") // INVITED | ACTIVE
+  invitedAt        DateTime?
   lastLoginAt      DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -362,6 +385,10 @@ model Member {
   familyAccountId String?
 
   // Door access state mirror (read from AccessSync)
+  checkinCode         String? // 4-6 digit front-desk code, unique per location
+  guardianName        String?
+  acquisitionSource   String?
+  mergedIntoId        String? // set when this record was merged into another member
   kisiAccessEnabled   Boolean   @default(false)
   kisiAccessReason    String?
   kisiAccessUpdatedAt DateTime?
@@ -394,6 +421,7 @@ model Member {
   updatedAt DateTime @updatedAt
 
   @@unique([locationId, email])
+  @@unique([locationId, checkinCode])
   @@index([locationId, status])
   @@index([locationId, phone])
   @@index([email])
@@ -489,6 +517,8 @@ model MembershipPlan {
   autoEnrollAutomationIds Json?
   // Kisi door groups granted by this plan (per location, JSON map)
   kisiDoorGroups          Json?
+  glCode                  String?
+  incomeCategory          String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -539,6 +569,12 @@ model MembershipSubscription {
   freezeResumeDate DateTime?
   freezeReason     String?
   freezeFeeCents   Int?
+
+  // Recurring billing
+  nextInvoiceDate     DateTime?
+  autoRenew           Boolean   @default(true)
+  cancelRequestedAt   DateTime?
+  cancelRequestReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -604,7 +640,12 @@ model Invoice {
   squareInvoiceId String?   @unique
 
   // Internal/admin only notes (not visible to member)
-  adminNotes String?
+  adminNotes        String?
+  surchargeCents    Int       @default(0)
+  attemptCount      Int       @default(0)
+  nextRetryAt       DateTime?
+  lastFailureReason String?
+  payToken          String?   @unique @default(cuid())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1044,7 +1085,11 @@ model Visitor {
   phone     String?
 
   notes               String?
-  convertedToMemberId String? @unique
+  tags                Json?
+  assignedToId        String?
+  nextFollowUpAt      DateTime?
+  lastContactedAt     DateTime?
+  convertedToMemberId String?   @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1138,6 +1183,7 @@ model MessageTemplate {
   channel        String
   // CATEGORY: TRANSACTIONAL | MARKETING | SYSTEM
   category       String        @default("MARKETING")
+  eventKey       String? // system templates: e.g. "member.welcome", "payment.failed"
   subject        String? // for email
   body           String // text or HTML
   // Merge fields documented in code; not enforced in schema
@@ -1145,6 +1191,8 @@ model MessageTemplate {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, eventKey, channel])
 }
 
 model Conversation {
@@ -1476,20 +1524,20 @@ model Otp {
  * =========================
  */
 model BayAppRegistration {
-  id         String   @id @default(uuid())
-  locationId String
-  bayNumber  Int
-  deviceId   String   @unique
+  id           String    @id @default(uuid())
+  locationId   String
+  bayNumber    Int
+  deviceId     String    @unique
   /// Last time the kiosk polled /api/bay-app/status (used for "online" indicator in admin)
-  lastSeenAt DateTime?
+  lastSeenAt   DateTime?
   /// Kiosk app version reported on last poll
-  appVersion String?
+  appVersion   String?
   /// Hostname of the bay PC, reported on registration
-  hostname   String?
+  hostname     String?
   /// Remote-support agent node id (MeshCentral), reported by the kiosk once the agent is installed
   remoteNodeId String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
@@ -1511,4 +1559,101 @@ model MlModel {
   createdAt DateTime @default(now())
 
   @@index([kind, active])
+}
+
+// =========================
+// Point of sale (lean)
+// =========================
+
+model ProductCategory {
+  id             String   @id @default(cuid())
+  organizationId String?
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  products Product[]
+
+  @@unique([organizationId, name])
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  organizationId String?
+  locationId     String? // null = all locations
+  categoryId     String?
+  name           String
+  description    String?
+  sku            String?
+  priceCents     Int
+  cogsCents      Int?
+  taxable        Boolean  @default(true)
+  trackInventory Boolean  @default(false)
+  inventory      Int      @default(0)
+  lowStockAt     Int?
+  imageUrl       String?
+  glCode         String?
+  incomeCategory String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category  ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  lineItems SaleLineItem[]
+
+  @@index([organizationId, active])
+}
+
+model Sale {
+  id             String    @id @default(cuid())
+  number         Int       @default(autoincrement())
+  organizationId String?
+  locationId     String
+  memberId       String?
+  customerName   String?
+  customerEmail  String?
+  staffId        String?
+  status         String    @default("PAID") // PAID | REFUNDED | VOID | PENDING
+  paymentKind    String    @default("CARD") // CARD | CASH | CREDIT | GIFT_CARD | OTHER
+  chargeId       String?
+  giftCardId     String?
+  subtotalCents  Int       @default(0)
+  discountCents  Int       @default(0)
+  taxCents       Int       @default(0)
+  totalCents     Int       @default(0)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  refundedAt     DateTime?
+
+  lineItems SaleLineItem[]
+
+  @@index([locationId, createdAt])
+}
+
+model SaleLineItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  productId   String?
+  description String
+  quantity    Int     @default(1)
+  unitCents   Int
+  totalCents  Int
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model GiftCard {
+  id                String    @id @default(cuid())
+  organizationId    String?
+  code              String    @unique
+  initialCents      Int
+  balanceCents      Int
+  purchaserMemberId String?
+  recipientName     String?
+  recipientEmail    String?
+  status            String    @default("ACTIVE") // ACTIVE | DEPLETED | VOID
+  expiresAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
