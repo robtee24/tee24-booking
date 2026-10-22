@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
 import { getSquarePublicConfig } from "@/lib/square";
 import { SignupClient } from "./SignupClient";
+import { requiredSignupInputKeys } from "@/lib/signup-form-config";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function PublicSignupPage({
         photoRequired: form.photoRequired,
         authSetup: form.authSetup,
         collectTax: form.collectTax,
-        requiredFields: (form.requiredFields as string[] | null) ?? [],
+        requiredFields: requiredSignupInputKeys(form.requiredFields, { photoRequired: form.photoRequired }),
         location: form.location
           ? {
               id: form.location.id,

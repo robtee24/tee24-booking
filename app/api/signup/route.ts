@@ -8,6 +8,7 @@ import { isSquareConfigured } from "@/lib/square";
 import { createInvoice, ensurePayToken, publicPayUrl, runCharge, vaultCard } from "@/services/billing.service";
 import { computeDiscountCents, describeDiscount, redeemDiscountForMember, validateDiscount } from "@/services/discount.service";
 import { recordReferral } from "@/services/referral.service";
+import { requiredSignupInputKeys } from "@/lib/signup-form-config";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
     const location = form.location;
 
     // Required-field overrides configured on the form
-    const requiredFields = (form.requiredFields as string[] | null) ?? [];
+    const requiredFields = requiredSignupInputKeys(form.requiredFields, { photoRequired: form.photoRequired });
     const provided: Record<string, unknown> = { dob, addressLine1, city, state, zip };
     for (const key of requiredFields) {
       if (key in provided && !provided[key]) return NextResponse.json({ error: `${key} is required` }, { status: 400 });

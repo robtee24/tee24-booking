@@ -96,6 +96,22 @@ export function parseSignupFieldConfig(raw: unknown, opts?: { photoRequired?: bo
   return out;
 }
 
+/**
+ * Flatten `SignupForm.requiredFields` (object or legacy array) into the list of
+ * *input* keys the public renderer / API treat as required. "address" expands to
+ * the individual address inputs. Safe for either stored shape.
+ */
+export function requiredSignupInputKeys(raw: unknown, opts?: { photoRequired?: boolean }): string[] {
+  const cfg = parseSignupFieldConfig(raw, opts);
+  const out: string[] = [];
+  for (const k of SIGNUP_FIELD_KEYS) {
+    if (cfg[k] !== "required") continue;
+    if (k === "address") out.push("addressLine1", "city", "state", "zip");
+    else out.push(k);
+  }
+  return out;
+}
+
 /** Normalise an unknown Json value into a string[] (ids). */
 export function parseIdList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
