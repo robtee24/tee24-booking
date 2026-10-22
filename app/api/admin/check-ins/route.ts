@@ -11,6 +11,7 @@ import { kisiConfigured } from "@/lib/kisi";
 import {
   getCheckInOverview,
   getCheckInsByMember,
+  getDailyCheckIns,
   listCheckIns,
   syncKisiUnlockEvents,
   type CheckInRange,
@@ -39,6 +40,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ range, overview });
   }
 
+  if (view === "daily") {
+    const days = Math.min(Math.max(Number(sp.get("days") ?? 30), 1), 90);
+    const ids = locationId ? [locationId] : isFullAccess(admin.role) ? undefined : adminLocIds;
+    const daily = await getDailyCheckIns({ days, locationIds: ids });
+    return NextResponse.json({ daily });
+  }
+
   if (view === "by-member") {
     if (!locationId) return NextResponse.json({ error: "locationId required" }, { status: 400 });
     const rows = await getCheckInsByMember({ range, locationId });
@@ -49,19 +57,21 @@ export async function GET(req: NextRequest) {
   const offset = Math.max(Number(sp.get("offset") ?? 0), 0);
   const q = sp.get("q") ?? undefined;
   const memberId = sp.get("memberId") ?? undefined;
+  const dayParam = sp.get("day");
+  const day = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : undefined;
 
-  // Scoped admins without an explicit location: restrict to their locations.
-  if (!locationId && !isFullAccess(admin.role)) {
-    const results = await Promise.all(
-      adminLocIds.map((id) => listCheckIns({ range, locationId: id, q, memberId, limit, offset }))
-    );
-    const rows = results.flatMap((r) => r.rows).sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime()).slice(0, limit);
-    const total = results.reduce((s, r) => s + r.total, 0);
-    return NextResponse.json({ range, rows, total });
-  }
-
-  const r = await listCheckIns({ range, locationId, q, memberId, limit, offset });
-  return NextResponse.json({ range, ...r });
+  const r = await listCheckIns({
+    range,
+    locationId,
+    // Scoped admins without an explicit location: restrict to their locations.
+    locationIds: !locationId && !isFullAccess(admin.role) ? adminLocIds : undefined,
+    q,
+    memberId,
+    day,
+    limit,
+    offset,
+  });
+  return NextResponse.json({ range, day: day ?? null, ...r });
 }
 
 export async function POST(req: NextRequest) {

@@ -11,7 +11,7 @@ import React from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, DoorOpen, RefreshCw, Search, UserRound } from "lucide-react";
 import { Badge, Button, Card, CardHeader, EmptyState, Input, useToast } from "@/components/ui";
-import { KpiCard } from "@/components/ui/charts";
+import { BarChart, CHART_COLORS, KpiCard } from "@/components/ui/charts";
 import { adminRoutes } from "@/lib/admin/routes";
 
 type Range = "today" | "7d" | "30d" | "90d" | "all";
@@ -47,6 +47,21 @@ type Overview = {
   }>;
 };
 type ByMember = Array<{ member: Member; count: number; lastAt: string | null }>;
+type Daily = {
+  days: string[];
+  locations: Array<{ id: string; name: string; slug: string }>;
+  rows: Array<{ day: string; total: number } & Record<string, number | string>>;
+};
+const SERIES_COLORS = [CHART_COLORS.blue, CHART_COLORS.green, CHART_COLORS.orange, CHART_COLORS.purple];
+
+function dayLabel(day: string, opts: { long?: boolean } = {}) {
+  const [y, m, d] = day.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  return new Intl.DateTimeFormat(
+    "en-US",
+    opts.long ? { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric" } : { timeZone: "UTC", month: "short", day: "numeric" }
+  ).format(dt);
+}
 
 export type CheckInsScope =
   | { kind: "org" }
@@ -93,6 +108,8 @@ export function CheckInsClient({
   const [expandedLoc, setExpandedLoc] = React.useState<string | null>(null);
   const [byMember, setByMember] = React.useState<Record<string, ByMember | "loading">>({});
   const [memberFilter, setMemberFilter] = React.useState<Member | null>(null);
+  const [daily, setDaily] = React.useState<Daily | null>(null);
+  const [dayFilter, setDayFilter] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
@@ -106,7 +123,7 @@ export function CheckInsClient({
     try {
       const qs = `range=${range}${locParam}${debouncedQ ? `&q=${encodeURIComponent(debouncedQ)}` : ""}${
         memberFilter ? `&memberId=${encodeURIComponent(memberFilter.id)}` : ""
-      }&limit=200`;
+      }${dayFilter ? `&day=${dayFilter}` : ""}&limit=${dayFilter ? 500 : 200}`;
       const [ov, list] = await Promise.all([
         fetch(`/api/admin/check-ins?range=${range}&view=overview`, { cache: "no-store" }).then((r) => r.json()),
         fetch(`/api/admin/check-ins?${qs}`, { cache: "no-store" }).then((r) => r.json()),
@@ -119,7 +136,16 @@ export function CheckInsClient({
     } finally {
       setLoading(false);
     }
-  }, [range, locParam, debouncedQ, memberFilter, toast]);
+  }, [range, locParam, debouncedQ, memberFilter, dayFilter, toast]);
+
+  const loadDaily = React.useCallback(async () => {
+    const r = await fetch(`/api/admin/check-ins?view=daily&days=30${locParam}`, { cache: "no-store" }).then((r) => r.json());
+    setDaily(r.daily ?? null);
+  }, [locParam]);
+
+  React.useEffect(() => {
+    void loadDaily();
+  }, [loadDaily]);
 
   React.useEffect(() => {
     void load();
@@ -161,7 +187,7 @@ export function CheckInsClient({
         title: "Synced with Kisi",
         description: data.skipped ? "Kisi not configured" : `${data.fetched} unlocks fetched · ${data.ingested} check-ins`,
       });
-      await load();
+      await Promise.all([load(), loadDaily()]);
     } catch (e) {
       toast({ tone: "error", title: "Sync failed", description: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -176,16 +202,16 @@ export function CheckInsClient({
   const kpis =
     scope.kind === "org"
       ? [
-          { label: "Total check-ins", value: overview?.total ?? "—", hint: RANGE_LABEL[range] },
+          { label: "Total check-ins", value: overview?.total ?? "—", hint: `${RANGE_LABEL[range]} · repeat opens within 2 hrs count once` },
+          { label: "Usage", value: overview?.uniqueMembers ?? "—", hint: "Members who checked in (grouped by member)" },
           { label: "Matched to members", value: overview?.matched ?? "—", hint: "Kisi email ↔ member email" },
-          { label: "Unique members", value: overview?.uniqueMembers ?? "—", hint: RANGE_LABEL[range] },
-          { label: "Unmatched unlocks", value: overview?.unmatched ?? "—", hint: "No member with that email" },
+          { label: "Unmatched unlocks", value: overview?.unmatched ?? "—", hint: "Guests / no member with that email" },
         ]
       : [
-          { label: "Check-ins", value: locStats?.total ?? "—", hint: RANGE_LABEL[range] },
+          { label: "Total check-ins", value: locStats?.total ?? "—", hint: `${RANGE_LABEL[range]} · repeat opens within 2 hrs count once` },
+          { label: "Usage", value: locStats?.uniqueMembers ?? "—", hint: "Members who checked in (grouped by member)" },
           { label: "Today", value: locStats?.today ?? "—", hint: "Since midnight" },
-          { label: "Unique members", value: locStats?.uniqueMembers ?? "—", hint: RANGE_LABEL[range] },
-          { label: "Unmatched unlocks", value: locStats ? locStats.total - locStats.matched : "—", hint: "No member with that email" },
+          { label: "Unmatched unlocks", value: locStats ? locStats.total - locStats.matched : "—", hint: "Guests / no member with that email" },
         ];
 
   // Group feed by day (in the row's location timezone)
@@ -255,10 +281,47 @@ export function CheckInsClient({
         ))}
       </div>
 
+      <Card>
+        <CardHeader
+          title="Daily check-ins · last 30 days"
+          subtitle={
+            dayFilter
+              ? `Showing ${dayLabel(dayFilter, { long: true })} in the list below.`
+              : scope.kind === "org"
+                ? "Total check-ins per day at each location. Click a day to see everyone who checked in."
+                : "Total check-ins per day. Click a day to see everyone who checked in."
+          }
+          action={
+            dayFilter ? (
+              <Button variant="secondary" size="sm" onClick={() => setDayFilter(null)}>
+                Clear day
+              </Button>
+            ) : undefined
+          }
+        />
+        <div className="mt-4">
+          {daily ? (
+            <BarChart
+              data={daily.rows}
+              xKey="day"
+              series={daily.locations.map((l, i) => ({ key: l.id, label: l.name, color: SERIES_COLORS[i % SERIES_COLORS.length] }))}
+              height={260}
+              showLegend={daily.locations.length > 1}
+              onBarClick={(row) => setDayFilter((cur) => (cur === row.day ? null : String(row.day)))}
+              activeX={dayFilter}
+              xTickFormatter={(v) => dayLabel(String(v))}
+              tooltipLabelFormatter={(v) => dayLabel(String(v), { long: true })}
+            />
+          ) : (
+            <div className="h-[260px] animate-pulse rounded-apple bg-apple-fill-secondary" />
+          )}
+        </div>
+      </Card>
+
       {scope.kind === "org" && (
         <Card padded={false}>
           <div className="px-5 pt-5">
-            <CardHeader title="Check-ins by location" subtitle="Expand a location to see which members checked in." />
+            <CardHeader title="Check-ins by location" subtitle="Expand a location to see which members checked in (usage)." />
           </div>
           <div className="mt-4 divide-y divide-apple-divider border-t border-apple-divider">
             {(overview?.byLocation ?? []).map((b) => {
@@ -275,7 +338,7 @@ export function CheckInsClient({
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-apple-text">{b.location.name}</div>
                       <div className="text-apple-xs text-apple-text-tertiary">
-                        {b.uniqueMembers} unique member{b.uniqueMembers === 1 ? "" : "s"} · {b.today} today
+                        Usage: {b.uniqueMembers} member{b.uniqueMembers === 1 ? "" : "s"} · {b.today} today
                       </div>
                     </div>
                     <div className="text-right">
@@ -337,11 +400,17 @@ export function CheckInsClient({
       <Card padded={false}>
         <div className="flex flex-col gap-3 px-5 pt-5 sm:flex-row sm:items-center sm:justify-between">
           <CardHeader
-            title={memberFilter ? `${memberFilter.firstName} ${memberFilter.lastName}` : "Door unlocks"}
+            title={
+              memberFilter
+                ? `${memberFilter.firstName} ${memberFilter.lastName}`
+                : dayFilter
+                  ? `Check-ins on ${dayLabel(dayFilter, { long: true })}`
+                  : "Door unlocks"
+            }
             subtitle={
               memberFilter
                 ? `${total} check-in${total === 1 ? "" : "s"} · `
-                : `${total} check-in${total === 1 ? "" : "s"} in ${RANGE_LABEL[range].toLowerCase()} · exact unlock time${
+                : `${total} check-in${total === 1 ? "" : "s"} ${dayFilter ? "that day" : `in ${RANGE_LABEL[range].toLowerCase()}`} · exact unlock time${
                     scope.kind === "org" ? " and location" : ""
                   }`
             }
@@ -349,6 +418,11 @@ export function CheckInsClient({
             {memberFilter && (
               <button type="button" onClick={() => setMemberFilter(null)} className="text-apple-sm text-apple-blue hover:underline">
                 Show everyone
+              </button>
+            )}
+            {!memberFilter && dayFilter && (
+              <button type="button" onClick={() => setDayFilter(null)} className="text-apple-sm text-apple-blue hover:underline">
+                Back to {RANGE_LABEL[range].toLowerCase()}
               </button>
             )}
           </CardHeader>

@@ -280,6 +280,22 @@ export function startOfDayInTz(timeZone: string, now = new Date()): Date {
   return new Date(now.getTime() - elapsedMs);
 }
 
+/** YYYY-MM-DD for an instant in a timezone. */
+export function dayKeyInTz(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+/** [start, end) UTC instants for a YYYY-MM-DD calendar day in a timezone. */
+export function dayBoundsInTz(day: string, timeZone: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  // Start from noon UTC on that date (safely inside the day in any tz), then walk back to local midnight.
+  const noon = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
+  const start = startOfDayInTz(timeZone, noon);
+  const end = startOfDayInTz(timeZone, new Date(start.getTime() + 36 * 60 * 60 * 1000));
+  return { start, end };
+}
+
 export function rangeStart(range: CheckInRange, timeZone = DEFAULT_TZ, now = new Date()): Date | null {
   if (range === "all") return null;
   if (range === "today") return startOfDayInTz(timeZone, now);
@@ -316,18 +332,36 @@ export type CheckInRow = {
 export async function listCheckIns(opts: {
   range: CheckInRange;
   locationId?: string;
+  /** Restrict to visible locations (scoped admins). */
+  locationIds?: string[];
   memberId?: string;
+  /** YYYY-MM-DD in each location's timezone; overrides range. */
+  day?: string;
   limit?: number;
   offset?: number;
   q?: string;
 }): Promise<{ rows: CheckInRow[]; total: number }> {
   const prisma = getPrisma();
   const q = opts.q?.trim();
-  const tz = opts.locationId
-    ? (await prisma.location.findUnique({ where: { id: opts.locationId }, select: { timezone: true } }))?.timezone ?? DEFAULT_TZ
-    : DEFAULT_TZ;
+  const locations = await prisma.location.findMany({
+    where: opts.locationId ? { id: opts.locationId } : opts.locationIds ? { id: { in: opts.locationIds } } : {},
+    select: { id: true, timezone: true },
+  });
+  const tz = locations[0]?.timezone ?? DEFAULT_TZ;
+  const scopeFilter: Prisma.VisitWhereInput = opts.day
+    ? {
+        source: "KISI",
+        OR: locations
+          .map((l) => ({ l, b: dayBoundsInTz(opts.day!, l.timezone) }))
+          .filter((x) => x.b)
+          .map(({ l, b }) => ({ locationId: l.id, enteredAt: { gte: b!.start, lt: b!.end } })),
+      }
+    : {
+        ...visitWhere(opts.range, opts.locationId, tz),
+        ...(!opts.locationId && opts.locationIds ? { locationId: { in: opts.locationIds } } : {}),
+      };
   const where: Prisma.VisitWhereInput = {
-    ...visitWhere(opts.range, opts.locationId, tz),
+    ...scopeFilter,
     ...(opts.memberId ? { memberId: opts.memberId } : {}),
     ...(q
       ? {
@@ -481,4 +515,53 @@ export async function getCheckInsByMember(opts: { range: CheckInRange; locationI
       lastAt: g._max.enteredAt,
     }))
     .filter((r) => r.member);
+}
+
+export type DailyCheckIns = {
+  days: string[]; // YYYY-MM-DD, oldest first
+  locations: Array<{ id: string; name: string; slug: string }>;
+  rows: Array<{ day: string; total: number } & Record<string, number | string>>; // per-location counts keyed by location id
+};
+
+/** Check-ins per calendar day (in each location's timezone) for the last N days. */
+export async function getDailyCheckIns(opts: { days?: number; locationIds?: string[] } = {}): Promise<DailyCheckIns> {
+  const prisma = getPrisma();
+  const days = Math.min(Math.max(opts.days ?? 30, 1), 90);
+  const locations = await prisma.location.findMany({
+    where: opts.locationIds ? { id: { in: opts.locationIds } } : {},
+    select: { id: true, name: true, slug: true, timezone: true },
+    orderBy: { name: "asc" },
+  });
+  const now = new Date();
+  // Window: from (days-1) days before today's local midnight → now. Use the earliest midnight across tz's.
+  const since = new Date(
+    Math.min(...locations.map((l) => startOfDayInTz(l.timezone, now).getTime()), now.getTime()) - (days - 1) * 86400000
+  );
+  const visits = await prisma.visit.findMany({
+    where: { source: "KISI", locationId: { in: locations.map((l) => l.id) }, enteredAt: { gte: since } },
+    select: { locationId: true, enteredAt: true },
+  });
+  const tzById = new Map(locations.map((l) => [l.id, l.timezone]));
+  const counts = new Map<string, Map<string, number>>(); // day -> locationId -> n
+  for (const v of visits) {
+    const key = dayKeyInTz(v.enteredAt, tzById.get(v.locationId) ?? DEFAULT_TZ);
+    const m = counts.get(key) ?? new Map();
+    m.set(v.locationId, (m.get(v.locationId) ?? 0) + 1);
+    counts.set(key, m);
+  }
+  // Build a continuous day axis using the first location's tz (all US locations share the calendar day label).
+  const axisTz = locations[0]?.timezone ?? DEFAULT_TZ;
+  const dayList: string[] = [];
+  for (let i = days - 1; i >= 0; i--) dayList.push(dayKeyInTz(new Date(now.getTime() - i * 86400000), axisTz));
+  const rows = dayList.map((day) => {
+    const m = counts.get(day);
+    const row: { day: string; total: number } & Record<string, number | string> = { day, total: 0 };
+    for (const l of locations) {
+      const n = m?.get(l.id) ?? 0;
+      row[l.id] = n;
+      row.total += n;
+    }
+    return row;
+  });
+  return { days: dayList, locations: locations.map(({ timezone: _tz, ...l }) => l), rows };
 }

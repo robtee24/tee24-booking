@@ -104,7 +104,7 @@ model Location {
   bayAppAutoCancelOnTimeout Boolean @default(false)
 
   // Attendance / Door dedupe window (hours between unlocks counted as same visit)
-  attendanceDedupeHours     Int @default(8)
+  attendanceDedupeHours     Int @default(2)
   // Reservation matching buffer (minutes around booking window to count as a Reservation visit)
   reservationMatchBufferMin Int @default(15)
 
