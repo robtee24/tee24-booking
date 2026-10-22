@@ -1,0 +1,78 @@
+name: Kiosk release
+
+# Builds the Windows installer for the Tee24 Bay Kiosk and publishes it as a
+# GitHub release. The kiosk auto-updates from these releases (electron-updater),
+# and reservations.tee24.golf/desktop-app/download always points at the newest one.
+#
+# Release a new version:
+#   git tag kiosk-v1.2.3 && git push origin kiosk-v1.2.3
+# or run this workflow manually with a version.
+
+on:
+  push:
+    tags: ["kiosk-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kiosk-release
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: bay-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bay-app/package-lock.json
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#kiosk-v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Building kiosk v$V"
+
+      - name: Install
+        run: npm ci
+
+      - name: Set package version
+        shell: bash
+        run: npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build installer
+        run: npm run release
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: kiosk-v${{ steps.ver.outputs.version }}
+        run: |
+          ls -la release
+          # electron-updater reads latest.yml from the repo's *latest* release and
+          # downloads the installer from releases/download/<tag>/. The tag name itself
+          # can be anything, so we keep the kiosk-v prefix.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/*.exe release/*.blockmap release/latest.yml --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" release/*.exe release/*.blockmap release/latest.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Tee24 Bay Kiosk v${{ steps.ver.outputs.version }}" \
+              --notes "Windows installer for the Tee24 Bay Kiosk. Installed kiosks update to this version automatically the next time they open. Download: https://reservations.tee24.golf/desktop-app" \
+              --latest
+          fi
