@@ -1,6 +1,11 @@
+import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { Card, EmptyState, PageHeader, Button, StatusBadge } from "@/components/ui";
-import { Plus, Sparkles } from "lucide-react";
+import { Button, PageHeader } from "@/components/ui";
+import { Settings2 } from "lucide-react";
+import { adminRoutes } from "@/lib/admin/routes";
+import { listMarketingTemplates, MARKETING_MERGE_FIELDS } from "@/services/marketing.service";
+import { SAMPLE_MEMBER_VARS } from "@/lib/system-templates";
+import { TemplatesClient } from "@/components/admin/marketing/TemplatesClient";
 
 export const dynamic = "force-dynamic";
 
@@ -10,31 +15,24 @@ export default async function TemplatesPage({ params }: { params: Promise<{ slug
   const location = await prisma.location.findUnique({ where: { slug } });
   if (!location) return null;
 
-  const templates = await prisma.messageTemplate.findMany({
-    where: { OR: [{ organizationId: location.organizationId }, { organizationId: null }] },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-  });
+  const templates = await listMarketingTemplates(location.organizationId);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Templates" description="Reusable email & SMS bodies with merge fields." actions={<Button iconLeft={<Plus className="h-4 w-4" />}>New template</Button>} />
-      {templates.length === 0 ? (
-        <EmptyState icon={<Sparkles className="h-6 w-6" />} title="No templates yet" />
-      ) : (
-        <Card padded={false}>
-          <ul className="divide-y divide-apple-divider">
-            {templates.map((t) => (
-              <li key={t.id} className="flex items-center justify-between p-4">
-                <div>
-                  <div className="font-medium text-apple-text">{t.name}</div>
-                  <div className="text-apple-xs text-apple-text-tertiary">{t.channel} · {t.category}{t.subject ? ` · ${t.subject}` : ""}</div>
-                </div>
-                <StatusBadge status={t.active ? "ACTIVE" : "CANCELLED"} size="sm" />
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      <PageHeader
+        title="Templates"
+        description="Reusable email & SMS bodies for broadcasts and automation steps. System notifications (welcome, receipts, failed payments) live in Settings → Communications."
+        actions={
+          <Link href={adminRoutes.loc.settings.comms(slug)}>
+            <Button variant="secondary" iconLeft={<Settings2 className="h-4 w-4" />}>System messages</Button>
+          </Link>
+        }
+      />
+      <TemplatesClient
+        initial={templates.map((t) => ({ id: t.id, name: t.name, channel: t.channel, category: t.category, subject: t.subject, body: t.body, active: t.active, organizationId: t.organizationId, updatedAt: t.updatedAt.toISOString() }))}
+        mergeFields={MARKETING_MERGE_FIELDS}
+        sample={SAMPLE_MEMBER_VARS as Record<string, string>}
+      />
     </div>
   );
 }

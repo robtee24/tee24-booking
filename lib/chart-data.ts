@@ -222,27 +222,32 @@ export async function topMembersByVisits(opts: { locationId: string; limit: numb
     .filter((x): x is { name: string; visits: number } => Boolean(x));
 }
 
-/** Visitor → Member conversion funnel for the trailing N days. */
+// Lead pipeline stages live in a client-safe module; re-exported here for server callers.
+export { LEAD_STAGES, normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
+import { normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
+
+/** Stages that count as "reached at least X" for funnel math. */
+const STAGE_RANK: Record<LeadStage, number> = { NEW: 0, CONTACTED: 1, BOOKED: 2, TRIAL: 3, CONVERTED: 4, LOST: -1 };
+
+function reached(stage: LeadStage, target: LeadStage): boolean {
+  if (stage === "LOST") return false;
+  return STAGE_RANK[stage] >= STAGE_RANK[target];
+}
+
+/** Lead → Member conversion funnel for the trailing N days. */
 export async function visitorFunnel(opts: { locationId: string; days: number }) {
   const start = new Date();
   start.setDate(start.getDate() - opts.days);
-  const [leads, engaged, converted] = await Promise.all([
-    getPrisma().visitor.count({ where: { locationId: opts.locationId, createdAt: { gte: start } } }),
-    getPrisma().visitor.count({
-      where: {
-        locationId: opts.locationId,
-        createdAt: { gte: start },
-        stage: { in: ["ENGAGED", "CONVERTED"] },
-      },
-    }),
-    getPrisma().visitor.count({
-      where: { locationId: opts.locationId, createdAt: { gte: start }, stage: "CONVERTED" },
-    }),
-  ]);
+  const rows = await getPrisma().visitor.findMany({
+    where: { locationId: opts.locationId, createdAt: { gte: start } },
+    select: { stage: true },
+  });
+  const stages = rows.map((r) => normalizeLeadStage(r.stage));
   return [
-    { label: "Leads captured", value: leads },
-    { label: "Engaged", value: engaged },
-    { label: "Converted to member", value: converted },
+    { label: "Leads captured", value: stages.length },
+    { label: "Contacted", value: stages.filter((s) => reached(s, "CONTACTED")).length },
+    { label: "Booked / trial", value: stages.filter((s) => reached(s, "BOOKED")).length },
+    { label: "Converted to member", value: stages.filter((s) => s === "CONVERTED").length },
   ];
 }
 
@@ -305,4 +310,59 @@ export async function revenueByPlan(opts: { locationId: string; start: Date; end
     byKey.set(k, row);
   }
   return Array.from(byKey.values()).sort((a, b) => b.netCents - a.netCents);
+}
+
+/**
+ * Acquisition funnel broken down by source: leads → contacted → booked/trial →
+ * converted → churned (converted members whose status is now CANCELLED).
+ */
+export async function acquisitionFunnelBySource(opts: { locationId: string; days: number }) {
+  const start = new Date();
+  start.setDate(start.getDate() - opts.days);
+  const prisma = getPrisma();
+  const rows = await prisma.visitor.findMany({
+    where: { locationId: opts.locationId, createdAt: { gte: start } },
+    select: { source: true, stage: true, convertedToMemberId: true },
+  });
+  const memberIds = rows.map((r) => r.convertedToMemberId).filter((x): x is string => !!x);
+  const churned = new Set(
+    memberIds.length
+      ? (
+          await prisma.member.findMany({
+            where: { id: { in: memberIds }, status: "CANCELLED" },
+            select: { id: true },
+          })
+        ).map((m) => m.id)
+      : [],
+  );
+  const bySource = new Map<string, { source: string; leads: number; contacted: number; booked: number; converted: number; churned: number }>();
+  for (const r of rows) {
+    const key = r.source?.trim() || "Unknown";
+    const cur = bySource.get(key) ?? { source: key, leads: 0, contacted: 0, booked: 0, converted: 0, churned: 0 };
+    const st = normalizeLeadStage(r.stage);
+    cur.leads++;
+    if (reached(st, "CONTACTED")) cur.contacted++;
+    if (reached(st, "BOOKED")) cur.booked++;
+    if (st === "CONVERTED") cur.converted++;
+    if (r.convertedToMemberId && churned.has(r.convertedToMemberId)) cur.churned++;
+    bySource.set(key, cur);
+  }
+  return [...bySource.values()].sort((a, b) => b.leads - a.leads);
+}
+
+/** Leads whose nextFollowUpAt is due (today or overdue) and not yet closed. */
+export async function followUpsDue(opts: { locationId: string; assignedToId?: string | null; limit?: number }) {
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  return getPrisma().visitor.findMany({
+    where: {
+      locationId: opts.locationId,
+      nextFollowUpAt: { lte: endOfToday },
+      stage: { notIn: ["CONVERTED", "LOST"] },
+      ...(opts.assignedToId ? { assignedToId: opts.assignedToId } : {}),
+    },
+    orderBy: { nextFollowUpAt: "asc" },
+    take: opts.limit ?? 10,
+    select: { id: true, firstName: true, lastName: true, email: true, phone: true, stage: true, nextFollowUpAt: true, assignedToId: true, source: true },
+  });
 }

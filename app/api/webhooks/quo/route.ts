@@ -1,24 +1,25 @@
 /**
  * Quo (formerly OpenPhone) webhook receiver.
- * Handles inbound SMS, delivery receipts, and opt-out keywords.
+ * Handles inbound SMS (→ Inbox conversation, lead auto-create, STOP/START),
+ * and delivery receipts for outbound messages.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { isOptInMessage, isOptOutMessage, verifyQuoSignature } from "@/lib/quo";
-import { audit } from "@/lib/audit";
+import { verifyQuoSignature } from "@/lib/quo";
+import { ingestInboundSms } from "@/services/inbox.service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
-  const signature = req.headers.get("x-quo-signature") ?? req.headers.get("x-openphone-signature") ?? "";
+  const signature = req.headers.get("x-quo-signature") ?? req.headers.get("x-openphone-signature") ?? req.headers.get("openphone-signature") ?? "";
 
   if (!verifyQuoSignature(signature, body)) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  let event: any;
+  let event: QuoEvent;
   try {
     event = JSON.parse(body);
   } catch {
@@ -26,14 +27,14 @@ export async function POST(req: NextRequest) {
   }
 
   const prisma = getPrisma();
-  const externalId = event.id ?? event.event_id ?? null;
+  const externalId: string = event.id ?? event.event_id ?? event.data?.object?.id ?? `${Date.now()}`;
 
   const delivery = await prisma.webhookDelivery.upsert({
-    where: { provider_externalId: { provider: "QUO", externalId: externalId ?? `${Date.now()}` } },
+    where: { provider_externalId: { provider: "QUO", externalId } },
     create: {
       provider: "QUO",
       eventType: event.type ?? "unknown",
-      externalId: externalId ?? `${Date.now()}`,
+      externalId,
       payload: event,
       signature,
       status: "RECEIVED",
@@ -42,109 +43,77 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    await dispatchQuoEvent(event);
+    const result = await dispatchQuoEvent(event);
     await prisma.webhookDelivery.update({
       where: { id: delivery.id },
       data: { status: "PROCESSED", processedAt: new Date() },
     });
-    return NextResponse.json({ ok: true });
-  } catch (err: any) {
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
     console.error("[quo webhook] dispatch error", err);
     await prisma.webhookDelivery.update({
       where: { id: delivery.id },
-      data: { status: "FAILED", lastError: err.message ?? String(err), attempts: { increment: 1 } },
+      data: { status: "FAILED", lastError: err instanceof Error ? err.message : String(err), attempts: { increment: 1 } },
     });
     return NextResponse.json({ error: "dispatch failed" }, { status: 500 });
   }
 }
 
-async function dispatchQuoEvent(event: any): Promise<void> {
-  const prisma = getPrisma();
-  const type = event.type as string;
+function firstString(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+  return null;
+}
 
-  if (type === "message.delivered" || type === "message.failed" || type === "message.read") {
-    const providerId = event.data?.object?.id ?? event.data?.id;
-    if (!providerId) return;
-    const message = await prisma.message.findFirst({ where: { providerId } });
-    if (!message) return;
+// Loose payload shape: Quo/OpenPhone wrap the object under data.object; older payloads put fields on data directly.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type QuoPayload = Record<string, any>;
+type QuoEvent = { id?: string; event_id?: string; type?: string; event?: string; data?: QuoPayload & { object?: QuoPayload } };
+
+async function dispatchQuoEvent(event: QuoEvent): Promise<Record<string, unknown>> {
+  const prisma = getPrisma();
+  const type = String(event.type ?? event.event ?? "");
+  const data: QuoPayload = event.data?.object ?? event.data ?? {};
+
+  // Delivery receipts for our outbound messages
+  if (type === "message.delivered" || type === "message.failed" || type === "message.read" || type === "message.sent") {
+    const providerId = data.id;
+    if (!providerId) return { handled: false };
+    const message = await prisma.message.findFirst({ where: { providerId, direction: "OUTBOUND" } });
+    if (!message) return { handled: false };
     const status =
       type === "message.delivered" ? "DELIVERED" :
       type === "message.failed" ? "FAILED" :
-      "OPENED";
+      type === "message.read" ? "OPENED" : "SENT";
     await prisma.message.update({
       where: { id: message.id },
-      data: { status, openedAt: type === "message.read" ? new Date() : undefined },
+      data: {
+        status,
+        openedAt: type === "message.read" ? new Date() : undefined,
+        providerError: type === "message.failed" ? data.errorMessage ?? data.error ?? "Delivery failed" : undefined,
+      },
     });
-    return;
+    return { handled: true, status };
   }
 
   if (type === "message.received") {
-    const data = event.data?.object ?? event.data ?? {};
-    const fromNumber = data.from ?? data.from_number;
-    const text = (data.text ?? data.body ?? "").trim();
-    if (!fromNumber || !text) return;
+    // Outbound messages echo back as message.received with direction "outgoing" on some Quo plans — ignore those.
+    if ((data.direction ?? "incoming") !== "incoming") return { handled: false, reason: "outgoing echo" };
+    const fromNumber = firstString(data.from) ?? firstString(data.from_number);
+    const toNumber = firstString(data.to) ?? firstString(data.to_number);
+    const text = String(data.text ?? data.body ?? data.content ?? "").trim();
+    if (!fromNumber || !text) return { handled: false, reason: "missing from/text" };
 
-    const member = await prisma.member.findFirst({ where: { phone: fromNumber } });
-
-    // Opt-out / opt-in handling
-    if (member) {
-      if (isOptOutMessage(text)) {
-        await prisma.member.update({
-          where: { id: member.id },
-          data: { optInSmsMarketing: false },
-        });
-        await audit({
-          action: "member.update",
-          entityType: "Member",
-          entityId: member.id,
-          before: { optInSmsMarketing: member.optInSmsMarketing },
-          after: { optInSmsMarketing: false },
-          metadata: { source: "quo_inbound_optout" },
-        });
-      } else if (isOptInMessage(text) && !member.optInSmsMarketing) {
-        await prisma.member.update({
-          where: { id: member.id },
-          data: { optInSmsMarketing: true, smsConsentAt: new Date(), smsConsentSource: "quo_inbound_optin" },
-        });
-      }
-    }
-
-    let conversation = member
-      ? await prisma.conversation.findFirst({
-          where: { memberId: member.id, status: "OPEN" },
-          orderBy: { lastMessageAt: "desc" },
-        })
-      : null;
-
-    if (!conversation && member) {
-      conversation = await prisma.conversation.create({
-        data: { memberId: member.id, lastMessageAt: new Date() },
-      });
-    }
-
-    await prisma.message.create({
-      data: {
-        conversationId: conversation?.id ?? null,
-        memberId: member?.id ?? null,
-        channel: "SMS",
-        direction: "INBOUND",
-        status: "DELIVERED",
-        category: "TRANSACTIONAL",
-        body: text,
-        fromAddress: fromNumber,
-        toAddress: data.to ?? null,
-        providerId: data.id ?? null,
-      },
+    const res = await ingestInboundSms({
+      from: fromNumber,
+      to: toNumber,
+      text,
+      providerId: data.id ?? null,
+      receivedAt: data.createdAt ? new Date(data.createdAt) : new Date(),
     });
-
-    if (conversation) {
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { lastMessageAt: new Date() },
-      });
-    }
-    return;
+    return { handled: true, ...res };
   }
 
   console.log(`[quo webhook] unhandled type: ${type}`);
+  return { handled: false };
 }

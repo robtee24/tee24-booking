@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentMember } from "@/lib/member-session";
 import { getPrisma } from "@/lib/db";
 import { adminNotify } from "@/lib/admin-notify";
+import { adminRoutes } from "@/lib/admin/routes";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     severity: "INFO",
     title: `New message from ${member.firstName} ${member.lastName}`,
     body: subject ?? body.slice(0, 120),
-    link: `/admin/locations/${member.location?.slug}/members/list/${member.id}`,
+    link: member.location?.slug ? `${adminRoutes.loc.marketing.inbox(member.location.slug)}?c=${convo.id}` : undefined,
     data: { conversationId: convo.id, messageId: msg.id },
   });
 

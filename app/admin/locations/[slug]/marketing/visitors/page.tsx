@@ -1,14 +1,17 @@
+import { Suspense } from "react";
 import { getPrisma } from "@/lib/db";
-import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
-import { AreaChart, BarChart, DonutChart, Funnel, KpiCard } from "@/components/ui/charts";
-import { UserPlus } from "lucide-react";
+import { getCurrentAdmin } from "@/lib/access";
+import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { AreaChart, DonutChart, Funnel, KpiCard } from "@/components/ui/charts";
 import { lastNMonths, visitorFunnel } from "@/lib/chart-data";
+import { LEAD_STAGES, normalizeLeadStage } from "@/components/admin/marketing/constants";
+import { LeadsClient } from "@/components/admin/marketing/LeadsClient";
+import { listLeads } from "@/services/lead.service";
+import { getMarketingSettings } from "@/services/marketing.service";
 
 export const dynamic = "force-dynamic";
 
-const STAGE_ORDER = ["NEW", "ENGAGED", "CONVERTED", "LOST"];
-
-export default async function VisitorsFunnelPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function LeadsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const prisma = getPrisma();
   const location = await prisma.location.findUnique({ where: { slug } });
@@ -17,147 +20,87 @@ export default async function VisitorsFunnelPage({ params }: { params: Promise<{
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-  const [stages, recent, funnel, last6mo, sourceRows] = await Promise.all([
-    prisma.visitor.groupBy({
-      by: ["stage"],
-      _count: { _all: true },
-      where: { locationId: location.id },
-    }),
-    prisma.visitor.findMany({
-      where: { locationId: location.id },
-      orderBy: { updatedAt: "desc" },
-      take: 25,
-    }),
+  const [leads, funnel, last6mo, sourceRows, settings, admins, admin] = await Promise.all([
+    listLeads({ locationId: location.id }),
     visitorFunnel({ locationId: location.id, days: 30 }),
-    prisma.visitor.findMany({
-      where: { locationId: location.id, createdAt: { gte: sixMonthsAgo } },
-      select: { createdAt: true, stage: true },
+    prisma.visitor.findMany({ where: { locationId: location.id, createdAt: { gte: sixMonthsAgo } }, select: { createdAt: true, stage: true } }),
+    prisma.visitor.groupBy({ by: ["source"], _count: { _all: true }, where: { locationId: location.id, createdAt: { gte: sixMonthsAgo } } }),
+    getMarketingSettings(location.organizationId),
+    prisma.admin.findMany({
+      where: { OR: [{ role: { in: ["ROOT", "FULL"] } }, { locations: { some: { locationId: location.id } } }] },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, phone: true },
     }),
-    prisma.visitor.groupBy({
-      by: ["source"],
-      _count: { _all: true },
-      where: { locationId: location.id, createdAt: { gte: sixMonthsAgo } },
-    }),
+    getCurrentAdmin(),
   ]);
 
-  const counts: Record<string, number> = Object.fromEntries(
-    stages.map((s: any) => [s.stage, s._count?._all ?? 0]),
-  );
-  const totalVisitors = Object.values(counts).reduce((a: number, b: any) => a + (b as number), 0);
-  const conversionRate =
-    totalVisitors > 0 ? Number((((counts.CONVERTED ?? 0) / totalVisitors) * 100).toFixed(1)) : 0;
+  const counts: Record<string, number> = {};
+  for (const l of leads) counts[l.stage] = (counts[l.stage] ?? 0) + 1;
+  const total = leads.length;
+  const conversionRate = total > 0 ? Number((((counts.CONVERTED ?? 0) / total) * 100).toFixed(1)) : 0;
+  const dueToday = leads.filter((l) => l.nextFollowUpAt && l.nextFollowUpAt <= endOfToday() && l.stage !== "CONVERTED" && l.stage !== "LOST").length;
 
   const months = lastNMonths(6);
-  const conversionTrend = months.map((m) => {
+  const trend = months.map((m) => {
     const inMonth = last6mo.filter((v) => v.createdAt >= m.start && v.createdAt < m.end);
-    const conv = inMonth.filter((v) => v.stage === "CONVERTED").length;
-    return {
-      month: m.label,
-      conversion: inMonth.length > 0 ? Number(((conv / inMonth.length) * 100).toFixed(1)) : 0,
-      leads: inMonth.length,
-    };
+    const conv = inMonth.filter((v) => normalizeLeadStage(v.stage) === "CONVERTED").length;
+    return { month: m.label, leads: inMonth.length, conversion: inMonth.length > 0 ? Number(((conv / inMonth.length) * 100).toFixed(1)) : 0 };
   });
+  const sourceData = sourceRows.map((s) => ({ name: s.source ?? "(direct)", value: s._count._all })).filter((s) => s.value > 0);
 
-  const sourceData = sourceRows
-    .map((s: any) => ({ name: s.source ?? "(direct)", value: s._count?._all ?? 0 }))
-    .filter((s) => s.value > 0);
+  const initial = leads.map((l) => ({
+    id: l.id,
+    stage: l.stage,
+    source: l.source,
+    firstName: l.firstName,
+    lastName: l.lastName,
+    email: l.email,
+    phone: l.phone,
+    notes: l.notes,
+    tags: l.tags,
+    assignedToId: l.assignedToId,
+    nextFollowUpAt: l.nextFollowUpAt?.toISOString() ?? null,
+    lastContactedAt: l.lastContactedAt?.toISOString() ?? null,
+    convertedToMemberId: l.convertedToMemberId,
+    createdAt: l.createdAt.toISOString(),
+    updatedAt: l.updatedAt.toISOString(),
+  }));
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Visitors funnel"
-        description="Day-pass buyers, free-pass guests, and inquiries on their way to membership."
-      />
+      <PageHeader title="Leads" description="Everyone on their way to membership: inquiries, inbound texts, day-pass guests and trials." />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {STAGE_ORDER.map((stage) => (
-          <KpiCard
-            key={stage}
-            label={stage}
-            value={(counts[stage] ?? 0).toLocaleString()}
-          />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+        <KpiCard label="Follow-ups due" value={dueToday.toLocaleString()} hint="Today or overdue" />
+        {LEAD_STAGES.map((stage) => (
+          <KpiCard key={stage} label={settings.leadStageLabels[stage]} value={(counts[stage] ?? 0).toLocaleString()} />
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Conversion funnel" subtitle="Last 30 days" />
-          <div className="mt-4">
-            <Funnel stages={funnel} />
-          </div>
-        </Card>
+      <Suspense>
+        <LeadsClient initial={initial} sources={settings.sources} admins={admins} stageLabels={settings.leadStageLabels} currentAdminId={admin?.id ?? null} />
+      </Suspense>
 
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader
-            title="Conversion rate over time"
-            subtitle={`${conversionRate}% all-time conversion`}
-          />
-          <div className="mt-4">
-            <AreaChart
-              data={conversionTrend}
-              xKey="month"
-              series={[{ key: "conversion", label: "Conversion %" }]}
-              yFormat="percent"
-              height={200}
-            />
-          </div>
+          <CardHeader title="Pipeline funnel" subtitle="Leads created in the last 30 days" />
+          <div className="mt-4"><Funnel stages={funnel} height={200} /></div>
         </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Leads & conversion" subtitle={`${conversionRate}% all-time conversion`} />
+          <div className="mt-4"><AreaChart data={trend} xKey="month" series={[{ key: "leads", label: "Leads" }]} height={200} /></div>
+        </Card>
         <Card>
           <CardHeader title="Lead sources" subtitle="Last 6 months" />
-          <div className="mt-2">
-            {sourceData.length === 0 ? (
-              <p className="py-8 text-center text-apple-sm text-apple-text-tertiary">
-                No tracked sources yet.
-              </p>
-            ) : (
-              <DonutChart data={sourceData} height={220} />
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Leads per month" />
-          <div className="mt-4">
-            <BarChart
-              data={conversionTrend}
-              xKey="month"
-              series={[{ key: "leads", label: "Leads" }]}
-              height={200}
-              colorByCell
-            />
-          </div>
+          <div className="mt-2">{sourceData.length === 0 ? <p className="py-8 text-center text-apple-sm text-apple-text-tertiary">No tracked sources yet.</p> : <DonutChart data={sourceData} height={200} />}</div>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader title="Recent visitors" />
-        {recent.length === 0 ? (
-          <EmptyState
-            icon={<UserPlus className="h-6 w-6" />}
-            title="No visitors yet"
-            description="Visitors are auto-created from day-pass purchases and signup-form starts."
-          />
-        ) : (
-          <ul className="mt-4 divide-y divide-apple-divider">
-            {recent.map((v) => (
-              <li key={v.id} className="flex items-center justify-between py-2 text-apple-sm">
-                <div>
-                  <div className="font-medium text-apple-text">
-                    {v.firstName ?? "(no name)"} {v.lastName ?? ""}
-                  </div>
-                  <div className="text-apple-xs text-apple-text-tertiary">
-                    {v.email ?? v.phone ?? "—"} · {v.source ?? "direct"}
-                  </div>
-                </div>
-                <StatusBadge status={v.stage} size="sm" />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
     </div>
   );
+}
+
+function endOfToday() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
