@@ -2,34 +2,47 @@ import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/bay-app/status?deviceId=...
- * Core polling endpoint for the desktop bay app.
- * Returns current booking (needs check-in), next upcoming booking (for warning bar),
- * and location settings.
+ * GET /api/bay-app/status?deviceId=...&v=<appVersion>
+ *
+ * Core polling endpoint for the bay kiosk. Returns:
+ *  - location kiosk settings
+ *  - bay info (number, name, launch monitor, setup notes)
+ *  - currentBooking  (active now; the kiosk shows the unlock modal until checked in)
+ *  - nextBooking     (starts within the warning window; the kiosk shows the "upcoming" modal)
+ *  - serverNow       (so the kiosk never trusts the PC clock for countdowns)
+ *
+ * Also records a heartbeat (lastSeenAt / appVersion) on the registration so admins
+ * can see which kiosks are online.
  */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const deviceId = (searchParams.get('deviceId') ?? '').trim();
+    const appVersion = (searchParams.get('v') ?? '').trim() || null;
 
     if (!deviceId) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 });
     }
 
-    const registration = await getPrisma().bayAppRegistration.findUnique({
+    const prisma = getPrisma();
+
+    const registration = await prisma.bayAppRegistration.findUnique({
       where: { deviceId },
       include: {
         location: {
           select: {
             id: true,
             name: true,
+            slug: true,
             timezone: true,
             bayAppEnabled: true,
             bayAppUnlockMinutes: true,
             bayAppWarningMinutes: true,
             bayAppAutoCancelOnTimeout: true,
+            passAccessUrl: true,
           },
         },
       },
@@ -42,64 +55,76 @@ export async function GET(req: Request) {
     const { location, bayNumber, locationId } = registration;
     const now = new Date();
 
-    const currentBooking = await getPrisma().booking.findFirst({
-      where: {
-        locationId,
-        bayNumber,
-        canceledAt: null,
-        start: { lte: now },
-        end: { gt: now },
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        start: true,
-        end: true,
-        checkedInAt: true,
-      },
-      orderBy: { start: 'asc' },
-    });
+    // Heartbeat (fire-and-forget; never block the poll on it)
+    prisma.bayAppRegistration
+      .update({
+        where: { deviceId },
+        data: { lastSeenAt: now, ...(appVersion ? { appVersion } : {}) },
+      })
+      .catch(() => {});
 
-    const warningWindowMs = location.bayAppWarningMinutes * 60 * 1000;
-    const warningStart = new Date(now.getTime());
-    const warningEnd = new Date(now.getTime() + warningWindowMs);
+    const warningEnd = new Date(now.getTime() + location.bayAppWarningMinutes * 60 * 1000);
 
-    const nextBooking = await getPrisma().booking.findFirst({
-      where: {
-        locationId,
-        bayNumber,
-        canceledAt: null,
-        start: { gt: now, lte: warningEnd },
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        start: true,
-        end: true,
-      },
-      orderBy: { start: 'asc' },
-    });
-
-    const bay = await getPrisma().bay.findUnique({
-      where: { locationId_number: { locationId, number: bayNumber } },
-      select: { number: true, name: true },
-    });
+    const [currentBooking, nextBooking, bay] = await Promise.all([
+      prisma.booking.findFirst({
+        where: { locationId, bayNumber, canceledAt: null, start: { lte: now }, end: { gt: now } },
+        select: { id: true, firstName: true, lastName: true, start: true, end: true, checkedInAt: true },
+        orderBy: { start: 'asc' },
+      }),
+      prisma.booking.findFirst({
+        where: { locationId, bayNumber, canceledAt: null, start: { gt: now, lte: warningEnd } },
+        select: { id: true, firstName: true, lastName: true, start: true, end: true },
+        orderBy: { start: 'asc' },
+      }),
+      prisma.bay.findUnique({
+        where: { locationId_number: { locationId, number: bayNumber } },
+        select: { id: true, number: true, name: true, launchMonitor: true, setupNotes: true, disabled: true },
+      }),
+    ]);
 
     return NextResponse.json({
+      serverNow: now.toISOString(),
       location: {
+        id: location.id,
         name: location.name,
+        slug: location.slug,
         timezone: location.timezone,
         bayAppEnabled: location.bayAppEnabled,
         bayAppUnlockMinutes: location.bayAppUnlockMinutes,
         bayAppWarningMinutes: location.bayAppWarningMinutes,
         bayAppAutoCancelOnTimeout: location.bayAppAutoCancelOnTimeout,
+        passAccessUrl: location.passAccessUrl,
       },
-      bay: bay ?? { number: bayNumber, name: null },
-      currentBooking,
-      nextBooking,
+      bay: bay
+        ? {
+            id: bay.id,
+            number: bay.number,
+            name: bay.name,
+            launchMonitor: bay.launchMonitor,
+            setupNotes: bay.setupNotes,
+            disabled: bay.disabled,
+          }
+        : { id: null, number: bayNumber, name: null, launchMonitor: 'IDRA', setupNotes: null, disabled: false },
+      // Never send the guest's phone number to the bay PC — only the last 4 for a hint.
+      currentBooking: currentBooking
+        ? {
+            id: currentBooking.id,
+            firstName: currentBooking.firstName,
+            lastInitial: (currentBooking.lastName ?? '').trim().charAt(0).toUpperCase(),
+            start: currentBooking.start.toISOString(),
+            end: currentBooking.end.toISOString(),
+            checkedInAt: currentBooking.checkedInAt ? currentBooking.checkedInAt.toISOString() : null,
+          }
+        : null,
+      nextBooking: nextBooking
+        ? {
+            id: nextBooking.id,
+            firstName: nextBooking.firstName,
+            lastInitial: (nextBooking.lastName ?? '').trim().charAt(0).toUpperCase(),
+            start: nextBooking.start.toISOString(),
+            end: nextBooking.end.toISOString(),
+          }
+        : null,
     });
   } catch (e: any) {
     console.error('[bay-app/status]', e);

@@ -2,11 +2,44 @@
 import { getPrisma } from "@/lib/db";
 import { startOfDay, endOfDay } from "date-fns";
 import type {
+  AdminBayRow,
   BayInfo,
   CreateBayInput,
+  LaunchMonitor,
   UpdateBayInput,
   BaySchedule,
 } from "@/types/bay";
+
+const LAUNCH_MONITORS: readonly LaunchMonitor[] = ["IDRA", "SKYTRAK", "PROTEE_VX", "OTHER"];
+
+/** A kiosk is "online" if it has polled within the last 2 minutes (poll interval is 30s). */
+export const KIOSK_ONLINE_WINDOW_MS = 2 * 60 * 1000;
+
+function parseLaunchMonitor(v: unknown): LaunchMonitor | undefined {
+  if (v === undefined) return undefined;
+  const s = String(v).toUpperCase();
+  if ((LAUNCH_MONITORS as readonly string[]).includes(s)) return s as LaunchMonitor;
+  throw new Error(`Invalid launch monitor "${String(v)}"`);
+}
+
+function parseSetupNotes(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = String(v).trim();
+  return s.length ? s.slice(0, 4000) : null;
+}
+
+const BAY_SELECT = {
+  id: true,
+  number: true,
+  name: true,
+  kind: true,
+  handedness: true,
+  capacity: true,
+  disabled: true,
+  launchMonitor: true,
+  setupNotes: true,
+} as const;
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +50,8 @@ export async function createBay(
   input: CreateBayInput
 ): Promise<BayInfo> {
   const { number, name, kind, handedness, capacity, disabled = false } = input;
+  const launchMonitor = parseLaunchMonitor(input.launchMonitor) ?? "IDRA";
+  const setupNotes = parseSetupNotes(input.setupNotes) ?? null;
 
   if (number <= 0 || !Number.isInteger(number)) {
     throw new Error("Bay number must be a positive integer");
@@ -63,16 +98,10 @@ export async function createBay(
         handedness: finalHandedness,
         capacity: finalCapacity,
         disabled,
+        launchMonitor,
+        setupNotes,
       },
-      select: {
-        id: true,
-        number: true,
-        name: true,
-        kind: true,
-        handedness: true,
-        capacity: true,
-        disabled: true,
-      },
+      select: BAY_SELECT,
     });
 
     return bay;
@@ -151,6 +180,12 @@ export async function updateBay(
     data.disabled = input.disabled;
   }
 
+  // kiosk fields
+  const lm = parseLaunchMonitor(input.launchMonitor);
+  if (lm !== undefined) data.launchMonitor = lm;
+  const notes = parseSetupNotes(input.setupNotes);
+  if (notes !== undefined) data.setupNotes = notes;
+
   if (Object.keys(data).length === 0) {
     throw new Error("No fields to update");
   }
@@ -158,15 +193,7 @@ export async function updateBay(
   const updated = await getPrisma().bay.update({
     where: { id: bayId },
     data,
-    select: {
-      id: true,
-      number: true,
-      name: true,
-      kind: true,
-      handedness: true,
-      capacity: true,
-      disabled: true,
-    },
+    select: BAY_SELECT,
   });
 
   return updated;
@@ -208,15 +235,40 @@ export async function getBaysByLocationId(locationId: string): Promise<BayInfo[]
   return await getPrisma().bay.findMany({
     where: { locationId },
     orderBy: { number: "asc" },
-    select: {
-      id: true,
-      number: true,
-      name: true,
-      kind: true,
-      handedness: true,
-      capacity: true,
-      disabled: true,
-    },
+    select: BAY_SELECT,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET: All bays + kiosk registration state (admin bays page)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getAdminBayRows(locationId: string): Promise<AdminBayRow[]> {
+  const [bays, registrations] = await Promise.all([
+    getBaysByLocationId(locationId),
+    getPrisma().bayAppRegistration.findMany({
+      where: { locationId },
+      select: { bayNumber: true, deviceId: true, lastSeenAt: true, appVersion: true, hostname: true },
+    }),
+  ]);
+  const byBay = new Map(registrations.map((r) => [r.bayNumber, r]));
+  const now = Date.now();
+
+  return bays.map((b) => {
+    const reg = byBay.get(b.number);
+    const lastSeen = reg?.lastSeenAt ?? null;
+    return {
+      ...b,
+      launchMonitor: b.launchMonitor ?? "IDRA",
+      setupNotes: b.setupNotes ?? null,
+      kiosk: {
+        registered: !!reg,
+        deviceId: reg?.deviceId ?? null,
+        lastSeenAt: lastSeen ? lastSeen.toISOString() : null,
+        appVersion: reg?.appVersion ?? null,
+        hostname: reg?.hostname ?? null,
+        online: !!lastSeen && now - lastSeen.getTime() < KIOSK_ONLINE_WINDOW_MS,
+      },
+    };
   });
 }
 

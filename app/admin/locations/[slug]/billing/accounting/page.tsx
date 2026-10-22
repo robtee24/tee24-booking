@@ -152,7 +152,7 @@ export default async function AccountingPage({ params }: { params: Promise<{ slu
             data={revenue12mo}
             xKey="month"
             series={[{ key: "revenue", label: "Revenue" }]}
-            yFormatter={(v) => `$${v.toLocaleString()}`}
+            yFormat="currency"
             height={240}
             colorByCell
           />
@@ -167,7 +167,7 @@ export default async function AccountingPage({ params }: { params: Promise<{ slu
               data={failedRateData}
               xKey="month"
               series={[{ key: "rate", label: "Failed %" }]}
-              yFormatter={(v) => `${v}%`}
+              yFormat="percent"
               height={200}
             />
           </div>
@@ -179,7 +179,7 @@ export default async function AccountingPage({ params }: { params: Promise<{ slu
               data={refundRateData}
               xKey="month"
               series={[{ key: "rate", label: "Refund %" }]}
-              yFormatter={(v) => `${v}%`}
+              yFormat="percent"
               height={200}
             />
           </div>
@@ -197,7 +197,7 @@ export default async function AccountingPage({ params }: { params: Promise<{ slu
                 data={aging}
                 xKey="name"
                 series={[{ key: "value", label: "Outstanding" }]}
-                yFormatter={(v) => `$${v.toLocaleString()}`}
+                yFormat="currency"
                 height={200}
                 colorByCell
               />

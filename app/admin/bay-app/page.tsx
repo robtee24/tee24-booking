@@ -1,113 +1,72 @@
-'use client';
+import Link from "next/link";
+import { Download, HelpCircle, CalendarClock, LockKeyhole, Play } from "lucide-react";
+import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { getAccessibleLocations } from "@/lib/access";
+import { adminRoutes } from "@/lib/admin/routes";
+import { KIOSK_APP_NAME, KIOSK_DOWNLOAD_URL } from "@/lib/kiosk/download";
 
-const DOWNLOAD_LINKS = {
-  windows: '/downloads/Tee24-Bay-CheckIn-Setup.exe',
-  mac: '/downloads/Tee24-Bay-CheckIn.dmg',
-};
+export const dynamic = "force-dynamic";
 
-export default function BayAppPage() {
+export default async function BayAppPage() {
+  const locations = await getAccessibleLocations().catch(() => []);
+
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Bay App</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Download and install the Tee24 Bay Check-In app on each bay computer.
-        </p>
-      </header>
-
-      {/* Download Section */}
-      <section className="card p-6">
-        <h2 className="text-apple-lg font-semibold text-apple-text mb-1">Download</h2>
-        <p className="text-apple-sm text-apple-text-secondary mb-5">
-          The Bay Check-In app runs on each bay&apos;s computer. It locks the screen when a reservation starts and requires
-          the guest to verify their phone number to unlock.
-        </p>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Windows */}
-          <a
-            href={DOWNLOAD_LINKS.windows}
-            className="flex items-center gap-4 rounded-xl border border-apple-border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-apple-blue/40"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50">
-              <svg className="h-6 w-6 text-brand-600" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-apple-sm font-semibold text-apple-text">Windows</div>
-              <div className="text-apple-xs text-apple-text-tertiary">Download .exe installer</div>
-            </div>
+      <PageHeader
+        title="Bay kiosk app"
+        description={`${KIOSK_APP_NAME} runs on every bay computer. It replaces the Golfin Launcher home screen, launches GSPro, and handles reservations.`}
+        actions={
+          <a href={KIOSK_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="btn-primary inline-flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            Download for Windows
           </a>
+        }
+      />
 
-          {/* Mac */}
-          <a
-            href={DOWNLOAD_LINKS.mac}
-            className="flex items-center gap-4 rounded-xl border border-apple-border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-apple-blue/40"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
-              <svg className="h-6 w-6 text-gray-700" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-apple-sm font-semibold text-apple-text">macOS</div>
-              <div className="text-apple-xs text-apple-text-tertiary">Download .dmg installer</div>
-            </div>
-          </a>
-        </div>
-      </section>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Feature icon={<Play className="h-5 w-5" />} title="Play" body="One tap launches the launch-monitor software and GSPro together." />
+        <Feature icon={<HelpCircle className="h-5 w-5" />} title="Help, always" body="A floating Help button opens the troubleshooting guide for that bay's launch monitor." />
+        <Feature icon={<CalendarClock className="h-5 w-5" />} title="Schedule" body="Players see today's reservations for the bay they're standing in." />
+        <Feature icon={<LockKeyhole className="h-5 w-5" />} title="Reservation unlock" body="At start time the member enters their phone number to claim the bay." />
+      </div>
 
-      {/* Setup Instructions */}
-      <section className="card p-6">
-        <h2 className="text-apple-lg font-semibold text-apple-text mb-1">Setup</h2>
-        <p className="text-apple-sm text-apple-text-secondary mb-4">
-          After installing, follow these steps on each bay computer:
-        </p>
-        <ol className="space-y-3 text-apple-sm text-apple-text">
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-apple-blue text-xs font-bold text-white">1</span>
-            <span>Open the Tee24 Bay Check-In app</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-apple-blue text-xs font-bold text-white">2</span>
-            <span>Log in with your admin phone number (you&apos;ll receive a one-time code)</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-apple-blue text-xs font-bold text-white">3</span>
-            <span>Select the location and assign the bay number for this computer</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-apple-blue text-xs font-bold text-white">4</span>
-            <span>The app will automatically lock the screen at reservation time and require phone verification to unlock</span>
-          </li>
-        </ol>
-      </section>
+      <Card>
+        <CardHeader title="Per-location setup" subtitle="Kiosk behavior and registered computers are managed per location." />
+        {locations.length === 0 ? (
+          <p className="mt-3 text-apple-sm text-apple-text-tertiary">No locations available.</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-apple-divider rounded-apple-sm border border-apple-border">
+            {locations.map((l) => (
+              <li key={l.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-apple-sm">
+                <span className="font-medium text-apple-text">{l.name}</span>
+                <Link href={adminRoutes.loc.settings.bayApp(l.slug)} className="font-medium text-apple-blue hover:underline">
+                  Kiosk settings →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-      {/* Requirements */}
-      <section className="card p-6">
-        <h2 className="text-apple-lg font-semibold text-apple-text mb-1">Requirements</h2>
-        <ul className="mt-3 space-y-2 text-apple-sm text-apple-text-secondary">
-          <li className="flex items-start gap-2">
-            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Bay App must be enabled in each location&apos;s Details settings
-          </li>
-          <li className="flex items-start gap-2">
-            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Internet connection required on each bay computer
-          </li>
-          <li className="flex items-start gap-2">
-            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-apple-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Windows 10+ or macOS 11+
-          </li>
+      <Card>
+        <CardHeader title="Requirements" />
+        <ul className="mt-3 list-disc space-y-1.5 pl-5 text-apple-sm text-apple-text-secondary">
+          <li>Windows 10 or 11 bay PC with GSPro and the launch-monitor software installed.</li>
+          <li>Internet connection on the bay PC (the kiosk checks the schedule every 30 seconds).</li>
+          <li>Kiosk enabled in the location&apos;s <em>Bay Kiosk</em> settings.</li>
+          <li>Golfin Launcher removed from Windows startup so the kiosk is the first screen.</li>
         </ul>
-      </section>
+      </Card>
     </div>
+  );
+}
+
+function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <Card>
+      <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-apple-sm bg-apple-blue/10 text-apple-blue">{icon}</span>
+      <h2 className="text-apple-base font-semibold text-apple-text">{title}</h2>
+      <p className="mt-1 text-apple-sm text-apple-text-secondary">{body}</p>
+    </Card>
   );
 }

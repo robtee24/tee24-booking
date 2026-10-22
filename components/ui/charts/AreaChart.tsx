@@ -14,6 +14,8 @@ import {
   CHART_GRID_STYLE,
   CHART_TOOLTIP_STYLE,
   paletteFor,
+  resolveYFormatter,
+  type YFormat,
 } from "./theme";
 import type { LineSeries } from "./LineChart";
 
@@ -22,7 +24,8 @@ export function AreaChart({
   xKey,
   series,
   height = 240,
-  yFormatter,
+  yFormatter: yFormatterProp,
+  yFormat,
   stacked = false,
   showLegend = false,
 }: {
@@ -30,10 +33,14 @@ export function AreaChart({
   xKey: string;
   series: LineSeries[];
   height?: number;
+  /** Client-only: custom formatter. From server components use `yFormat` instead. */
   yFormatter?: (v: number) => string;
+  /** Serializable axis format, safe to pass from server components. */
+  yFormat?: YFormat;
   stacked?: boolean;
   showLegend?: boolean;
 }) {
+  const yFormatter = resolveYFormatter(yFormat, yFormatterProp);
   const palette = paletteFor(series.length);
 
   return (

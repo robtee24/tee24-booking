@@ -97,7 +97,7 @@ export default async function VisitorsFunnelPage({ params }: { params: Promise<{
               data={conversionTrend}
               xKey="month"
               series={[{ key: "conversion", label: "Conversion %" }]}
-              yFormatter={(v) => `${v}%`}
+              yFormat="percent"
               height={200}
             />
           </div>

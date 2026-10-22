@@ -116,7 +116,7 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
                 { key: "openRate", label: "Open %" },
                 { key: "clickRate", label: "Click %" },
               ]}
-              yFormatter={(v) => `${v}%`}
+              yFormat="percent"
               showLegend
               height={220}
             />

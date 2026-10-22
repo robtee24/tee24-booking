@@ -16,7 +16,10 @@
     "migration:dry-run": "ts-node --transpile-only scripts/migration/dryRun.ts",
     "migration:import": "ts-node --transpile-only scripts/migration/import.ts",
     "migration:sync": "ts-node --transpile-only scripts/migration/sync.ts",
-    "migration:cutover": "ts-node --transpile-only scripts/migration/cutover.ts"
+    "migration:cutover": "ts-node --transpile-only scripts/migration/cutover.ts",
+    "prebuild": "node scripts/verify-admin-routes.mjs",
+    "verify:routes": "node scripts/verify-admin-routes.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",

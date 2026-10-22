@@ -15,6 +15,8 @@ export async function POST(req: Request) {
     const locationId = String(body?.locationId ?? '').trim();
     const bayNumber = Number(body?.bayNumber);
     const deviceId = String(body?.deviceId ?? '').trim();
+    const hostname = body?.hostname ? String(body.hostname).trim().slice(0, 120) : null;
+    const appVersion = body?.appVersion ? String(body.appVersion).trim().slice(0, 40) : null;
 
     if (!locationId || !deviceId || !Number.isFinite(bayNumber)) {
       return NextResponse.json(
@@ -49,10 +51,11 @@ export async function POST(req: Request) {
       );
     }
 
+    const now = new Date();
     const registration = await getPrisma().bayAppRegistration.upsert({
       where: { deviceId },
-      create: { locationId, bayNumber, deviceId },
-      update: { locationId, bayNumber },
+      create: { locationId, bayNumber, deviceId, hostname, appVersion, lastSeenAt: now },
+      update: { locationId, bayNumber, hostname, appVersion, lastSeenAt: now },
     });
 
     return NextResponse.json({ ok: true, registration });

@@ -86,7 +86,7 @@ export default async function BillingOverviewPage({ params }: { params: Promise<
               data={revenue6mo}
               xKey="month"
               series={[{ key: "revenue", label: "Revenue" }]}
-              yFormatter={(v) => `$${v.toLocaleString()}`}
+              yFormat="currency"
               height={220}
             />
           </div>

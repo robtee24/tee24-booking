@@ -85,3 +85,29 @@ export const CHART_TOOLTIP_STYLE = {
     padding: 0,
   },
 } as const;
+
+/**
+ * Serializable axis formats. Server components can't pass functions to client
+ * chart components, so callers pass one of these names and the chart resolves
+ * it to a formatter on the client.
+ */
+export type YFormat = "number" | "currency" | "percent" | "compact";
+
+export function resolveYFormatter(
+  format: YFormat | undefined,
+  custom?: (v: number) => string
+): ((v: number) => string) | undefined {
+  if (custom) return custom;
+  switch (format) {
+    case "currency":
+      return (v) => `$${Number(v).toLocaleString()}`;
+    case "percent":
+      return (v) => `${Number(v)}%`;
+    case "compact":
+      return (v) => Intl.NumberFormat(undefined, { notation: "compact" }).format(Number(v));
+    case "number":
+      return (v) => Number(v).toLocaleString();
+    default:
+      return undefined;
+  }
+}

@@ -15,6 +15,8 @@ import {
   CHART_GRID_STYLE,
   CHART_TOOLTIP_STYLE,
   paletteFor,
+  resolveYFormatter,
+  type YFormat,
 } from "./theme";
 import type { LineSeries } from "./LineChart";
 
@@ -23,7 +25,8 @@ export function BarChart({
   xKey,
   series,
   height = 240,
-  yFormatter,
+  yFormatter: yFormatterProp,
+  yFormat,
   stacked = false,
   layout = "horizontal",
   showLegend = false,
@@ -33,13 +36,17 @@ export function BarChart({
   xKey: string;
   series: LineSeries[];
   height?: number;
+  /** Client-only: custom formatter. From server components use `yFormat` instead. */
   yFormatter?: (v: number) => string;
+  /** Serializable axis format, safe to pass from server components. */
+  yFormat?: YFormat;
   stacked?: boolean;
   layout?: "horizontal" | "vertical";
   showLegend?: boolean;
   /** When true and a single series is passed, each bar gets its own palette color. */
   colorByCell?: boolean;
 }) {
+  const yFormatter = resolveYFormatter(yFormat, yFormatterProp);
   const palette = paletteFor(Math.max(series.length, data.length));
   const isVertical = layout === "vertical";
 

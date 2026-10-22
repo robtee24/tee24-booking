@@ -1,11 +1,11 @@
-import { Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import { notFound } from "next/navigation";
+import { Card, CardHeader, PageHeader } from "@/components/ui";
 import {
   AreaChart,
   BarChart,
   DonutChart,
   KpiCard,
 } from "@/components/ui/charts";
-import { LayoutDashboard } from "lucide-react";
 import { getPrisma } from "@/lib/db";
 import {
   memberStatusBreakdown,
@@ -20,19 +20,8 @@ export const dynamic = "force-dynamic";
 export default async function LocationDashboard({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const prisma = getPrisma();
-  const location = await prisma.location.findUnique({ where: { slug } });
-  if (!location) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Dashboard" />
-        <EmptyState
-          icon={<LayoutDashboard className="h-6 w-6" />}
-          title="Location not found"
-          description={`No location with slug "${slug}".`}
-        />
-      </div>
-    );
-  }
+  const location = await prisma.location.findUnique({ where: { slug: decodeURIComponent(slug) } });
+  if (!location) notFound();
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -53,30 +42,45 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
     statusBreakdown,
     revenue6mo,
   ] = await Promise.all([
-    prisma.member.count({ where: { locationId: location.id, status: "ACTIVE" } }),
-    prisma.member.count({ where: { locationId: location.id, status: "VISITOR" } }),
-    prisma.member.count({ where: { locationId: location.id, status: "FROZEN" } }),
-    prisma.invoice.aggregate({
-      _sum: { totalCents: true },
-      where: { locationId: location.id, dueDate: { gte: monthStart }, status: { in: ["PAID", "SCHEDULED"] } },
-    }),
-    prisma.invoice.aggregate({
-      _sum: { totalCents: true },
-      _count: true,
-      where: { locationId: location.id, status: { in: ["PAST_DUE", "FAILED"] } },
-    }),
-    prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: todayStart } } }),
-    prisma.booking.count({ where: { locationId: location.id, start: { gte: now }, canceledAt: null } }),
-    prisma.adminNotification.findMany({
-      where: { locationId: location.id },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
-    visitsByDay({ locationId: location.id, days: 7 }),
-    visitsByDay({ locationId: location.id, days: 30 }),
-    visitsHourly({ locationId: location.id }),
-    memberStatusBreakdown({ locationId: location.id }),
-    revenueByMonth({ locationId: location.id, months: 6 }),
+    // Every widget query is isolated: if one table/column is missing or a
+    // query fails, the dashboard still renders with a fallback value instead
+    // of taking the whole page down with a server-side exception.
+    safe(() => prisma.member.count({ where: { locationId: location.id, status: "ACTIVE" } }), 0),
+    safe(() => prisma.member.count({ where: { locationId: location.id, status: "VISITOR" } }), 0),
+    safe(() => prisma.member.count({ where: { locationId: location.id, status: "FROZEN" } }), 0),
+    safe(
+      () =>
+        prisma.invoice.aggregate({
+          _sum: { totalCents: true },
+          where: { locationId: location.id, dueDate: { gte: monthStart }, status: { in: ["PAID", "SCHEDULED"] } },
+        }),
+      { _sum: { totalCents: 0 } }
+    ),
+    safe(
+      () =>
+        prisma.invoice.aggregate({
+          _sum: { totalCents: true },
+          _count: true,
+          where: { locationId: location.id, status: { in: ["PAST_DUE", "FAILED"] } },
+        }),
+      { _sum: { totalCents: 0 }, _count: 0 }
+    ),
+    safe(() => prisma.visit.count({ where: { locationId: location.id, enteredAt: { gte: todayStart } } }), 0),
+    safe(() => prisma.booking.count({ where: { locationId: location.id, start: { gte: now }, canceledAt: null } }), 0),
+    safe(
+      () =>
+        prisma.adminNotification.findMany({
+          where: { locationId: location.id },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        }),
+      []
+    ),
+    safe(() => visitsByDay({ locationId: location.id, days: 7 }), []),
+    safe(() => visitsByDay({ locationId: location.id, days: 30 }), []),
+    safe(() => visitsHourly({ locationId: location.id }), []),
+    safe(() => memberStatusBreakdown({ locationId: location.id }), []),
+    safe(() => revenueByMonth({ locationId: location.id, months: 6 }), []),
   ]);
 
   const expectedMtd = invoicesMTD._sum?.totalCents ?? 0;
@@ -171,7 +175,7 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
               data={revenue6mo}
               xKey="month"
               series={[{ key: "revenue", label: "Revenue" }]}
-              yFormatter={(v) => `$${v.toLocaleString()}`}
+              yFormat="currency"
               height={200}
               colorByCell
             />
@@ -251,6 +255,16 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
       </Card>
     </div>
   );
+}
+
+/** Run a dashboard query; on failure log and return the fallback. */
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error("[dashboard] widget query failed:", err instanceof Error ? err.message : err);
+    return fallback;
+  }
 }
 
 function QuickAction({ href, label }: { href: string; label: string }) {

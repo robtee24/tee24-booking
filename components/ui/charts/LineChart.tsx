@@ -20,6 +20,8 @@ import {
   CHART_GRID_STYLE,
   CHART_TOOLTIP_STYLE,
   paletteFor,
+  resolveYFormatter,
+  type YFormat,
 } from "./theme";
 
 export type LineSeries = {
@@ -33,16 +35,21 @@ export function LineChart({
   xKey,
   series,
   height = 240,
-  yFormatter,
+  yFormatter: yFormatterProp,
+  yFormat,
   showLegend = false,
 }: {
   data: Array<Record<string, any>>;
   xKey: string;
   series: LineSeries[];
   height?: number;
+  /** Client-only: custom formatter. From server components use `yFormat` instead. */
   yFormatter?: (v: number) => string;
+  /** Serializable axis format, safe to pass from server components. */
+  yFormat?: YFormat;
   showLegend?: boolean;
 }) {
+  const yFormatter = resolveYFormatter(yFormat, yFormatterProp);
   const palette = paletteFor(series.length);
 
   return (

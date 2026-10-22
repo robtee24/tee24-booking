@@ -29,6 +29,14 @@ enum Handedness {
   LH
 }
 
+/// Launch monitor installed in a bay. Drives bay-specific troubleshooting in the kiosk.
+enum LaunchMonitor {
+  IDRA
+  SKYTRAK
+  PROTEE_VX
+  OTHER
+}
+
 /**
  * =========================
  * Organization (multi-org boundary; v1 has one row)
@@ -86,7 +94,7 @@ model Location {
 
   bayAppEnabled             Boolean @default(false)
   bayAppUnlockMinutes       Int     @default(10)
-  bayAppWarningMinutes      Int     @default(5)
+  bayAppWarningMinutes      Int     @default(10)
   bayAppAutoCancelOnTimeout Boolean @default(true)
 
   // Attendance / Door dedupe window (hours between unlocks counted as same visit)
@@ -132,6 +140,11 @@ model Bay {
   handedness Handedness?
   capacity   Int         @default(4)
   disabled   Boolean     @default(false)
+
+  /// Launch monitor in this bay (used by the kiosk "Help" flow)
+  launchMonitor LaunchMonitor @default(IDRA)
+  /// Optional bay-specific setup notes shown in the kiosk "Setup Help" screen
+  setupNotes    String?
 
   visits          Visit[]
   maintenanceLogs MaintenanceLog[]
@@ -1467,6 +1480,12 @@ model BayAppRegistration {
   locationId String
   bayNumber  Int
   deviceId   String   @unique
+  /// Last time the kiosk polled /api/bay-app/status (used for "online" indicator in admin)
+  lastSeenAt DateTime?
+  /// Kiosk app version reported on last poll
+  appVersion String?
+  /// Hostname of the bay PC, reported on registration
+  hostname   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

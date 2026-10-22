@@ -108,7 +108,7 @@ export default async function FranchisePage() {
                 data={revenueByLocation}
                 xKey="name"
                 series={[{ key: "revenue", label: "Revenue" }]}
-                yFormatter={(v) => `$${v.toLocaleString()}`}
+                yFormat="currency"
                 height={240}
                 colorByCell
               />

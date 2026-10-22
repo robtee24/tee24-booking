@@ -106,7 +106,7 @@ export default async function ReferralsPage({ params }: { params: Promise<{ slug
               data={payoutTrend}
               xKey="month"
               series={[{ key: "payouts", label: "Paid" }]}
-              yFormatter={(v) => `$${v.toLocaleString()}`}
+              yFormat="currency"
               height={220}
             />
           </div>

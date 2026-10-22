@@ -1,7 +1,7 @@
 // app/api/admin/locations/[slug]/bays/route.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { createBay, getBaysByLocationId } from "@/services/bay.service";
+import { createBay, getAdminBayRows } from "@/services/bay.service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: "Location not found" }, { status: 404 });
     }
 
-    const bays = await getBaysByLocationId(location.id);
+    const bays = await getAdminBayRows(location.id);
 
     return NextResponse.json({ location, bays });
   } catch (e: any) {
@@ -55,6 +55,8 @@ export async function POST(
       name: body.name?.toString().trim() || null,
       kind: body.kind === "SINGLE" || body.kind === "GROUP" ? body.kind : "GROUP",
       disabled: Boolean(body.disabled),
+      launchMonitor: body.launchMonitor,
+      setupNotes: body.setupNotes,
     };
 
     if (input.kind === "SINGLE") {

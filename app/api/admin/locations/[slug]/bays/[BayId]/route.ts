@@ -34,6 +34,8 @@ export async function PATCH(
     if (body.handedness !== undefined) updateInput.handedness = body.handedness;
     if (body.capacity !== undefined) updateInput.capacity = body.capacity;
     if (body.disabled !== undefined) updateInput.disabled = body.disabled;
+    if (body.launchMonitor !== undefined) updateInput.launchMonitor = body.launchMonitor;
+    if (body.setupNotes !== undefined) updateInput.setupNotes = body.setupNotes;
 
     const bay = await updateBay(location.id, updateInput);
 

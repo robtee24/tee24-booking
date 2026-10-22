@@ -18,22 +18,35 @@ export default async function AdminHomePage() {
   const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
 
+  // Each widget is isolated so one failing query can't 500 the whole overview.
   const [activeMembers, locationCount, mtdRev, visitsToday, visits7d, signupsByMonth] = await Promise.all([
-    prisma.member.count({ where: { locationId: { in: locationIds }, status: "ACTIVE" } }),
-    prisma.location.count({ where: { id: { in: locationIds } } }),
-    prisma.charge.aggregate({
-      _sum: { amountCents: true },
-      where: { locationId: { in: locationIds }, status: "SUCCEEDED", createdAt: { gte: monthStart } },
-    }),
-    prisma.visit.count({ where: { locationId: { in: locationIds }, enteredAt: { gte: todayStart } } }),
-    prisma.visit.findMany({
-      where: { locationId: { in: locationIds }, enteredAt: { gte: sevenDaysAgo } },
-      select: { enteredAt: true },
-    }),
-    prisma.member.findMany({
-      where: { locationId: { in: locationIds }, joinDate: { gte: yearAgo } },
-      select: { joinDate: true },
-    }),
+    safe(() => prisma.member.count({ where: { locationId: { in: locationIds }, status: "ACTIVE" } }), 0),
+    safe(() => prisma.location.count({ where: { id: { in: locationIds } } }), locationIds.length),
+    safe(
+      () =>
+        prisma.charge.aggregate({
+          _sum: { amountCents: true },
+          where: { locationId: { in: locationIds }, status: "SUCCEEDED", createdAt: { gte: monthStart } },
+        }),
+      { _sum: { amountCents: 0 } }
+    ),
+    safe(() => prisma.visit.count({ where: { locationId: { in: locationIds }, enteredAt: { gte: todayStart } } }), 0),
+    safe(
+      () =>
+        prisma.visit.findMany({
+          where: { locationId: { in: locationIds }, enteredAt: { gte: sevenDaysAgo } },
+          select: { enteredAt: true },
+        }),
+      [] as { enteredAt: Date }[]
+    ),
+    safe(
+      () =>
+        prisma.member.findMany({
+          where: { locationId: { in: locationIds }, joinDate: { gte: yearAgo } },
+          select: { joinDate: true },
+        }),
+      [] as { joinDate: Date | null }[]
+    ),
   ]);
 
   const days = lastNDays(7);
@@ -135,6 +148,15 @@ export default async function AdminHomePage() {
       </div>
     </div>
   );
+}
+
+async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error("[admin overview] widget query failed:", err instanceof Error ? err.message : err);
+    return fallback;
+  }
 }
 
 function NavCard({

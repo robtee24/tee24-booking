@@ -67,7 +67,7 @@ export default async function PortalBilling() {
             data={billingHistory}
             xKey="month"
             series={[{ key: "paid", label: "Paid" }]}
-            yFormatter={(v) => `$${v.toLocaleString()}`}
+            yFormat="currency"
             height={200}
             colorByCell
           />

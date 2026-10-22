@@ -10,7 +10,7 @@ export default async function CommsSettingsPage({ params }: { params: Promise<{ 
       <Card>
         <CardHeader title="Booking notifications" subtitle="Confirmations, reminders, and change/cancel notices for bookings." />
         <p className="mt-3 text-apple-sm">
-          <Link href={`/admin/locations/${slug}/notifications`} className="font-medium text-apple-blue hover:underline">
+          <Link href={`/admin/locations/${slug}/scheduling/notifications`} className="font-medium text-apple-blue hover:underline">
             Manage booking notifications →
           </Link>
         </p>

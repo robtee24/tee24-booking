@@ -1,0 +1,654 @@
+{
+  "start": {
+    "prompt": "Which location are you visiting?",
+    "choices": {
+      "Louisville": { "next": "bay_louisville" },
+      "Clarksville": { "next": "bay_clarksville" },
+      "Make or Change/Cancel a Reservation": { "next": "reservation_menu" }
+    }
+  },
+  "reservation_menu": {
+    "prompt": "What would you like to do?",
+    "choices": {
+      "Make a reservation": { "next": "reservation_make" },
+      "Change or Cancel a reservation": { "next": "reservation_change" }
+    }
+  },
+  "reservation_make": {
+    "category": "Reservations",
+    "steps": [
+      {
+        "text": "All reservations are made here:",
+        "externalLink": "https://reservations.tee24.golf"
+      }
+    ]
+  },
+  "reservation_change": {
+    "category": "Reservations",
+    "steps": [
+      {
+        "text": "To change a reservation, go to your confirmation text and click on the link. From there, select cancel reservation, after canceling you can make a new reservation or leave it cancelled."
+      }
+    ]
+  },
+  "bay_louisville": {
+    "prompt": "Select your bay",
+    "choices": {
+      "1": { "next": "idra_menu" }, "2": { "next": "idra_menu" }, "3": { "next": "idra_menu" },
+      "4": { "next": "idra_menu" }, "5": { "next": "idra_menu" }, "6": { "next": "idra_menu" },
+      "7": { "next": "idra_menu" }, "8": { "next": "idra_menu" }, "9": { "next": "idra_menu" },
+      "10": { "next": "idra_menu" }, "11": { "next": "idra_menu" }, "12": { "next": "idra_menu" },
+      "13": { "next": "idra_menu" }, "14": { "next": "idra_menu" },
+      "Common / Non-Simulator Issues": { "next": "common_menu" }
+    }
+  },
+  "bay_clarksville": {
+    "prompt": "Select your bay",
+    "choices": {
+      "1": { "next": "idra_menu" }, "2": { "next": "idra_menu" }, "3": { "next": "skytrak_menu" },
+      "4": { "next": "skytrak_menu" }, "5": { "next": "skytrak_menu" }, "6": { "next": "skytrak_menu" },
+      "7": { "next": "skytrak_menu" }, "8": { "next": "skytrak_menu" },
+      "10": { "next": "idra_menu" },
+      "11": { "next": "idra_menu" }, "12": { "next": "idra_menu" },
+      "Common / Non-Simulator Issues": { "next": "common_menu" }
+    }
+  },
+  "idra_menu": {
+    "category": "IDRA",
+    "prompt": "What problem are you facing?",
+    "choices": {
+      "Not picking up ball / not registering": { "next": "idra_no_reads" },
+      "Error says reconnect cables": { "next": "idra_reconnect" },
+      "Computer asking for password": { "next": "idra_password" },
+      "Course/Range stuck loading": { "next": "idra_loading" },
+      "App not launched / program issues": { "next": "idra_app" },
+      "Simulator light turned off": { "next": "idra_light" },
+      "Any error on GSPro/IDRA load": { "next": "idra_any_error" },
+      "Monitor not on": { "next": "common_monitor_black" },
+      "Computer not on": { "next": "common_pc_off" },
+      "Projector not on": { "next": "common_projector_off" }
+    }
+  },
+  "idra_no_reads": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "Are there any balls and/or white objects around the hitting area?",
+        "subtext": "If the simulator sees other balls, rubber tees or white objects it will not be able to identify your ball. The area it can see is much larger than the hitting mat.",
+        "buttonText": "There are no balls and/or white objects around the hitting area"
+      },
+      {
+        "question": "Are your irons being picked up but your driver is not?",
+        "subtext": "If your irons read but your driver does not, switch to regular tees and place the tee closer to the middle of the hitting mat.",
+        "buttonText": "Switched to regular tees and moved closer to center"
+      },
+      {
+        "question": "Have you restarted the computer?",
+        "subtext": "The computer may need to be restarted. Press the Windows key, then click on the power button, then select restart.",
+        "buttonText": "Computer restarted"
+      },
+      {
+        "question": "Is the ball centered in the strike zone?",
+        "subtext": "Re-center the ball exactly in the strike zone. Try a clean white ball and test again.",
+        "buttonText": "Ball centered and tested"
+      },
+      {
+        "text": "Text (502) 410-2382 to create a maintenance ticket.",
+        "buttonText": "Got it"
+      }
+    ]
+  },
+  "idra_reconnect": {
+    "category": "IDRA",
+    "prompt": "Which bay are you on?",
+    "choices": {
+      "Louisville Bays 1–9 or Clarksville Bay 10": {
+        "steps": [
+          {
+            "question": "Is the simulator turned on?",
+            "subtext": "Often the simulator is not turned on. You need to select a time on the white switch near the monitor.",
+            "buttonText": "Simulator is on"
+          },
+          {
+            "question": "Have you reconnected the USB cables?",
+            "subtext": "On the front of the computer there are 2 black USB cables. Unplug them, wait 10 seconds, and plug them back in. Do NOT unplug anything on the back of the computer.",
+            "buttonText": "USB cables reconnected"
+          },
+          {
+            "question": "Have you restarted the computer?",
+            "subtext": "If the cables have been reconnected and it still hasn't fixed it, restart the computer. Press the Windows key, then click on the power button, then select restart.",
+            "buttonText": "Computer restarted"
+          },
+          {
+            "text": "Retry in the app. If it's still not working, text (502) 410-2382 to create a maintenance ticket.",
+            "buttonText": "Tried again, still not working"
+          }
+        ]
+      },
+      "Louisville Bays 10–14": {
+        "steps": [
+          {
+            "question": "Have you restarted the computer?",
+            "subtext": "Try restarting the computer first. Press the Windows key, then click on the power button, then select restart.",
+            "buttonText": "Computer restarted"
+          },
+          {
+            "question": "Have you reconnected the USB-C hub?",
+            "subtext": "Gently pull the computer out. Plugged into the back of the computer is a USB-C hub with 2 USB cables plugged into it. Unplug the USB-C, then unplug the USB cables from the hub. Wait 10 seconds, then plug the USB cables back into the hub, then plug the USB-C hub back into the computer.",
+            "buttonText": "USB-C hub reconnected"
+          },
+          {
+            "question": "Have you restarted the computer again?",
+            "subtext": "If the USB-C dongle has been reconnected and it still hasn't fixed it, restart the computer again. Press the Windows key, then click on the power button, then select restart.",
+            "buttonText": "Computer restarted again"
+          },
+          {
+            "text": "Retry in the app. If it's still not working, text (502) 410-2382 to create a maintenance ticket.",
+            "buttonText": "Tried again, still not working"
+          }
+        ]
+      }
+    }
+  },
+  "idra_password": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "What password are you using?",
+        "subtext": "Password: KentuckianaGolf123$\nPIN: 1243",
+        "buttonText": "Password entered"
+      },
+      {
+        "question": "Is the password not working?",
+        "subtext": "If login fails, restart the computer. When the computer boots back up, click the Windows key, hit the power button and restart again. When the computer boots up again, launch the \"Golfin Launcher\".",
+        "buttonText": "Restarted and launched Golfin Launcher"
+      }
+    ]
+  },
+  "idra_loading": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "Has the computer been running for an extended period?",
+        "subtext": "The computer has probably been running for an extended period of time. Let's reboot the PC. Hit the Windows key, then click the power symbol at the bottom of the screen and then select restart.",
+        "buttonText": "Computer restarted"
+      },
+      {
+        "text": "After the computer restarts, open \"Golfin Launcher\" and relaunch GSPro.",
+        "buttonText": "Golfin Launcher opened"
+      }
+    ]
+  },
+  "idra_app": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "Has the computer been running for an extended period?",
+        "subtext": "The computer has probably been running for an extended period of time. Let's reboot the PC. Hit the Windows key, then click the power symbol at the bottom of the screen and then select restart.",
+        "buttonText": "Computer restarted"
+      },
+      {
+        "question": "Do you see the Golfin Launcher on the desktop?",
+        "subtext": "After the computer restarts, if you see \"Golfin Launcher\" on the desktop, open it. If you don't see the Golfin Launcher app, hit the Windows key and search for it in the search bar. When you find it, select \"open\".",
+        "buttonText": "Golfin Launcher opened"
+      }
+    ]
+  },
+  "idra_light": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "Is the simulator light off during play?",
+        "subtext": "Add more time on the switch below the monitor.",
+        "buttonText": "Time added to switch"
+      }
+    ]
+  },
+  "idra_any_error": {
+    "category": "IDRA",
+    "steps": [
+      {
+        "question": "Has the computer been running for an extended period?",
+        "subtext": "The computer has probably been running for an extended period of time. Let's reboot the PC. Hit the Windows key, then click the power symbol at the bottom of the screen and then select restart.",
+        "buttonText": "Computer restarted"
+      },
+      {
+        "question": "Do you see the Golfin Launcher?",
+        "subtext": "After the computer restarts, select the \"Golfin Launcher\" app. If you don't see the Golfin Launcher app, hit the Windows key and search for it in the search bar. When you find it, select \"open\".",
+        "buttonText": "Golfin Launcher opened"
+      }
+    ]
+  },
+  "protee_menu": {
+    "category": "ProTee",
+    "prompt": "What are you having an issue with?",
+    "choices": {
+      "I'm having an issue with ProTee Labs (Driving Range)": { "next": "protee_labs_menu" },
+      "I'm having an issue with TGC 2019 (Courses)": { "next": "protee_tgc_menu" },
+      "Computer asking for password": { "next": "protee_password" },
+      "Monitor not on": { "next": "common_monitor_black" },
+      "Computer not on": { "next": "common_pc_off" },
+      "Projector not on": { "next": "common_projector_off" }
+    }
+  },
+  "protee_labs_menu": {
+    "category": "ProTee Labs",
+    "prompt": "What problem are you facing?",
+    "choices": {
+      "Ball not picked up": { "next": "protee_labs_no_reads" },
+      "Any on-screen error": { "next": "protee_labs_error" },
+      "Numbers seem off": { "next": "protee_labs_numbers" }
+    }
+  },
+  "protee_labs_no_reads": {
+    "category": "ProTee Labs",
+    "steps": [
+      {
+        "question": "Does it say \"Connected\" in the top right with a green circle?",
+        "subtext": "Check the top-right corner of ProTee Labs. If it doesn't say \"Connected\" with a green circle, click on the \"not connected\" circle, when the screen comes up, click on device → connect.",
+        "buttonText": "Device is connected"
+      },
+      {
+        "question": "Is it still not connecting?",
+        "subtext": "If that does not connect, walk to the screen with a golf club and look at the back of the simulator, locate the red switch, and turn it off, wait 10 seconds then turn it back on, so the red light is on.",
+        "buttonText": "Red switch toggled"
+      },
+      {
+        "question": "Have you restarted the computer?",
+        "subtext": "Go back to the computer, and restart the computer (Windows button, power icon, then select restart). When the computer restarts, select ProTee Labs.",
+        "buttonText": "Computer restarted and ProTee Labs opened"
+      },
+      {
+        "question": "Is the ball too far to the sides?",
+        "subtext": "The ball is too far to the sides, move the ball closer to the middle. You should have the tees setup close to the middle. The device can only pickup the ball 9\" from the center on either side.",
+        "buttonText": "Ball moved to center"
+      },
+      {
+        "question": "Are there too many balls or white objects in view?",
+        "subtext": "There are too many balls within the simulator's view - move them further away. There are too many white objects within the simulator's view - move them away.",
+        "buttonText": "Balls and white objects moved away"
+      },
+      {
+        "question": "Have you tried restarting again?",
+        "subtext": "Restart the computer (Windows button, power icon, then select restart). When the computer restarts, select ProTee Labs. Test reads.",
+        "buttonText": "Restarted and tested"
+      },
+      {
+        "text": "Text (502) 410-2382 to create a maintenance ticket.",
+        "buttonText": "Got it"
+      }
+    ]
+  },
+  "protee_labs_error": {
+    "category": "ProTee Labs",
+    "steps": [
+      {
+        "question": "Is there an error showing in ProTee Labs?",
+        "subtext": "Restart the computer (Windows button, power icon, then select restart). When the computer restarts, select ProTee Labs.",
+        "buttonText": "Computer restarted and ProTee Labs opened"
+      }
+    ]
+  },
+  "protee_labs_numbers": {
+    "category": "ProTee Labs",
+    "steps": [
+      {
+        "question": "Are the simulator numbers off?",
+        "subtext": "Restart the computer (Windows button, power icon, then select restart). When the computer restarts, select ProTee Labs.",
+        "buttonText": "Computer restarted and ProTee Labs opened"
+      },
+      {
+        "text": "If this doesn't work, the device needs to be recalibrated. Text (502) 410-2382, we will recalibrate when staff comes in.",
+        "buttonText": "Need recalibration"
+      }
+    ]
+  },
+  "protee_password": {
+    "category": "ProTee Labs",
+    "steps": [
+      {
+        "question": "What password are you using?",
+        "subtext": "Password: KentuckianaGolf123$\nPIN: 1243",
+        "buttonText": "Password entered"
+      },
+      {
+        "question": "Is the password not working?",
+        "subtext": "In the event this is not working, restart the computer. When the computer boots back up, click the Windows key, hit the power button and restart again. When the computer boots up again, launch the \"ProTee Labs\".",
+        "buttonText": "Restarted and launched ProTee Labs"
+      }
+    ]
+  },
+  "protee_tgc_menu": {
+    "category": "TGC 2019",
+    "prompt": "What problem are you facing?",
+    "choices": {
+      "Not registering shots": { "next": "protee_tgc_no_reads" },
+      "Start a course": { "next": "protee_tgc_start_course" },
+      "Any system error": { "next": "protee_tgc_error" }
+    }
+  },
+  "protee_tgc_no_reads": {
+    "category": "TGC 2019",
+    "steps": [
+      {
+        "question": "Are the red lights on when you look at the simulator?",
+        "subtext": "Let's make sure the device is connected. There should be a circle of red dots on the rear sim panel.",
+        "buttonText": "Red lights are on"
+      },
+      {
+        "question": "Are the red lights not visible?",
+        "subtext": "Click the Windows key on the keyboard, Select the ProTee Labs icon from the bottom. If the icon is not present, right click on TGC 2019 icon and close the app, then click on the ProTee Labs icon on the desktop screen.",
+        "buttonText": "Switched to ProTee Labs"
+      },
+      {
+        "question": "Is the device connected in ProTee Labs?",
+        "subtext": "When ProTee Labs is pulled up, click on the circle in the top right, then click device → connect.",
+        "buttonText": "Device connected"
+      },
+      {
+        "question": "Is the device already connected?",
+        "subtext": "If the device is already connected, go through the connected device troubleshooting steps.",
+        "buttonText": "Went through troubleshooting"
+      },
+      {
+        "text": "If all fails, restart the computer then restart ProTee Labs. TGC will automatically launch when ProTee Labs launches.",
+        "buttonText": "Restarted and launched"
+      }
+    ]
+  },
+  "protee_tgc_start_course": {
+    "category": "TGC 2019",
+    "steps": [
+      {
+        "question": "How do I start a course on TGC 2019?",
+        "subtext": "Select Create Local Match, then select \"Change Course\". When you are looking at courses, you can select \"More Filters\" from there, you can type in any course name.",
+        "buttonText": "Course selected"
+      },
+      {
+        "text": "Tip: look for the highest rated courses. Courses with \"L\" are typically the most similar to the actual course as they use lidar to create course.",
+        "buttonText": "Got it"
+      }
+    ]
+  },
+  "protee_tgc_error": {
+    "category": "TGC 2019",
+    "steps": [
+      {
+        "question": "Is there a system error on screen?",
+        "subtext": "Restart the computer (Windows button, power icon, then select restart). When the computer restarts, select ProTee Labs.",
+        "buttonText": "Computer restarted and ProTee Labs opened"
+      }
+    ]
+  },
+  "protee_password_tgc": {
+    "category": "TGC 2019",
+    "steps": [
+      {
+        "question": "What password are you using?",
+        "subtext": "Password: KentuckianaGolf123$\nPIN: 1243",
+        "buttonText": "Password entered"
+      },
+      {
+        "question": "Is the password not working?",
+        "subtext": "In the event this is not working, restart the computer. When the computer boots back up, click the Windows key, hit the power button and restart again. When the computer boots up again, launch the \"ProTee Labs\".",
+        "buttonText": "Restarted and launched ProTee Labs"
+      }
+    ]
+  },
+  "skytrak_menu": {
+    "category": "SkyTrak",
+    "prompt": "What problem are you facing?",
+    "choices": {
+      "Not connecting (use middle light state)": { "next": "skytrak_connect" },
+      "Shots not picking up": { "next": "skytrak_no_reads" },
+      "Computer asking for password": { "next": "skytrak_password" },
+      "Monitor not on": { "next": "common_monitor_black" },
+      "Computer not on": { "next": "common_pc_off" },
+      "Projector not on": { "next": "common_projector_off" },
+      "Projector is way too wide": { "next": "common_aspect_ratio" }
+    }
+  },
+  "skytrak_connect": {
+    "category": "SkyTrak",
+    "prompt": "What color is the middle light?",
+    "choices": {
+      "OFF": {
+        "steps": [
+          {
+            "question": "Is the SkyTrak device off?",
+            "subtext": "Turn on the SkyTrak device. The power button is on the bottom left of the device. Make sure the computer is on the correct wifi network. Wifi Network Name: Bay[bay number]. The password is \"BirdiePutt[bay number]\"",
+            "buttonText": "SkyTrak turned on and on correct WiFi"
+          },
+          {
+            "question": "Is the app still not connecting?",
+            "subtext": "If you are on the correct wifi network, close out of the SkyTrak app (Windows key, then right click on the SkyTrak app at the bottom, then close, then click back on the SkyTrak app and click the button to close the app. Once, back on the desktop screen, reopen the SkyTrak app.",
+            "buttonText": "App closed and reopened"
+          }
+        ]
+      },
+      "YELLOW": {
+        "steps": [
+          {
+            "question": "Is the middle light yellow?",
+            "subtext": "Yellow means the SkyTrak is online but not linked to the app. Fully close the app (Windows key → right-click taskbar app → Close) → Reopen. Ensure PC is on bay Wi-Fi: Wifi Network Name: Bay[bay number], Password: BirdiePutt[bay number]",
+            "buttonText": "App closed and reopened, on correct WiFi"
+          }
+        ]
+      },
+      "SOLID GREEN": {
+        "steps": [
+          {
+            "question": "Is the middle light solid green?",
+            "subtext": "Confirm PC is on bay Wi-Fi: Wifi Network Name: Bay[bay number], Password: BirdiePutt[bay number]. If still not connecting, connect PC to \"skytrakplus\" network",
+            "buttonText": "Connected to correct network"
+          },
+          {
+            "question": "Is the app still not connecting?",
+            "subtext": "App should connect; if not, fully close & reopen app. Switch to Network Mode → Setup SkyTrak Plus → Scan/select Wifi Network Name: Bay[bay number], Password: BirdiePutt[bay number]",
+            "buttonText": "Switched to Network Mode"
+          },
+          {
+            "question": "Has the SkyTrak light turned yellow?",
+            "subtext": "When the SkyTrak's middle light turns yellow, select the Windows key, then go to the wifi network. Connect the wifi to Wifi Network Name: Bay[bay number]. The password is \"BirdiePutt[bay number]\"",
+            "buttonText": "Reconnected to bay WiFi"
+          },
+          {
+            "question": "Is the app still not connecting?",
+            "subtext": "If the app does not connect, click the Windows button, close the SkyTrak app, then re-open the SkyTrak app from the home screen. If that does not work and the SkyTrak middle light is still yellow, restart the PC (Windows button, click on the power icon and restart, then reopen the SkyTrak app.",
+            "buttonText": "Restarted PC and reopened app"
+          }
+        ]
+      },
+      "RED": {
+        "steps": [
+          {
+            "question": "Is the middle light red?",
+            "subtext": "This is complicated and I recommend moving to another bay. If that is not possible, hit the Windows key, and click on the wifi networks in the bottom right. Connect to the Skytrak network that is showing. The password is \"skytrakplus\".",
+            "buttonText": "Connected to skytrakplus network"
+          },
+          {
+            "question": "Is the app connected now?",
+            "subtext": "Once the wifi is connected, the app should connect, if it doesn't, hit the Windows key, then right click on the SkyTrak app at the bottom, then close, then click back on the SkyTrak app and click the button to close the app. Once, back on the desktop screen, reopen the SkyTrak app.",
+            "buttonText": "App closed and reopened"
+          },
+          {
+            "question": "Have you switched to Network Mode?",
+            "subtext": "Once the device is connected, click where it says \"Connected in Direct Mode\", then select \"Network Mode\", select the setup for the \"Skytrak Plus\". Once in the Skytrak Plus setup, scan for networks and select Wifi Network Name: Bay[bay number]. The password is \"BirdiePutt[bay number]\". Click connect",
+            "buttonText": "Switched to Network Mode and connected"
+          },
+          {
+            "question": "Has the SkyTrak light turned yellow?",
+            "subtext": "When the SkyTrak's middle light turns yellow, select the Windows key, then go to the wifi network. Connect the wifi to Wifi Network Name: Bay[bay number]. The password is \"BirdiePutt[bay number]\"",
+            "buttonText": "Reconnected to bay WiFi"
+          },
+          {
+            "question": "Is the app still not connecting?",
+            "subtext": "If the app does not connect, click the Windows button, close the SkyTrak app, then re-open the SkyTrak app from the home screen. If that does not work and the SkyTrak middle light is still yellow, restart the PC (Windows button, click on the power icon and restart, then reopen the SkyTrak app.",
+            "buttonText": "Restarted PC and reopened app"
+          }
+        ]
+      }
+    }
+  },
+  "skytrak_password": {
+    "category": "SkyTrak",
+    "steps": [
+      {
+        "question": "What password are you using?",
+        "subtext": "Password: KentuckianaGolf123$\nPIN: 1243",
+        "buttonText": "Password entered"
+      },
+      {
+        "question": "Is the password not working?",
+        "subtext": "If login fails, restart the computer. When the computer boots back up, click the Windows key, hit the power button and restart again. When the computer boots up again, reopen the SkyTrak app.",
+        "buttonText": "Restarted and reopened SkyTrak app"
+      }
+    ]
+  },
+  "skytrak_no_reads": {
+    "category": "SkyTrak",
+    "steps": [
+      {
+        "question": "Are you placing the ball on the red dot?",
+        "subtext": "Make sure you are placing the ball on the red dot. When hitting off a tee, put the red dot on the base of the tee. Feel free to move the SkyTrak.",
+        "buttonText": "Ball placed on red dot"
+      },
+      {
+        "question": "Is it still not picking up?",
+        "subtext": "If it is still not picking up, turn the SkyTrak off (button on the back of the SkyTrak), let it sit for 20 seconds, and then power it back on.",
+        "buttonText": "SkyTrak power cycled"
+      },
+      {
+        "question": "Is this a left-handed bay?",
+        "subtext": "This mainly happens on the left-handed bay. Is the SkyTrak set to the correct hand-ness? Go to settings and check.",
+        "buttonText": "Handedness checked"
+      }
+    ]
+  },
+  "common_menu": {
+    "prompt": "Common / Non-Simulator",
+    "choices": {
+      "Locked out of facility": { "next": "common_locked_out" },
+      "Kisi app not working": { "next": "common_kisi" },
+      "No confirmation email after signup": { "next": "common_no_email" },
+      "Upgrade/Downgrade membership": { "next": "common_membership_change" },
+      "Cancel membership": { "next": "common_membership_cancel" }
+    }
+  },
+  "common_monitor_black": {
+    "steps": [
+      {
+        "question": "Is the monitor on?",
+        "subtext": "Make sure the monitor is on. The power button is under the bottom right corner. Click the button on.",
+        "buttonText": "Monitor is on"
+      },
+      {
+        "question": "Is the computer off or asleep?",
+        "subtext": "The computer is off. Make sure the computer is lit up, if it is not and you have tried to wake up the computer, click on the power button. Depending on the PC, it is either on the front of the PC or on the top.",
+        "buttonText": "Computer is on"
+      }
+    ]
+  },
+  "common_pc_off": {
+    "steps": [
+      {
+        "question": "Is the computer not on?",
+        "subtext": "Make sure the computer is lit up, if it is not and you have tried to wake up the computer, click on the power button. Depending on the PC, it is either on the front of the PC or on the top.",
+        "buttonText": "Computer is on"
+      }
+    ]
+  },
+  "common_projector_off": {
+    "steps": [
+      {
+        "question": "Is the projector on?",
+        "subtext": "Take the remote and point it at the projector. The projector is located behind the hitting area (the simulator is in front).",
+        "buttonText": "Projector is on"
+      },
+      {
+        "question": "Is the bay missing a remote?",
+        "subtext": "If the bay is missing a remote, find a remote from another similar bay (group or single) to turn it on.",
+        "buttonText": "Found remote and turned on"
+      }
+    ]
+  },
+  "common_aspect_ratio": {
+    "steps": [
+      {
+        "question": "Is the aspect ratio off?",
+        "subtext": "The ratio on the single bays in Clarksville should be set to 4:3. Point the remote at the projector and click the \"☰\" button, select aspect ratio and then click 4:3. Then click the back button to get back to the game. (Only for single bays at Clarksville - do not change the aspect ratio on any other bays)",
+        "buttonText": "Aspect ratio set to 4:3"
+      }
+    ]
+  },
+  "common_locked_out": {
+    "steps": [
+      {
+        "text": "Call (502) 410-2382 and have staff open the door.",
+        "buttonText": "Called support"
+      }
+    ]
+  },
+  "common_kisi": {
+    "steps": [
+      {
+        "question": "Have you completely closed out of the app on your phone?",
+        "subtext": "Completely close out of the app on your phone.",
+        "buttonText": "App closed"
+      },
+      {
+        "question": "What type of phone are you on?",
+        "subtext": "For iPhones, here is how to close out an app: https://support.apple.com/en-us/109359\n\nFor Android, here is how to close out an app: https://www.wikihow.com/Close-Apps-on-Android",
+        "buttonText": "Followed guide to close app"
+      },
+      {
+        "question": "Have you reopened the app?",
+        "subtext": "Once the app is closed out, restart the app and reopen it.",
+        "buttonText": "App reopened"
+      },
+      {
+        "question": "Is it still not working?",
+        "subtext": "Still not working? Call (502) 410-2382 hit extension 1 and have staff open the door.",
+        "buttonText": "Called support"
+      },
+      {
+        "text": "If no doors are showing, your access needs to be reset. Staff needs to go to your profile in Gymdesk, expand your profile, then toggle your access off, refresh the screen, then toggle it on.",
+        "buttonText": "Need staff to reset access"
+      }
+    ]
+  },
+  "common_no_email": {
+    "steps": [
+      {
+        "question": "Did you just sign up and not receive a confirmation email?",
+        "subtext": "The most likely cause is a typo in your email.",
+        "buttonText": "Email may be wrong"
+      },
+      {
+        "question": "Have you called support?",
+        "subtext": "Call (502) 410-2382 hit extension 1 and have staff check your email in your profile.",
+        "buttonText": "Called support"
+      },
+      {
+        "text": "Staff can edit your email, then follow the reset Kisi access steps.",
+        "buttonText": "Staff will fix email"
+      }
+    ]
+  },
+  "common_membership_change": {
+    "steps": [
+      {
+        "text": "Text (502) 410-2382 with your name and the membership you would like to switch to.",
+        "buttonText": "Texted support"
+      }
+    ]
+  },
+  "common_membership_cancel": {
+    "steps": [
+      {
+        "text": "Text (502) 410-2382 with your name and that you'd like to cancel.",
+        "buttonText": "Texted support"
+      }
+    ]
+  }
+}
