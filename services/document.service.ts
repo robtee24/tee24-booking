@@ -309,11 +309,39 @@ async function renderSignedPdf(opts: {
 }
 
 /**
- * Persist the signed PDF. v1: write to /tmp; replace with S3/Supabase Storage.
+ * Persist the signed PDF bytes in `DocumentFile` and return the URL that
+ * serves them (member-or-admin gated, see /api/documents/[assignmentId]/pdf).
  */
-async function persistPdf(assignmentId: string, _buffer: Buffer): Promise<string> {
-  // Placeholder: return a deterministic URL used by the portal / admin.
-  // Real implementation uploads to S3/Supabase Storage and returns the URL.
+export async function persistPdf(
+  assignmentId: string,
+  buffer: Buffer,
+  opts: { source?: string; mimeType?: string } = {},
+): Promise<string> {
+  const prisma = getPrisma();
+  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  const data = new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
+  await prisma.documentFile.upsert({
+    where: { assignmentId },
+    create: {
+      assignmentId,
+      mimeType: opts.mimeType ?? "application/pdf",
+      sizeBytes: buffer.byteLength,
+      sha256,
+      source: opts.source ?? null,
+      data,
+    },
+    update: {
+      mimeType: opts.mimeType ?? "application/pdf",
+      sizeBytes: buffer.byteLength,
+      sha256,
+      source: opts.source ?? null,
+      data,
+    },
+  });
+  return signedPdfUrl(assignmentId);
+}
+
+export function signedPdfUrl(assignmentId: string): string {
   return `/api/documents/${assignmentId}/pdf`;
 }
 

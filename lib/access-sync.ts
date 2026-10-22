@@ -30,6 +30,7 @@ import {
 } from "@/lib/kisi";
 import { audit } from "@/lib/audit";
 import { adminNotify } from "@/lib/admin-notify";
+import { isMigrationFrozen } from "@/lib/migration-freeze";
 
 export type AccessReason =
   | "signup_success"
@@ -77,6 +78,12 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
     },
   });
   if (!member) throw new Error(`Member ${memberId} not found`);
+
+  // 0. Migration freeze — GymDesk still owns Kisi shares. Report, don't act.
+  if (isMigrationFrozen()) {
+    console.log("[access-sync] MIGRATION_FREEZE on — skipping Kisi update", { memberId, desired: desired.enabled, reason: desired.reason });
+    return { enabled: member.kisiAccessEnabled, reason: member.kisiAccessReason ?? "Migration freeze — Kisi managed by GymDesk" };
+  }
 
   // 1. Ensure Kisi user exists (lazy create on first activation)
   let kisiUserId = member.kisiUserId ? Number(member.kisiUserId) : null;

@@ -857,9 +857,28 @@ model DocumentAssignment {
   document Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
   member   Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
   events   SignatureEvent[]
+  file     DocumentFile?
 
   @@index([memberId, status])
   @@index([documentId])
+}
+
+/**
+ * Stored bytes of a signed document (the PDF the member actually signed).
+ * Served via /api/documents/[assignmentId]/pdf. Imported GymDesk waivers set
+ * `source` to "gymdesk:<docReadId>".
+ */
+model DocumentFile {
+  id           String   @id @default(cuid())
+  assignmentId String   @unique
+  mimeType     String   @default("application/pdf")
+  sizeBytes    Int
+  sha256       String
+  source       String?
+  data         Bytes
+  createdAt    DateTime @default(now())
+
+  assignment DocumentAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 }
 
 model SignatureEvent {

@@ -30,6 +30,7 @@ import { expireOldDocumentSignings } from "@/services/document.service";
 import { buildMonthlyPayoutBatch } from "@/services/referral.service";
 import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
 import { syncDoorsFromKisi, syncKisiUnlockEvents } from "@/services/door.service";
+import { isMigrationFrozen, MIGRATION_FREEZE_SKIP } from "@/lib/migration-freeze";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -91,6 +92,7 @@ async function run(req: NextRequest) {
         return NextResponse.json({ ok: true, batches: r });
       }
       case "reconcile-access": {
+        if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
         if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
         const r = await reconcileAllMemberAccess();
         return NextResponse.json({ ok: true, ...r });
@@ -106,14 +108,17 @@ async function run(req: NextRequest) {
         return NextResponse.json({ ok: true, ...r });
       }
       case "generate-invoices": {
+        if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
         const r = await generateDueInvoices();
         return NextResponse.json({ ok: true, ...r });
       }
       case "retry-failed-payments": {
+        if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
         const r = await retryFailedPayments();
         return NextResponse.json({ ok: true, ...r });
       }
       case "upcoming-payment-reminders": {
+        if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
         const r = await sendUpcomingPaymentReminders();
         return NextResponse.json({ ok: true, ...r });
       }
