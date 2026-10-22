@@ -1,145 +1,75 @@
 // app/api/admin/admins/route.ts
+//
+//   GET  /api/admin/admins   — roster (SCOPED admins only see colleagues who
+//                              share a location). Any signed-in admin.
+//   POST /api/admin/admins   — create + invite. Requires `admin.manage`
+//                              (ROOT/FULL). Only ROOT may create ROOT/FULL.
 import { NextResponse, type NextRequest } from "next/server";
-import { getPrisma } from "@/lib/db";
-import { getAdminSession, isRoot } from "@/lib/session.server";
 import type { AdminRole } from "@prisma/client";
+import { requireAdminApi, requireFullAdminApi } from "@/lib/api-auth";
+import { getActorContext } from "@/lib/actor";
+import { assertCan } from "@/lib/permissions";
+import {
+  createStaffAdmin,
+  listStaffAdmins,
+  PERMISSION_PRESETS,
+  permissionGroups,
+  StaffError,
+} from "@/services/staff.service";
+import { staffApiError } from "./_shared";
 
 export const runtime = "nodejs";
-
-/* ---------------- utils ---------------- */
-function normalizePhone(input: string): string {
-  const digits = (input || "").replace(/\D/g, "");
-  if (!digits) return "";
-  return digits.length === 10 ? `+1${digits}` : `+${digits}`;
-}
+export const dynamic = "force-dynamic";
 
 const ALLOWED_ROLES: AdminRole[] = ["ROOT", "FULL", "SCOPED"];
 
-/* ---------------- GET /api/admin/admins ---------------- */
-export async function GET(_request: NextRequest) {
+export async function GET(req: NextRequest) {
+  const guard = await requireAdminApi();
+  if (!guard.ok) return guard.response;
   try {
-    const session = await getAdminSession();
-    if (!session) {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-    }
+    const admin = guard.admin;
+    const admins =
+      admin.role === "SCOPED"
+        ? await listStaffAdmins({ locationIds: admin.locations.map((l) => l.locationId) })
+        : await listStaffAdmins();
 
-    let admins;
-
-    if (session.role === "SCOPED" && session.locationSlugs?.length) {
-      // SCOPED: only admins who share at least one location
-      const adminIdsInScope = await getPrisma().adminLocation.findMany({
-        where: {
-          location: { slug: { in: session.locationSlugs } },
-        },
-        select: { adminId: true },
-        distinct: ["adminId"],
-      });
-
-      const ids = adminIdsInScope.map((a) => a.adminId);
-
-      admins = await getPrisma().admin.findMany({
-        where: { id: { in: ids } },
-        orderBy: { createdAt: "desc" },
-        include: {
-          locations: {
-            include: { location: { select: { id: true, name: true, slug: true } } },
-          },
-        },
-      });
-    } else {
-      // ROOT / FULL: see all
-      admins = await getPrisma().admin.findMany({
-        orderBy: { createdAt: "desc" },
-        include: {
-          locations: {
-            include: { location: { select: { id: true, name: true, slug: true } } },
-          },
-        },
-      });
-    }
-
-    return NextResponse.json({ ok: true, admins });
-  } catch (err: any) {
-    console.error("GET /api/admin/admins error:", err?.message || err);
-    return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
+    const includeCatalog = req.nextUrl.searchParams.get("catalog") === "1";
+    return NextResponse.json({
+      ok: true,
+      admins,
+      ...(includeCatalog ? { groups: permissionGroups(), presets: PERMISSION_PRESETS } : {}),
+    });
+  } catch (err) {
+    return staffApiError(err);
   }
 }
 
-/* ---------------- POST /api/admin/admins ---------------- */
 export async function POST(request: NextRequest) {
+  const guard = await requireFullAdminApi();
+  if (!guard.ok) return guard.response;
   try {
-    const session = await getAdminSession();
-    if (!session || !isRoot(session)) {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    assertCan(await getActorContext(), "admin.manage");
+    const body = await request.json().catch(() => ({} as Record<string, unknown>));
+    const role: AdminRole = ALLOWED_ROLES.includes(body.role as AdminRole) ? (body.role as AdminRole) : "SCOPED";
+    if (role !== "SCOPED" && guard.admin.role !== "ROOT") {
+      throw new StaffError("Only ROOT can create ROOT/FULL admins", 403);
     }
+    if (!body.phone) throw new StaffError("Phone is required", 400);
 
-    const body = await request.json().catch(() => ({} as any));
-    let { name, phone, role, locationIds } = body as {
-      name?: string | null;
-      phone?: string;
-      role?: AdminRole;
-      locationIds?: string[];
-    };
-
-    const cleanName = (name ?? "").toString().trim() || null;
-    const cleanPhone = normalizePhone(phone || "");
-    if (!cleanPhone) {
-      return NextResponse.json({ ok: false, error: "Invalid phone" }, { status: 400 });
-    }
-
-    const cleanRole: AdminRole = ALLOWED_ROLES.includes(role as AdminRole)
-      ? (role as AdminRole)
-      : "SCOPED";
-
-    // Ensure uniqueness by phone
-    const exists = await getPrisma().admin.findUnique({ where: { phone: cleanPhone } });
-    if (exists) {
-      return NextResponse.json({ ok: false, error: "Admin already exists" }, { status: 400 });
-    }
-
-    // Validate locationIds if SCOPED
-    let uniqueLocIds: string[] = [];
-    if (cleanRole === "SCOPED" && Array.isArray(locationIds) && locationIds.length) {
-      uniqueLocIds = Array.from(new Set(locationIds.map(String).filter(Boolean)));
-
-      // ROOT can assign any location — no restriction
-      // But we still validate that location IDs exist
-      const validLocations = await getPrisma().location.findMany({
-        where: { id: { in: uniqueLocIds } },
-        select: { id: true },
-      });
-      const validIds = validLocations.map((l) => l.id);
-      const invalid = uniqueLocIds.filter((id) => !validIds.includes(id));
-      if (invalid.length > 0) {
-        return NextResponse.json(
-          { ok: false, error: `Invalid location IDs: ${invalid.join(", ")}` },
-          { status: 400 }
-        );
-      }
-    }
-
-    const data: any = {
-      phone: cleanPhone,
-      role: cleanRole,
-      name: cleanName,
-    };
-
-    if (cleanRole === "SCOPED" && uniqueLocIds.length > 0) {
-      data.locations = { create: uniqueLocIds.map((id) => ({ locationId: id })) };
-    }
-
-    const admin = await getPrisma().admin.create({
-      data,
-      include: {
-        locations: {
-          include: { location: { select: { id: true, name: true, slug: true } } },
-        },
+    const admin = await createStaffAdmin(
+      {
+        name: (body.name as string | null | undefined) ?? null,
+        phone: String(body.phone),
+        email: (body.email as string | null | undefined) ?? null,
+        role,
+        locationIds: Array.isArray(body.locationIds) ? (body.locationIds as string[]) : [],
+        permissions: Array.isArray(body.permissions) ? (body.permissions as { permission: string; locationId?: string | null }[]) : [],
+        sendInvite: body.sendInvite !== false,
       },
-    });
-
-    return NextResponse.json({ ok: true, admin });
-  } catch (err: any) {
-    console.error("POST /api/admin/admins error:", err?.message || err);
-    return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
+      guard.admin.id,
+    );
+    return NextResponse.json({ ok: true, admin }, { status: 201 });
+  } catch (err) {
+    return staffApiError(err);
   }
 }
