@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { Card, CardHeader, EmptyState, PageHeader, Button, StatusBadge } from "@/components/ui";
-import { AreaChart, BarChart, DonutChart, KpiCard, LineChart } from "@/components/ui/charts";
-import { MessageSquare, Send } from "lucide-react";
+import { Card, CardHeader, PageHeader, Button } from "@/components/ui";
+import { AreaChart, DonutChart, KpiCard, LineChart } from "@/components/ui/charts";
+import { Send } from "lucide-react";
 import { lastNDays } from "@/lib/chart-data";
+import { adminRoutes } from "@/lib/admin/routes";
+import { MessageHistory } from "@/components/admin/marketing/MessageHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +20,10 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
 
   const [messages, last30Stats, channelMix] = await Promise.all([
     prisma.message.findMany({
-      where: { member: { locationId: location.id }, category: "MARKETING" },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      include: { member: { select: { id: true, firstName: true, lastName: true } } },
+      where: { direction: "OUTBOUND", OR: [{ member: { locationId: location.id } }, { conversation: { locationId: location.id } }] },
+      orderBy: [{ createdAt: "desc" }],
+      take: 200,
+      select: { id: true, channel: true, category: true, status: true, subject: true, body: true, createdAt: true, scheduledFor: true, openedAt: true, clickedAt: true, member: { select: { id: true, firstName: true, lastName: true } } },
     }),
     prisma.message.findMany({
       where: { member: { locationId: location.id }, createdAt: { gte: ninetyAgo } },
@@ -80,7 +82,7 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
         title="Messaging"
         description="Bulk emails (Resend) and SMS (Quo). All sends honor opt-out preferences."
         actions={
-          <Link href={`/admin/locations/${slug}/marketing/messaging/compose`}>
+          <Link href={adminRoutes.loc.marketing.compose(slug)}>
             <Button iconLeft={<Send className="h-4 w-4" />}>New broadcast</Button>
           </Link>
         }
@@ -135,28 +137,15 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
         </Card>
       </div>
 
-      <Card padded={false}>
-        <div className="border-b border-apple-divider px-4 py-3">
-          <div className="text-apple-sm font-semibold text-apple-text">Recent messages</div>
-        </div>
-        {messages.length === 0 ? (
-          <EmptyState icon={<MessageSquare className="h-6 w-6" />} title="No marketing messages yet" />
-        ) : (
-          <ul className="divide-y divide-apple-divider">
-            {messages.map((m) => (
-              <li key={m.id} className="flex items-center justify-between p-4 text-apple-sm">
-                <div>
-                  <div className="font-medium text-apple-text">{m.subject ?? m.body.slice(0, 80)}</div>
-                  <div className="text-apple-xs text-apple-text-tertiary">
-                    {m.channel} · to {m.member?.firstName} {m.member?.lastName} · {new Date(m.createdAt).toLocaleString()}
-                  </div>
-                </div>
-                <StatusBadge status={m.status} size="sm" />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <MessageHistory
+        rows={messages.map((m) => ({
+          ...m,
+          createdAt: m.createdAt.toISOString(),
+          scheduledFor: m.scheduledFor?.toISOString() ?? null,
+          openedAt: m.openedAt?.toISOString() ?? null,
+          clickedAt: m.clickedAt?.toISOString() ?? null,
+        }))}
+      />
     </div>
   );
 }
