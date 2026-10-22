@@ -13,6 +13,7 @@
 import { addHours, addMinutes, subMinutes } from "date-fns";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { emitMemberEvent } from "@/lib/events";
 
 export type IngestKisiUnlockInput = {
   kisiEventId: string;
@@ -189,6 +190,19 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
       notes: !member && input.actorName ? `Kisi user: ${input.actorName}` : undefined,
     },
   });
+
+  // Door unlocks are how nearly every visit is recorded at a 24/7 facility, so they must
+  // drive the same "visit.checked-in" automations as a front-desk check-in. Only the first
+  // unlock of a visit gets here (later unlocks are deduped above), so this fires once per visit.
+  if (member) {
+    void emitMemberEvent("visit.checked-in", {
+      memberId: member.id,
+      locationId,
+      organizationId: member.organizationId,
+      refs: { visitId: visit.id },
+      vars: { visitType: type, firstName: member.firstName, lastName: member.lastName, source: "KISI" },
+    });
+  }
 
   return { visitId: visit.id, deduped: false };
 }
