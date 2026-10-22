@@ -1,62 +1,43 @@
-export interface AppConfig {
-  deviceId: string;
-  apiBaseUrl: string;
-  locationId?: string;
-  locationName?: string;
-  bayNumber?: number;
-  configured: boolean;
-}
+// Type-only re-exports from the main process (erased at build time).
+export type { KioskState, OverlayMode } from '../../main/poller';
+export type { StatusResponse, Booking, AdminLocation, AdminSession } from '../../main/api';
+export type { KioskBridge } from '../../main/preload';
+export type { KioskSettings } from '../../main/store';
+export type { UpdatePhase } from '../../main/updater';
+export type { RemoteAgentStatus } from '../../main/remote';
+export type { LauncherState } from '../../main/launcher';
 
-export interface LocationInfo {
-  id: string;
-  name: string;
-  slug: string;
-  bayAppEnabled: boolean;
-  bays: Array<{ id: string; number: number; name: string | null }>;
-  bayAppRegistrations: Array<{ bayNumber: number; deviceId: string }>;
-}
+export type TroubleshootStep = {
+  question?: string;
+  subtext?: string;
+  text?: string;
+  buttonText?: string;
+  externalLink?: string;
+};
+export type TroubleshootChoice = { next?: string; steps?: TroubleshootStep[] };
+export type TroubleshootNode = {
+  prompt?: string;
+  category?: string;
+  choices?: Record<string, TroubleshootChoice>;
+  steps?: TroubleshootStep[];
+};
+export type TroubleshootTree = Record<string, TroubleshootNode>;
 
-export interface BookingInfo {
-  id: string;
-  firstName: string;
-  lastName: string;
-  phone?: string;
-  start: string;
-  end: string;
-  checkedInAt?: string | null;
-}
+export type HelpResponse = {
+  tree: TroubleshootTree;
+  entryNodeId: string;
+  commonNodeId: string;
+  bay: { number: number; name: string | null; launchMonitor: string; setupNotes: string | null } | null;
+  location: { name: string; slug: string; passAccessUrl: string | null } | null;
+};
 
-export interface BayStatus {
-  location: {
-    name: string;
-    timezone: string;
-    bayAppEnabled: boolean;
-    bayAppUnlockMinutes: number;
-    bayAppWarningMinutes: number;
-    bayAppAutoCancelOnTimeout: boolean;
-  };
-  bay: {
-    number: number;
-    name: string | null;
-  };
-  currentBooking: BookingInfo | null;
-  nextBooking: BookingInfo | null;
-}
+export type ScheduleResponse = {
+  serverNow: string;
+  dateISO: string;
+  timezone: string;
+  location: { name: string; open24Hours: boolean; hours: unknown };
+  bay: { number: number };
+  bookings: { id: string; firstName: string; lastInitial: string; start: string; end: string; checkedIn: boolean }[];
+};
 
-declare global {
-  interface Window {
-    bayApp: {
-      getConfig: () => Promise<AppConfig>;
-      setConfig: (config: Partial<AppConfig>) => Promise<AppConfig>;
-      clearConfig: () => Promise<void>;
-      startPoller: () => Promise<void>;
-      dismissOverlay: () => Promise<void>;
-      dismissWarning: () => Promise<void>;
-      onShowOverlay: (cb: (data: BayStatus) => void) => () => void;
-      onShowWarning: (cb: (data: BayStatus) => void) => () => void;
-      onHideOverlay: (cb: () => void) => () => void;
-      onHideWarning: (cb: () => void) => () => void;
-      apiRequest: (method: string, url: string, body?: unknown) => Promise<any>;
-    };
-  }
-}
+export type IpcError = { error: string; status?: number; code?: string; data?: unknown };

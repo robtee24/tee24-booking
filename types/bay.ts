@@ -66,6 +66,7 @@ export type AdminBayRow = BayInfo & {
     lastSeenAt: string | null;
     appVersion: string | null;
     hostname: string | null;
+    remoteNodeId: string | null;
     online: boolean;
   };
 };

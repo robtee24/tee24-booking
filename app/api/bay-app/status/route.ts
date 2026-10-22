@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
+import { remoteInfoForKiosk, normalizeNodeId } from '@/lib/remote/meshcentral';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/bay-app/status?deviceId=...&v=<appVersion>
+ * GET /api/bay-app/status?deviceId=...&v=<appVersion>&nodeId=<mesh node id>
  *
  * Core polling endpoint for the bay kiosk. Returns:
  *  - location kiosk settings
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const deviceId = (searchParams.get('deviceId') ?? '').trim();
     const appVersion = (searchParams.get('v') ?? '').trim() || null;
+    const remoteNodeId = normalizeNodeId(searchParams.get('nodeId') ?? '');
 
     if (!deviceId) {
       return NextResponse.json({ error: 'deviceId required' }, { status: 400 });
@@ -59,7 +61,7 @@ export async function GET(req: Request) {
     prisma.bayAppRegistration
       .update({
         where: { deviceId },
-        data: { lastSeenAt: now, ...(appVersion ? { appVersion } : {}) },
+        data: { lastSeenAt: now, ...(appVersion ? { appVersion } : {}), ...(remoteNodeId ? { remoteNodeId } : {}) },
       })
       .catch(() => {});
 
@@ -84,6 +86,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       serverNow: now.toISOString(),
+      remote: remoteInfoForKiosk(),
+      remoteNodeId: remoteNodeId ?? registration.remoteNodeId ?? null,
       location: {
         id: location.id,
         name: location.name,
@@ -126,8 +130,8 @@ export async function GET(req: Request) {
           }
         : null,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[bay-app/status]', e);
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Server error' }, { status: 500 });
   }
 }

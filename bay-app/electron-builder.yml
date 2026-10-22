@@ -1,6 +1,7 @@
-appId: com.tee24.bay-checkin
-productName: Tee24 Bay Check-In
+appId: com.tee24.bay-kiosk
+productName: Tee24 Bay Kiosk
 copyright: Copyright © 2026 Tee24
+artifactName: Tee24-Bay-Kiosk-Setup-${version}.${ext}
 
 directories:
   output: release
@@ -8,34 +9,32 @@ directories:
 
 files:
   - dist/**/*
-  - "!node_modules/**/*"
+  - package.json
 
-extraResources:
-  - from: dist/renderer
-    to: renderer
+# Auto-update + /desktop-app download both read from GitHub Releases on the
+# public tee24-booking repo. Tags look like kiosk-v1.2.3 (see .github/workflows).
+publish:
+  provider: github
+  owner: robtee24
+  repo: tee24-booking
+  releaseType: release
+  vPrefixedTagName: false
 
 win:
+  # Add build/icon.ico (256x256) to brand the installer; electron-builder falls back to the default icon.
   target:
     - target: nsis
       arch:
         - x64
-  icon: build/icon.ico
+  # Unsigned for now. The installer will show SmartScreen's "More info → Run anyway".
+  signAndEditExecutable: false
 
 nsis:
-  oneClick: false
+  oneClick: true
   perMachine: true
   allowToChangeInstallationDirectory: false
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
-  installerHeaderIcon: build/icon.ico
-  createDesktopShortcut: true
+  runAfterFinish: true
+  createDesktopShortcut: false
   createStartMenuShortcut: true
-  shortcutName: Tee24 Bay Check-In
-
-mac:
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-  category: public.app-category.business
+  shortcutName: Tee24 Bay Kiosk
+  deleteAppDataOnUninstall: false

@@ -1,26 +1,34 @@
 {
-  "name": "tee24-bay-checkin",
+  "name": "tee24-bay-kiosk",
   "version": "1.0.0",
-  "description": "Tee24 Bay Check-In Desktop App",
+  "description": "Tee24 Bay Kiosk — bay computer desktop app",
+  "author": "Tee24",
+  "license": "UNLICENSED",
+  "private": true,
   "main": "dist/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robtee24/tee24-booking.git"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.json --noEmit",
     "build": "npm run build:renderer && npm run build:main",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "start": "electron dist/main/index.js",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --win --publish never",
+    "release": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
-    "electron-store": "^10.0.0",
-    "uuid": "^11.1.0"
+    "electron-log": "^5.2.0",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "concurrently": "^9.1.0",
     "electron": "^33.0.0",

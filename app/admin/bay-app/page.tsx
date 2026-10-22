@@ -16,9 +16,9 @@ export default async function BayAppPage() {
         title="Bay kiosk app"
         description={`${KIOSK_APP_NAME} runs on every bay computer. It replaces the Golfin Launcher home screen, launches GSPro, and handles reservations.`}
         actions={
-          <a href={KIOSK_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="btn-primary inline-flex items-center gap-2">
+          <a href={KIOSK_DOWNLOAD_URL} className="btn-primary inline-flex items-center gap-2">
             <Download className="h-4 w-4" />
-            Download for Windows
+            Get the app
           </a>
         }
       />

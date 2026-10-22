@@ -247,7 +247,7 @@ export async function getAdminBayRows(locationId: string): Promise<AdminBayRow[]
     getBaysByLocationId(locationId),
     getPrisma().bayAppRegistration.findMany({
       where: { locationId },
-      select: { bayNumber: true, deviceId: true, lastSeenAt: true, appVersion: true, hostname: true },
+      select: { bayNumber: true, deviceId: true, lastSeenAt: true, appVersion: true, hostname: true, remoteNodeId: true },
     }),
   ]);
   const byBay = new Map(registrations.map((r) => [r.bayNumber, r]));
@@ -266,6 +266,7 @@ export async function getAdminBayRows(locationId: string): Promise<AdminBayRow[]
         lastSeenAt: lastSeen ? lastSeen.toISOString() : null,
         appVersion: reg?.appVersion ?? null,
         hostname: reg?.hostname ?? null,
+        remoteNodeId: reg?.remoteNodeId ?? null,
         online: !!lastSeen && now - lastSeen.getTime() < KIOSK_ONLINE_WINDOW_MS,
       },
     };

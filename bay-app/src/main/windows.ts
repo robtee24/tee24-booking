@@ -1,152 +1,168 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, app } from 'electron';
 import path from 'path';
 
-const isDev = process.env.NODE_ENV === 'development';
-const preloadPath = path.join(__dirname, 'preload.js');
+const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL;
 
-function rendererUrl(page: string): string {
-  if (isDev) {
-    return `http://localhost:5173/${page}.html`;
-  }
-  return `file://${path.join(__dirname, '..', 'renderer', `${page}.html`)}`;
+type WinName = 'home' | 'toolbar' | 'overlay';
+
+const wins: Partial<Record<WinName, BrowserWindow>> = {};
+
+function preload() {
+  return path.join(__dirname, 'preload.js');
 }
 
-let adminWindow: BrowserWindow | null = null;
-let overlayWindow: BrowserWindow | null = null;
-let warningWindow: BrowserWindow | null = null;
+function loadPage(win: BrowserWindow, page: WinName) {
+  if (isDev) return win.loadURL(`${DEV_URL}/${page}.html`);
+  return win.loadFile(path.join(__dirname, '..', 'renderer', `${page}.html`));
+}
 
-export function createAdminWindow(): BrowserWindow {
-  if (adminWindow && !adminWindow.isDestroyed()) {
-    adminWindow.focus();
-    return adminWindow;
-  }
-
-  adminWindow = new BrowserWindow({
-    width: 520,
-    height: 600,
-    resizable: false,
-    title: 'Tee24 Bay Check-In Setup',
+function common(extra: Electron.BrowserWindowConstructorOptions): Electron.BrowserWindowConstructorOptions {
+  return {
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#00000000',
     webPreferences: {
-      preload: preloadPath,
+      preload: preload(),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+      spellcheck: false,
     },
-  });
-
-  adminWindow.loadURL(rendererUrl('admin'));
-  adminWindow.on('closed', () => { adminWindow = null; });
-
-  if (isDev) adminWindow.webContents.openDevTools({ mode: 'detach' });
-
-  return adminWindow;
+    ...extra,
+  };
 }
 
-export function createOverlayWindow(): BrowserWindow {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    return overlayWindow;
+export function get(name: WinName): BrowserWindow | undefined {
+  const w = wins[name];
+  return w && !w.isDestroyed() ? w : undefined;
+}
+
+/** Fullscreen kiosk home (replaces the Golfin Launcher home screen). */
+export function createHome(): BrowserWindow {
+  const existing = get('home');
+  if (existing) return existing;
+  const windowed = !!process.env.TEE24_KIOSK_WINDOWED;
+  const { width, height } = windowed ? { width: 1280, height: 800 } : screen.getPrimaryDisplay().bounds;
+  const win = new BrowserWindow(
+    common({
+      width,
+      height,
+      x: 0,
+      y: 0,
+      frame: !!process.env.TEE24_KIOSK_WINDOWED,
+      fullscreen: !process.env.TEE24_KIOSK_WINDOWED,
+      kiosk: app.isPackaged && !process.env.TEE24_KIOSK_WINDOWED,
+      backgroundColor: '#0b1220',
+      title: 'Tee24 Bay Kiosk',
+    }),
+  );
+  win.setMenuBarVisibility(false);
+  loadPage(win, 'home');
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => delete wins.home);
+  wins.home = win;
+  return win;
+}
+
+/** Narrow always-on-top strip hugging the right edge: Help / Schedule / countdown. */
+export function createToolbar(): BrowserWindow {
+  const existing = get('toolbar');
+  if (existing) return existing;
+  const win = new BrowserWindow(
+    common({
+      width: 92,
+      height: 300,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      skipTaskbar: true,
+      focusable: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      title: 'Tee24 Help',
+    }),
+  );
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  positionToolbar(win);
+  loadPage(win, 'toolbar');
+  win.on('closed', () => delete wins.toolbar);
+  wins.toolbar = win;
+  return win;
+}
+
+export function positionToolbar(win = get('toolbar')) {
+  if (!win) return;
+  const { workArea } = screen.getPrimaryDisplay();
+  const [w, h] = win.getSize();
+  win.setPosition(workArea.x + workArea.width - w - 6, Math.round(workArea.y + workArea.height / 2 - h / 2));
+}
+
+/** Transparent fullscreen overlay for the unlock / upcoming / help / schedule modals. */
+export function createOverlay(): BrowserWindow {
+  const existing = get('overlay');
+  if (existing) return existing;
+  const { bounds } = screen.getPrimaryDisplay();
+  const win = new BrowserWindow(
+    common({
+      ...bounds,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      title: 'Tee24 Reservation',
+    }),
+  );
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  loadPage(win, 'overlay');
+  win.on('closed', () => delete wins.overlay);
+  wins.overlay = win;
+  return win;
+}
+
+export function showOverlay() {
+  const w = createOverlay();
+  if (!w.isVisible()) w.show();
+  w.setAlwaysOnTop(true, 'screen-saver');
+  w.focus();
+}
+
+export function hideOverlay() {
+  get('overlay')?.hide();
+}
+
+export function showToolbar() {
+  const w = createToolbar();
+  positionToolbar(w);
+  if (!w.isVisible()) w.showInactive();
+}
+
+export function hideToolbar() {
+  get('toolbar')?.hide();
+}
+
+export function showHome() {
+  const w = createHome();
+  if (!w.isVisible()) w.show();
+  w.focus();
+}
+
+export function hideHome() {
+  get('home')?.hide();
+}
+
+export function broadcast(channel: string, payload: unknown) {
+  for (const name of ['home', 'toolbar', 'overlay'] as WinName[]) {
+    const w = get(name);
+    if (w && !w.webContents.isDestroyed()) w.webContents.send(channel, payload);
   }
-
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-
-  overlayWindow = new BrowserWindow({
-    width,
-    height,
-    x: 0,
-    y: 0,
-    fullscreen: true,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    focusable: true,
-    hasShadow: false,
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  overlayWindow.setVisibleOnAllWorkspaces(true);
-  overlayWindow.loadURL(rendererUrl('overlay'));
-  overlayWindow.on('closed', () => { overlayWindow = null; });
-
-  return overlayWindow;
-}
-
-export function createWarningWindow(): BrowserWindow {
-  if (warningWindow && !warningWindow.isDestroyed()) {
-    return warningWindow;
-  }
-
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width } = primaryDisplay.workAreaSize;
-
-  warningWindow = new BrowserWindow({
-    width,
-    height: 48,
-    x: 0,
-    y: 0,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    focusable: false,
-    hasShadow: false,
-    resizable: false,
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  warningWindow.setAlwaysOnTop(true, 'screen-saver');
-  warningWindow.setVisibleOnAllWorkspaces(true);
-  warningWindow.setIgnoreMouseEvents(true);
-  warningWindow.loadURL(rendererUrl('warning'));
-  warningWindow.on('closed', () => { warningWindow = null; });
-
-  return warningWindow;
-}
-
-export function showOverlay(data: any): void {
-  const win = createOverlayWindow();
-  win.show();
-  win.focus();
-  win.webContents.send('show-overlay', data);
-}
-
-export function hideOverlay(): void {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.hide();
-    overlayWindow.webContents.send('hide-overlay');
-  }
-}
-
-export function showWarning(data: any): void {
-  const win = createWarningWindow();
-  win.show();
-  win.webContents.send('show-warning', data);
-}
-
-export function hideWarning(): void {
-  if (warningWindow && !warningWindow.isDestroyed()) {
-    warningWindow.hide();
-    warningWindow.webContents.send('hide-warning');
-  }
-}
-
-export function getAdminWindow(): BrowserWindow | null {
-  return adminWindow && !adminWindow.isDestroyed() ? adminWindow : null;
-}
-
-export function getOverlayWindow(): BrowserWindow | null {
-  return overlayWindow && !overlayWindow.isDestroyed() ? overlayWindow : null;
-}
-
-export function getWarningWindow(): BrowserWindow | null {
-  return warningWindow && !warningWindow.isDestroyed() ? warningWindow : null;
 }

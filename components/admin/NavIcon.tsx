@@ -11,6 +11,7 @@ import {
   AppWindow,
   Bell,
   CheckSquare,
+  Wrench,
 } from "lucide-react";
 import type { NavIcon as NavIconName } from "@/lib/admin/routes";
 
@@ -27,6 +28,7 @@ const ICONS = {
   "app-window": AppWindow,
   bell: Bell,
   "check-square": CheckSquare,
+  wrench: Wrench,
 } as const;
 
 export function NavIcon({ name, className = "h-4 w-4" }: { name: NavIconName; className?: string }) {

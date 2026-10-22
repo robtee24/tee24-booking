@@ -26,8 +26,8 @@ export default function BayKioskSettingsPage() {
         title="Bay kiosk"
         description="The desktop app that runs on every bay computer: launches GSPro, shows setup help, and unlocks bays for reservations."
         actions={
-          <a href={KIOSK_DOWNLOAD_URL} target="_blank" rel="noreferrer">
-            <Button iconLeft={<Download className="h-4 w-4" />}>Download installer</Button>
+          <a href={KIOSK_DOWNLOAD_URL}>
+            <Button iconLeft={<Download className="h-4 w-4" />}>Get the app</Button>
           </a>
         }
       />

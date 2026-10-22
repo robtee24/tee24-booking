@@ -41,6 +41,7 @@ export const adminRoutes = {
   loc: {
     root: (slug: string) => `/admin/locations/${enc(slug)}`,
     dashboard: (slug: string) => `/admin/locations/${enc(slug)}/dashboard`,
+    troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
 
     scheduling: {
       root: (slug: string) => `/admin/locations/${enc(slug)}/scheduling`,
@@ -104,7 +105,7 @@ export const adminRoutes = {
 
 export type NavIcon =
   | "dashboard" | "calendar" | "users" | "card" | "megaphone" | "settings"
-  | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square";
+  | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench";
 
 export type NavLeaf = {
   label: string;
@@ -189,6 +190,13 @@ export const LOCATION_NAV: NavSection[] = [
     ],
   },
   {
+    key: "troubleshoot",
+    label: "Troubleshoot",
+    icon: "wrench",
+    href: adminRoutes.loc.troubleshoot,
+    items: [],
+  },
+  {
     key: "settings",
     label: "Location Settings",
     icon: "settings",
@@ -248,6 +256,7 @@ export const SEGMENT_LABELS: Record<string, string> = {
   admin: "Admin",
   locations: "Locations",
   dashboard: "Dashboard",
+  troubleshoot: "Troubleshoot",
   scheduling: "Scheduling",
   bookings: "Bookings",
   bays: "Bays",

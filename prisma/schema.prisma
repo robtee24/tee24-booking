@@ -1486,6 +1486,8 @@ model BayAppRegistration {
   appVersion String?
   /// Hostname of the bay PC, reported on registration
   hostname   String?
+  /// Remote-support agent node id (MeshCentral), reported by the kiosk once the agent is installed
+  remoteNodeId String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

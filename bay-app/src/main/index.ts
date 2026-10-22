@@ -1,125 +1,243 @@
-import { app, ipcMain, BrowserWindow, net } from 'electron';
-import path from 'path';
-import { getConfig, setConfig, clearConfig, isConfigured } from './store';
-import { createAdminWindow, hideOverlay, hideWarning } from './windows';
-import { startPolling, stopPolling, notifyCheckInComplete, notifyCancelComplete } from './poller';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell, powerSaveBlocker } from 'electron';
+import log from 'electron-log';
+import * as api from './api';
+import { ApiError } from './api';
+import { getSettings, updateSettings, clearRegistration, DEFAULT_LAUNCH_MONITOR_PATHS } from './store';
+import { launchPlay, launchHelperOnly, pathsExist } from './launcher';
+import * as poller from './poller';
+import * as remote from './remote';
+import * as windows from './windows';
+import { runStartupUpdate, checkForUpdatesNow } from './updater';
 
-const gotTheLock = app.requestSingleInstanceLock();
+log.initialize();
+log.transports.file.level = 'info';
+Object.assign(console, log.functions);
 
-if (!gotTheLock) {
+// ---------- Single instance + autostart ----------
+
+if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    createAdminWindow();
+    poller.setHomeForced(true);
+    windows.get('home')?.focus();
   });
+}
 
-  app.whenReady().then(() => {
-    app.setLoginItemSettings({
-      openAtLogin: true,
-      path: app.getPath('exe'),
-    });
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.disableHardwareAcceleration(); // transparent overlays behave better on bay PCs with mixed GPUs
 
-    registerIpcHandlers();
+function applyAutostart() {
+  if (!app.isPackaged) return;
+  const { openAtLogin } = getSettings();
+  app.setLoginItemSettings({ openAtLogin, path: process.execPath, args: ['--autostart'] });
+}
 
-    if (isConfigured()) {
-      startPolling();
-    } else {
-      createAdminWindow();
-    }
-  });
+// ---------- Admin session (in-memory only) ----------
 
-  app.on('window-all-closed', (e: Event) => {
-    // Keep the app running in the background even if all windows are closed
-    e.preventDefault();
-  });
+let adminToken: string | null = null;
+let adminSession: Omit<api.AdminSession, 'token'> | null = null;
+let adminExpiresAt = 0;
+const ADMIN_SESSION_MS = 30 * 60 * 1000; // re-auth after 30 min idle
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createAdminWindow();
+function requireAdmin(): string {
+  if (!adminToken || Date.now() > adminExpiresAt) {
+    adminToken = null;
+    adminSession = null;
+    throw new Error('Admin sign-in required');
+  }
+  adminExpiresAt = Date.now() + ADMIN_SESSION_MS;
+  return adminToken;
+}
+
+function toIpcError(e: unknown) {
+  if (e instanceof ApiError) return { error: e.message, status: e.status, code: e.code, data: e.data };
+  return { error: e instanceof Error ? e.message : String(e) };
+}
+
+/** Wrap an IPC handler so renderer gets `{ error }` instead of an opaque throw. */
+function handle(channel: string, fn: (...args: any[]) => Promise<unknown> | unknown) {
+  ipcMain.handle(channel, async (_e, ...args) => {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      log.warn(`[ipc] ${channel}`, e instanceof Error ? e.message : e);
+      return toIpcError(e);
     }
   });
 }
 
-function registerIpcHandlers(): void {
-  ipcMain.handle('get-config', () => {
-    return getConfig();
+function progress(msg: string) {
+  windows.broadcast('admin:progress', msg);
+}
+
+// ---------- IPC ----------
+
+function registerIpc() {
+  handle('kiosk:getState', () => poller.getState());
+  handle('kiosk:play', () => {
+    poller.setHomeForced(false);
+    const st = launchPlay();
+    poller.forcePublish();
+    return st;
   });
-
-  ipcMain.handle('set-config', (_event, partial: Record<string, unknown>) => {
-    return setConfig(partial as any);
+  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'none') => poller.setUserMode(mode));
+  handle('kiosk:acceptUpcoming', (id: string) => poller.acceptUpcoming(id));
+  handle('kiosk:checkIn', async (bookingId: string, phone: string) => {
+    const r = await api.checkIn(bookingId, phone);
+    poller.afterCheckIn();
+    return r;
   });
+  handle('kiosk:schedule', (dateISO?: string) => api.getSchedule(dateISO));
+  handle('kiosk:help', () => api.getHelp());
 
-  ipcMain.handle('clear-config', () => {
-    stopPolling();
-    clearConfig();
-    return true;
+  // ---- Admin ----
+  handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));
+  handle('admin:verifyOtp', async (phone: string, code: string) => {
+    const r = await api.adminVerifyOtp(phone, code);
+    adminToken = r.token;
+    adminExpiresAt = Date.now() + ADMIN_SESSION_MS;
+    adminSession = { ok: true, admin: r.admin, locations: r.locations };
+    return adminSession;
   });
-
-  ipcMain.handle('start-poller', () => {
-    startPolling();
-    return true;
+  handle('admin:session', async () => {
+    if (!adminToken || Date.now() > adminExpiresAt) return null;
+    try {
+      const r = await api.adminRefresh(adminToken);
+      adminSession = { ok: true, admin: r.admin, locations: r.locations };
+      adminExpiresAt = Date.now() + ADMIN_SESSION_MS;
+      return adminSession;
+    } catch {
+      adminToken = null;
+      adminSession = null;
+      return null;
+    }
   });
-
-  ipcMain.handle('dismiss-overlay', () => {
-    notifyCheckInComplete();
-    return true;
+  handle('admin:signOut', () => {
+    adminToken = null;
+    adminSession = null;
+    return { ok: true };
   });
-
-  ipcMain.handle('dismiss-warning', () => {
-    hideWarning();
-    return true;
-  });
-
-  ipcMain.handle('api-request', async (_event, method: string, urlPath: string, body?: unknown) => {
-    const config = getConfig();
-    if (!config.apiBaseUrl) throw new Error('API base URL not configured');
-
-    const url = `${config.apiBaseUrl}${urlPath}`;
-
-    return new Promise((resolve, reject) => {
-      const request = net.request({
-        method: method.toUpperCase(),
-        url,
-      });
-
-      if (body && (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PATCH' || method.toUpperCase() === 'PUT')) {
-        request.setHeader('Content-Type', 'application/json');
-      }
-
-      let responseBody = '';
-
-      request.on('response', (response) => {
-        response.on('data', (chunk) => {
-          responseBody += chunk.toString();
-        });
-
-        response.on('end', () => {
-          try {
-            const parsed = JSON.parse(responseBody);
-            if (response.statusCode && response.statusCode >= 400) {
-              reject(new Error(parsed.error || `Request failed (${response.statusCode})`));
-            } else {
-              resolve(parsed);
-            }
-          } catch {
-            if (response.statusCode && response.statusCode >= 400) {
-              reject(new Error(`Request failed (${response.statusCode})`));
-            } else {
-              resolve(responseBody);
-            }
-          }
-        });
-      });
-
-      request.on('error', (err) => {
-        reject(err);
-      });
-
-      if (body && (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PATCH' || method.toUpperCase() === 'PUT')) {
-        request.write(JSON.stringify(body));
-      }
-
-      request.end();
+  handle('admin:register', async (locationId: string, bayNumber: number, force: boolean) => {
+    const token = requireAdmin();
+    const r = await api.adminRegister(token, { locationId, bayNumber, force });
+    const lm = r.bay?.launchMonitor ?? null;
+    const s = getSettings();
+    updateSettings({
+      locationId: r.location.id,
+      locationName: r.location.name,
+      locationSlug: r.location.slug,
+      bayId: r.bay?.id ?? null,
+      bayNumber: r.registration.bayNumber,
+      bayName: r.bay?.name ?? null,
+      launchMonitor: lm,
+      launchMonitorPath: s.launchMonitorPath || (lm ? DEFAULT_LAUNCH_MONITOR_PATHS[lm] ?? '' : ''),
+      setupCompletedAt: new Date().toISOString(),
     });
+    poller.pollNow();
+    return r;
+  });
+  handle('admin:unregister', async () => {
+    const token = requireAdmin();
+    await api.adminUnregister(token).catch((e) => {
+      if (!(e instanceof ApiError && e.status === 404)) throw e;
+    });
+    clearRegistration();
+    poller.pollNow();
+    return { ok: true };
+  });
+  handle('admin:patchBay', async (patch: { name?: string | null; launchMonitor?: string; setupNotes?: string | null }) => {
+    const token = requireAdmin();
+    const r = await api.adminPatchBaySettings(token, patch);
+    updateSettings({ bayName: r.bay.name, launchMonitor: r.bay.launchMonitor });
+    poller.pollNow();
+    return r;
+  });
+  handle('admin:saveLocal', (patch: Record<string, unknown>) => {
+    requireAdmin();
+    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin'] as const;
+    const clean: Record<string, unknown> = {};
+    for (const k of allowed) if (k in patch) clean[k] = patch[k];
+    const s = updateSettings(clean);
+    applyAutostart();
+    poller.forcePublish();
+    return s;
+  });
+  handle('admin:browseExe', async (title: string) => {
+    requireAdmin();
+    const win = windows.get('home') ?? BrowserWindow.getFocusedWindow() ?? undefined;
+    const r = await dialog.showOpenDialog(win as BrowserWindow, {
+      title,
+      properties: ['openFile'],
+      filters: [{ name: 'Programs', extensions: ['exe', 'lnk', 'bat', 'cmd'] }],
+    });
+    return r.canceled ? null : r.filePaths[0];
+  });
+  handle('admin:launch', (which: 'launchMonitor' | 'gspro') => {
+    requireAdmin();
+    return launchHelperOnly(which);
+  });
+  handle('admin:pathsExist', () => pathsExist());
+  handle('admin:remoteStatus', () => remote.getRemoteAgentStatus());
+  handle('admin:remoteInstall', async () => {
+    requireAdmin();
+    const r = await remote.installAgent(progress);
+    poller.pollNow(); // reports node id to the server
+    return r;
+  });
+  handle('admin:remoteUninstall', async () => {
+    requireAdmin();
+    return remote.uninstallAgent();
+  });
+  handle('admin:checkUpdates', async () => {
+    requireAdmin();
+    return checkForUpdatesNow((p) => windows.broadcast('kiosk:update', p));
+  });
+  handle('admin:restart', () => {
+    requireAdmin();
+    app.relaunch();
+    app.exit(0);
+  });
+  handle('admin:quit', () => {
+    requireAdmin();
+    app.exit(0);
+  });
+  handle('admin:openExternal', (url: string) => {
+    if (/^https?:\/\//i.test(url)) return shell.openExternal(url);
+    return { error: 'Blocked' };
   });
 }
+
+// ---------- Boot ----------
+
+app.whenReady().then(async () => {
+  applyAutostart();
+  powerSaveBlocker.start('prevent-display-sleep');
+  registerIpc();
+
+  // Home window doubles as the update splash: it renders the "Updating…" screen
+  // until the updater resolves, then the real home screen.
+  const home = windows.createHome();
+  const sendUpdate = (p: unknown) => {
+    if (!home.isDestroyed()) home.webContents.send('kiosk:update', p);
+  };
+  await new Promise<void>((resolve) => {
+    if (home.webContents.isLoading()) home.webContents.once('did-finish-load', () => resolve());
+    else resolve();
+  });
+
+  const result = await runStartupUpdate(sendUpdate);
+  if (result === 'updated') return; // quitAndInstall will relaunch us
+  sendUpdate({ phase: 'done', version: app.getVersion() });
+
+  poller.start();
+
+  // Staff: bring the kiosk home screen over GSPro
+  globalShortcut.register('CommandOrControl+Shift+T', () => poller.setHomeForced(true));
+});
+
+app.on('window-all-closed', () => {
+  // Kiosk stays alive even if a window closes (default would quit on Windows).
+});
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
