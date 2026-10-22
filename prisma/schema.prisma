@@ -95,7 +95,7 @@ model Location {
   bayAppEnabled             Boolean @default(false)
   bayAppUnlockMinutes       Int     @default(10)
   bayAppWarningMinutes      Int     @default(10)
-  bayAppAutoCancelOnTimeout Boolean @default(true)
+  bayAppAutoCancelOnTimeout Boolean @default(false)
 
   // Attendance / Door dedupe window (hours between unlocks counted as same visit)
   attendanceDedupeHours     Int @default(8)

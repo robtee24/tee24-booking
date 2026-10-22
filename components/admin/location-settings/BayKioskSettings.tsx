@@ -22,7 +22,7 @@ export function BayKioskSettings({
       bayAppEnabled: Boolean(data.bayAppEnabled),
       bayAppUnlockMinutes: clampInt(data.bayAppUnlockMinutes, 1, 60, 10),
       bayAppWarningMinutes: clampInt(data.bayAppWarningMinutes, 1, 60, 10),
-      bayAppAutoCancelOnTimeout: data.bayAppAutoCancelOnTimeout !== false,
+      bayAppAutoCancelOnTimeout: data.bayAppAutoCancelOnTimeout === true,
     }),
     [data]
   );
@@ -65,7 +65,7 @@ export function BayKioskSettings({
           <Field label="Kiosk enabled" value={data.bayAppEnabled ? "Yes" : "No"} />
           <Field label="Unlock window" value={`${clampInt(data.bayAppUnlockMinutes, 1, 60, 10)} minutes`} />
           <Field label="Upcoming reservation notice" value={`${clampInt(data.bayAppWarningMinutes, 1, 60, 10)} minutes before`} />
-          <Field label="Auto-cancel if not unlocked" value={data.bayAppAutoCancelOnTimeout !== false ? "Yes" : "No"} />
+          <Field label="Auto-cancel if not unlocked" value={data.bayAppAutoCancelOnTimeout === true ? "Yes" : "No (prompt just closes)"} />
         </div>
       ) : (
         <div className="space-y-5">
@@ -101,7 +101,7 @@ export function BayKioskSettings({
             checked={draft.bayAppAutoCancelOnTimeout}
             onChange={(v) => setDraft((d) => ({ ...d, bayAppAutoCancelOnTimeout: v }))}
             label="Auto-cancel reservation on timeout"
-            hint="If nobody unlocks before the window ends, cancel the reservation so the bay frees up."
+            hint="Off by default. When off, the unlock prompt simply closes after the window and the reservation is kept. Turn on only once kiosks are proven reliable."
           />
         </div>
       )}
