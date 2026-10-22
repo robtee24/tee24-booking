@@ -17,6 +17,7 @@ import {
 } from "@/services/door.service";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const RANGES: CheckInRange[] = ["today", "7d", "30d", "90d", "all"];
 

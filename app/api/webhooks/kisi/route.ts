@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     const type: string = event.type ?? event.event_type ?? "";
     const isUnlock = type === "lock.unlock" || type === "unlock";
     const success = event.success !== false;
-    if (isUnlock && success) {
+    const hasActor = Boolean(event.actor_email || event.actor_id != null || event.user_id != null || event.user?.id);
+    if (isUnlock && success && hasActor) {
       // Modern Kisi event shape: actor_* (user), object_* (lock). Legacy shape: user_id / lock_id.
       const actorIsUser = !event.actor_type || event.actor_type === "User";
       const kisiUserId = actorIsUser

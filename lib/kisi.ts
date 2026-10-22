@@ -243,5 +243,8 @@ export function verifyKisiSignature(input: {
   const hmac = crypto.createHmac("sha256", secret);
   hmac.update(input.body);
   const expected = hmac.digest("hex");
-  return expected === input.signature;
+  // Kisi sends `X-Signature: sha256=<hex mac>`; tolerate a bare hex too.
+  const provided = input.signature.trim().replace(/^sha256=/i, "").toLowerCase();
+  if (provided.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex"));
 }

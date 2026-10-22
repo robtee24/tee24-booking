@@ -192,9 +192,9 @@ export function DoorAccessClient({
               Add it to the server environment as <code className="rounded bg-apple-fill-secondary px-1">KISI_API_KEY</code> and redeploy.
             </li>
             <li>
-              Optional: in Kisi, add an <strong>Event webhook</strong> integration pointing at{" "}
-              <code className="rounded bg-apple-fill-secondary px-1">/api/webhooks/kisi</code> for instant check-ins (store its secret as{" "}
-              <code className="rounded bg-apple-fill-secondary px-1">KISI_WEBHOOK_SECRET</code>). Without it, unlocks are pulled every 5 minutes.
+              Optional: if your Kisi plan has a free <strong>Event webhook</strong> slot, point one at{" "}
+              <code className="rounded bg-apple-fill-secondary px-1">/api/webhooks/kisi</code> (event <code>lock.unlock</code>, signature key stored as{" "}
+              <code className="rounded bg-apple-fill-secondary px-1">KISI_WEBHOOK_SECRET</code>) for instant check-ins. Otherwise unlocks are pulled every 5 minutes.
             </li>
             <li>Come back here, click <strong>Sync from Kisi</strong>, then assign each door to a location.</li>
           </ol>

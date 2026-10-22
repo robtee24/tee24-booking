@@ -26,6 +26,7 @@ type Row = {
   type: string;
   matchedBy: string | null;
   actorEmail: string | null;
+  guestName: string | null;
   notes: string | null;
   member: Member | null;
   door: { id: string; name: string } | null;
@@ -420,9 +421,15 @@ function CheckInRow({ row, showLocation }: { row: Row; showLocation: boolean }) 
               {name}
             </Link>
           ) : (
-            <span className="truncate font-medium text-apple-text-secondary">{row.actorEmail ?? "Unknown Kisi user"}</span>
+            <span className="truncate font-medium text-apple-text-secondary">
+              {row.guestName ?? row.actorEmail ?? "Unknown Kisi user"}
+            </span>
           )}
-          {!row.member && <Badge tone="warn" size="sm">Unmatched</Badge>}
+          {!row.member && (
+            <Badge tone="warn" size="sm">
+              {row.guestName ? "Guest · not a member" : "Unmatched"}
+            </Badge>
+          )}
           {row.type === "RESERVATION" && <Badge tone="info" size="sm">Reservation</Badge>}
           {row.unlockCount > 1 && (
             <Badge tone="muted" size="sm">
@@ -431,7 +438,7 @@ function CheckInRow({ row, showLocation }: { row: Row; showLocation: boolean }) 
           )}
         </div>
         <div className="truncate text-apple-xs text-apple-text-tertiary">
-          {[showLocation ? row.location.name : null, row.door?.name ?? "Door", row.member?.email ?? null]
+          {[showLocation ? row.location.name : null, row.door?.name ?? "Door", row.member?.email ?? (row.guestName ? row.actorEmail : null)]
             .filter(Boolean)
             .join(" · ")}
         </div>

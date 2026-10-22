@@ -103,8 +103,7 @@ export async function refreshDoorStatuses(): Promise<boolean> {
 
 export async function listDoors(opts: { includeHidden?: boolean; locationId?: string } = {}): Promise<DoorView[]> {
   const prisma = getPrisma();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDay = startOfDayInTz(DEFAULT_TZ);
 
   const doors = await prisma.door.findMany({
     where: {
@@ -207,12 +206,18 @@ export async function syncKisiUnlockEvents(opts: { since?: Date; until?: Date } 
 
   let ingested = 0;
   let deduped = 0;
+  let skippedAnonymous = 0;
   let newest = lastSyncedAt ?? from;
   // Oldest first so dedupe windows behave deterministically.
   events.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   for (const ev of events) {
     if (!ev.success) continue;
     if (ev.object_type && ev.object_type !== "Lock") continue;
+    // No actor = scheduled unlock, exit button, or integration-triggered unlock. Not a person checking in.
+    if (!ev.actor_email && ev.actor_id == null) {
+      skippedAnonymous++;
+      continue;
+    }
     const at = new Date(ev.created_at);
     const r = await ingestKisiUnlock({
       kisiEventId: ev.uuid,
@@ -236,7 +241,7 @@ export async function syncKisiUnlockEvents(opts: { since?: Date; until?: Date } 
     update: { value: { lastEventAt: newest.toISOString(), lastRunAt: new Date().toISOString() } },
   });
 
-  return { skipped: false as const, fetched: events.length, ingested, deduped, from, until };
+  return { skipped: false as const, fetched: events.length, ingested, deduped, skippedAnonymous, from, until };
 }
 
 export async function getKisiSyncState() {
@@ -255,20 +260,35 @@ export async function getKisiSyncState() {
 
 export type CheckInRange = "today" | "7d" | "30d" | "90d" | "all";
 
-export function rangeStart(range: CheckInRange, now = new Date()): Date | null {
-  if (range === "all") return null;
-  const d = new Date(now);
-  if (range === "today") {
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-  d.setDate(d.getDate() - days);
-  return d;
+const DEFAULT_TZ = "America/New_York";
+
+/** Midnight (start of the current day) in an IANA timezone, as a UTC instant. */
+export function startOfDayInTz(timeZone: string, now = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  // Wall-clock elapsed since local midnight; subtract from `now` to get the midnight instant.
+  const elapsedMs = ((get("hour") * 60 + get("minute")) * 60 + get("second")) * 1000 + now.getMilliseconds();
+  return new Date(now.getTime() - elapsedMs);
 }
 
-function visitWhere(range: CheckInRange, locationId?: string) {
-  const start = rangeStart(range);
+export function rangeStart(range: CheckInRange, timeZone = DEFAULT_TZ, now = new Date()): Date | null {
+  if (range === "all") return null;
+  if (range === "today") return startOfDayInTz(timeZone, now);
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
+
+function visitWhere(range: CheckInRange, locationId?: string, timeZone = DEFAULT_TZ) {
+  const start = rangeStart(range, timeZone);
   return {
     source: "KISI",
     ...(start ? { enteredAt: { gte: start } } : {}),
@@ -284,6 +304,8 @@ export type CheckInRow = {
   type: string;
   matchedBy: string | null;
   actorEmail: string | null;
+  /** For unmatched unlocks: name from the most recent reservation with the same email, if any. */
+  guestName: string | null;
   notes: string | null;
   member: { id: string; firstName: string; lastName: string; email: string | null; phone: string | null } | null;
   door: { id: string; name: string } | null;
@@ -301,8 +323,11 @@ export async function listCheckIns(opts: {
 }): Promise<{ rows: CheckInRow[]; total: number }> {
   const prisma = getPrisma();
   const q = opts.q?.trim();
+  const tz = opts.locationId
+    ? (await prisma.location.findUnique({ where: { id: opts.locationId }, select: { timezone: true } }))?.timezone ?? DEFAULT_TZ
+    : DEFAULT_TZ;
   const where: Prisma.VisitWhereInput = {
-    ...visitWhere(opts.range, opts.locationId),
+    ...visitWhere(opts.range, opts.locationId, tz),
     ...(opts.memberId ? { memberId: opts.memberId } : {}),
     ...(q
       ? {
@@ -329,6 +354,21 @@ export async function listCheckIns(opts: {
       skip: opts.offset ?? 0,
     }),
   ]);
+  // Give unmatched unlocks a name when the email has booked with us before.
+  const unmatchedEmails = Array.from(
+    new Set(visits.filter((v) => !v.member && v.actorEmail).map((v) => v.actorEmail!.toLowerCase()))
+  );
+  const guestByEmail = new Map<string, string>();
+  if (unmatchedEmails.length) {
+    const bookings = await prisma.booking.findMany({
+      where: { email: { in: unmatchedEmails, mode: "insensitive" } },
+      orderBy: { createdAt: "desc" },
+      distinct: ["email"],
+      select: { email: true, firstName: true, lastName: true },
+    });
+    for (const b of bookings) guestByEmail.set(b.email.toLowerCase(), `${b.firstName} ${b.lastName}`.trim());
+  }
+
   return {
     total,
     rows: visits.map((v) => ({
@@ -339,6 +379,7 @@ export async function listCheckIns(opts: {
       type: v.type,
       matchedBy: v.matchedBy,
       actorEmail: v.actorEmail,
+      guestName: !v.member && v.actorEmail ? guestByEmail.get(v.actorEmail.toLowerCase()) ?? null : null,
       notes: v.notes,
       member: v.member,
       door: v.door,
@@ -366,27 +407,31 @@ export async function getCheckInOverview(range: CheckInRange, locationIds?: stri
   const prisma = getPrisma();
   const locations = await prisma.location.findMany({
     where: locationIds ? { id: { in: locationIds } } : {},
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, timezone: true },
     orderBy: { name: "asc" },
   });
   const locIds = locations.map((l) => l.id);
-  const base = visitWhere(range);
-  const todayStart = rangeStart("today")!;
+  // "today" is per-location (each location's own midnight); longer ranges are rolling windows.
+  const rangeFilter: Prisma.VisitWhereInput =
+    range === "today"
+      ? { OR: locations.map((l) => ({ locationId: l.id, enteredAt: { gte: startOfDayInTz(l.timezone) } })) }
+      : { ...visitWhere(range), locationId: { in: locIds } };
+  const base: Prisma.VisitWhereInput = { source: "KISI", ...rangeFilter };
+  const todayFilter: Prisma.VisitWhereInput = {
+    source: "KISI",
+    OR: locations.map((l) => ({ locationId: l.id, enteredAt: { gte: startOfDayInTz(l.timezone) } })),
+  };
 
   const [grouped, groupedMatched, groupedToday, distinctMembers] = await Promise.all([
-    prisma.visit.groupBy({ by: ["locationId"], where: { ...base, locationId: { in: locIds } }, _count: { _all: true } }),
+    prisma.visit.groupBy({ by: ["locationId"], where: base, _count: { _all: true } }),
     prisma.visit.groupBy({
       by: ["locationId"],
-      where: { ...base, locationId: { in: locIds }, memberId: { not: null } },
+      where: { ...base, memberId: { not: null } },
       _count: { _all: true },
     }),
-    prisma.visit.groupBy({
-      by: ["locationId"],
-      where: { source: "KISI", enteredAt: { gte: todayStart }, locationId: { in: locIds } },
-      _count: { _all: true },
-    }),
+    prisma.visit.groupBy({ by: ["locationId"], where: todayFilter, _count: { _all: true } }),
     prisma.visit.findMany({
-      where: { ...base, locationId: { in: locIds }, memberId: { not: null } },
+      where: { ...base, memberId: { not: null } },
       select: { locationId: true, memberId: true },
       distinct: ["locationId", "memberId"],
     }),
@@ -395,7 +440,7 @@ export async function getCheckInOverview(range: CheckInRange, locationIds?: stri
   const count = (rows: Array<{ locationId: string; _count: { _all: number } }>, id: string) =>
     rows.find((r) => r.locationId === id)?._count._all ?? 0;
 
-  const byLocation = locations.map((l) => ({
+  const byLocation = locations.map(({ timezone: _tz, ...l }) => ({
     location: l,
     total: count(grouped, l.id),
     matched: count(groupedMatched, l.id),
@@ -413,7 +458,8 @@ export async function getCheckInOverview(range: CheckInRange, locationIds?: stri
 /** Group check-ins by member for the "who checked in" drill-down. */
 export async function getCheckInsByMember(opts: { range: CheckInRange; locationId: string; limit?: number }) {
   const prisma = getPrisma();
-  const where = { ...visitWhere(opts.range, opts.locationId), memberId: { not: null } };
+  const tz = (await prisma.location.findUnique({ where: { id: opts.locationId }, select: { timezone: true } }))?.timezone ?? DEFAULT_TZ;
+  const where = { ...visitWhere(opts.range, opts.locationId, tz), memberId: { not: null } };
   const grouped = await prisma.visit.groupBy({
     by: ["memberId"],
     where,
