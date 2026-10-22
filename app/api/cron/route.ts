@@ -12,9 +12,14 @@
  *  - expire-documents            : flip expired signed docs
  *  - build-referral-batch        : build monthly referral payout batch
  *  - reconcile-access            : nightly Kisi access state reconciliation
+ *  - generate-invoices           : daily 09:00 UTC — recurring invoices + auto-charge default cards
+ *  - retry-failed-payments       : hourly — dunning retries, late fees, mark overdue
+ *  - upcoming-payment-reminders  : daily — payment.upcoming (3 days ahead) + card expiry notices
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
+import { generateDueInvoices } from "@/services/recurring-billing.service";
+import { retryFailedPayments, sendUpcomingPaymentReminders } from "@/services/dunning.service";
 import { computeUsageTierSnapshots } from "@/services/usage-tier.service";
 import { scoreAllMembers } from "@/services/churn-risk.service";
 import { runDueAutomationSteps } from "@/services/automation.service";
@@ -82,6 +87,18 @@ async function run(req: NextRequest) {
       case "reconcile-access": {
         if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
         const r = await reconcileAllMemberAccess();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "generate-invoices": {
+        const r = await generateDueInvoices();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "retry-failed-payments": {
+        const r = await retryFailedPayments();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "upcoming-payment-reminders": {
+        const r = await sendUpcomingPaymentReminders();
         return NextResponse.json({ ok: true, ...r });
       }
       default:
