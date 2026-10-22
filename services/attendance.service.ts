@@ -12,6 +12,7 @@
  */
 import { addHours, addMinutes, subMinutes } from "date-fns";
 import { getPrisma } from "@/lib/db";
+import { audit } from "@/lib/audit";
 
 export type IngestKisiUnlockInput = {
   kisiEventId: string;
@@ -165,6 +166,75 @@ export async function addManualVisit(input: {
       unlockCount: 1,
     },
   });
+}
+
+/** Update the free-text notes (and optionally type / time) on a visit. */
+export async function updateVisit(
+  visitId: string,
+  patch: { notes?: string | null; type?: string; enteredAt?: Date },
+  actorId?: string
+) {
+  const prisma = getPrisma();
+  const before = await prisma.visit.findUnique({ where: { id: visitId } });
+  if (!before) throw new Error("Visit not found");
+  const updated = await prisma.visit.update({
+    where: { id: visitId },
+    data: {
+      notes: patch.notes === undefined ? undefined : patch.notes,
+      type: patch.type ?? undefined,
+      enteredAt: patch.enteredAt ?? undefined,
+    },
+  });
+  void audit({
+    actorId,
+    action: "member.update",
+    entityType: "Visit",
+    entityId: visitId,
+    before: { notes: before.notes, type: before.type, enteredAt: before.enteredAt },
+    after: { notes: updated.notes, type: updated.type, enteredAt: updated.enteredAt },
+    metadata: { event: "visit.updated", memberId: before.memberId },
+  });
+  return updated;
+}
+
+export async function deleteVisit(visitId: string, actorId?: string) {
+  const prisma = getPrisma();
+  const before = await prisma.visit.findUnique({ where: { id: visitId } });
+  if (!before) throw new Error("Visit not found");
+  await prisma.visit.delete({ where: { id: visitId } });
+  void audit({
+    actorId,
+    action: "member.update",
+    entityType: "Visit",
+    entityId: visitId,
+    before,
+    metadata: { event: "visit.deleted", memberId: before.memberId },
+  });
+}
+
+/** Paginated visit history + totals for a member profile. */
+export async function listMemberVisits(memberId: string, opts: { page?: number; pageSize?: number } = {}) {
+  const prisma = getPrisma();
+  const page = Math.max(1, opts.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const ninetyAgo = new Date(now.getTime() - 90 * 86_400_000);
+
+  const [items, total, thisMonth, last90, allTime] = await Promise.all([
+    prisma.visit.findMany({
+      where: { memberId },
+      orderBy: { enteredAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { bay: { select: { number: true, name: true } } },
+    }),
+    prisma.visit.count({ where: { memberId } }),
+    prisma.visit.count({ where: { memberId, enteredAt: { gte: monthStart } } }),
+    prisma.visit.count({ where: { memberId, enteredAt: { gte: ninetyAgo } } }),
+    prisma.visit.count({ where: { memberId } }),
+  ]);
+  return { items, total, page, pageSize, totals: { thisMonth, last90, allTime } };
 }
 
 /**
