@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  let event: any;
+  let event: QuoEvent;
   try {
     event = JSON.parse(body);
   } catch {
@@ -49,11 +49,11 @@ export async function POST(req: NextRequest) {
       data: { status: "PROCESSED", processedAt: new Date() },
     });
     return NextResponse.json({ ok: true, ...result });
-  } catch (err: any) {
+  } catch (err) {
     console.error("[quo webhook] dispatch error", err);
     await prisma.webhookDelivery.update({
       where: { id: delivery.id },
-      data: { status: "FAILED", lastError: err.message ?? String(err), attempts: { increment: 1 } },
+      data: { status: "FAILED", lastError: err instanceof Error ? err.message : String(err), attempts: { increment: 1 } },
     });
     return NextResponse.json({ error: "dispatch failed" }, { status: 500 });
   }
@@ -65,10 +65,15 @@ function firstString(v: unknown): string | null {
   return null;
 }
 
-async function dispatchQuoEvent(event: any): Promise<Record<string, unknown>> {
+// Loose payload shape: Quo/OpenPhone wrap the object under data.object; older payloads put fields on data directly.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type QuoPayload = Record<string, any>;
+type QuoEvent = { id?: string; event_id?: string; type?: string; event?: string; data?: QuoPayload & { object?: QuoPayload } };
+
+async function dispatchQuoEvent(event: QuoEvent): Promise<Record<string, unknown>> {
   const prisma = getPrisma();
-  const type = event.type as string;
-  const data = event.data?.object ?? event.data ?? {};
+  const type = String(event.type ?? event.event ?? "");
+  const data: QuoPayload = event.data?.object ?? event.data ?? {};
 
   // Delivery receipts for our outbound messages
   if (type === "message.delivered" || type === "message.failed" || type === "message.read" || type === "message.sent") {

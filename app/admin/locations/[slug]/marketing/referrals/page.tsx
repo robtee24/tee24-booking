@@ -93,7 +93,7 @@ export default async function ReferralsPage({ params }: { params: Promise<{ slug
       if (!m) return null;
       return {
         name: `${m.firstName} ${m.lastName}`,
-        referrals: (t._count as any)?._all ?? 0,
+        referrals: t._count._all ?? 0,
         earned: ((t._sum?.earnedCents ?? 0) / 100),
       };
     })

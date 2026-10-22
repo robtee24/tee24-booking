@@ -18,7 +18,10 @@ export type BuilderOptions = {
   templates: { id: string; name: string; channel: string; subject: string | null }[];
 };
 
-export type StepDraft = { id: string; kind: string; config: Record<string, any> };
+// Step/trigger configs are free-form JSON bags interpreted per step kind by the runner.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Cfg = Record<string, any>;
+export type StepDraft = { id: string; kind: string; config: Cfg };
 
 export type AutomationDraft = {
   id?: string;
@@ -38,17 +41,21 @@ export function emptyDraft(): AutomationDraft {
   return { name: "", description: "", trigger: "member.created", triggerConfig: { planIds: [], exitOnCancel: true }, goalConfig: null, active: false, maxSteps: 50, steps: [] };
 }
 
-export function draftFromAutomation(a: any): AutomationDraft {
+type AutomationLike = { id: string; name: string; description?: string | null; trigger: string; triggerConfig?: unknown; goalConfig?: unknown; active: boolean; maxSteps?: number | null; steps?: { id?: string; order: number; kind: string; config?: unknown }[] };
+const asCfg = (v: unknown): Cfg => (v && typeof v === "object" && !Array.isArray(v) ? (v as Cfg) : {});
+export function draftFromAutomation(a: AutomationLike): AutomationDraft {
+  const tc = asCfg(a.triggerConfig);
+  const gc = asCfg(a.goalConfig);
   return {
     id: a.id,
     name: a.name,
     description: a.description ?? "",
     trigger: a.trigger,
-    triggerConfig: { planIds: a.triggerConfig?.planIds ?? [], tagId: a.triggerConfig?.tagId, days: a.triggerConfig?.days, exitOnCancel: a.triggerConfig?.exitOnCancel ?? false },
-    goalConfig: a.goalConfig?.kind ? a.goalConfig : null,
+    triggerConfig: { planIds: tc.planIds ?? [], tagId: tc.tagId, days: tc.days, exitOnCancel: tc.exitOnCancel ?? false },
+    goalConfig: gc.kind ? (gc as AutomationDraft["goalConfig"]) : null,
     active: a.active,
     maxSteps: a.maxSteps ?? 50,
-    steps: (a.steps ?? []).sort((x: any, y: any) => x.order - y.order).map((s: any) => ({ id: s.id ?? uid(), kind: s.kind, config: s.config ?? {} })),
+    steps: (a.steps ?? []).sort((x, y) => x.order - y.order).map((s) => ({ id: s.id ?? uid(), kind: s.kind, config: (s.config as Cfg | null) ?? {} })),
   };
 }
 
@@ -82,11 +89,11 @@ export function AutomationBuilder({ initial, options }: { initial: AutomationDra
     setSaving(true);
     try {
       if (isNew) {
-        const res = await api<{ automation: any }>("/api/admin/marketing/automations", { method: "POST", json: payload(extra) });
+        const res = await api<{ automation: AutomationLike }>("/api/admin/marketing/automations", { method: "POST", json: payload(extra) });
         toast({ tone: "success", title: "Automation created" });
         router.replace(adminRoutes.loc.marketing.automationDetail(slug, res.automation.id));
       } else {
-        const res = await api<{ automation: any }>(`/api/admin/marketing/automations/${d.id}`, { method: "PATCH", json: payload(extra) });
+        const res = await api<{ automation: AutomationLike }>(`/api/admin/marketing/automations/${d.id}`, { method: "PATCH", json: payload(extra) });
         setD(draftFromAutomation(res.automation));
         toast({ tone: "success", title: "Saved" });
         router.refresh();
@@ -102,7 +109,7 @@ export function AutomationBuilder({ initial, options }: { initial: AutomationDra
     if (!d.id) return;
     setBusy("dup");
     try {
-      const res = await api<{ automation: any }>(`/api/admin/marketing/automations/${d.id}/duplicate`, { method: "POST" });
+      const res = await api<{ automation: AutomationLike }>(`/api/admin/marketing/automations/${d.id}/duplicate`, { method: "POST" });
       router.push(adminRoutes.loc.marketing.automationDetail(slug, res.automation.id));
     } catch (e) {
       onError(e);
@@ -136,7 +143,7 @@ export function AutomationBuilder({ initial, options }: { initial: AutomationDra
     });
   }
   function addStep(kind: string) {
-    const defaults: Record<string, any> = {
+    const defaults: Record<string, Cfg> = {
       SEND_EMAIL: { subject: "", body: "" },
       SEND_SMS: { body: "" },
       WAIT: { days: 1, hours: 0 },
@@ -292,9 +299,9 @@ export function AutomationBuilder({ initial, options }: { initial: AutomationDra
   );
 }
 
-function StepEditor({ step, index, total, options, onChange }: { step: StepDraft; index: number; total: number; options: BuilderOptions; onChange: (cfg: Record<string, any>) => void }) {
+function StepEditor({ step, index, total, options, onChange }: { step: StepDraft; index: number; total: number; options: BuilderOptions; onChange: (cfg: Cfg) => void }) {
   const c = step.config;
-  const set = (patch: Record<string, any>) => onChange({ ...c, ...patch });
+  const set = (patch: Cfg) => onChange({ ...c, ...patch });
   const bodyRef = React.useRef<HTMLTextAreaElement>(null);
 
   switch (step.kind) {
@@ -385,7 +392,7 @@ function StepEditor({ step, index, total, options, onChange }: { step: StepDraft
       );
     case "SPLIT": {
       const cond = c.condition ?? { kind: "HAS_TAG" };
-      const setCond = (p: Record<string, any>) => set({ condition: { ...cond, ...p } });
+      const setCond = (p: Cfg) => set({ condition: { ...cond, ...p } });
       return (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -424,7 +431,7 @@ function StepEditor({ step, index, total, options, onChange }: { step: StepDraft
               <strong className="text-apple-green">Branch A (matches):</strong> continue to step {index + 2 <= total ? index + 2 : "— (end)"}.
             </div>
             <div className="space-y-2 rounded-apple-sm border border-apple-border p-3">
-              <div className="text-apple-xs text-apple-text-secondary"><strong>Branch B (doesn't match):</strong></div>
+              <div className="text-apple-xs text-apple-text-secondary"><strong>Branch B (doesn&apos;t match):</strong></div>
               <Select value={c.elseAction ?? "EXIT"} onChange={(e) => set({ elseAction: e.target.value })}>
                 <option value="EXIT">Exit the automation</option>
                 <option value="JUMP">Jump to step…</option>

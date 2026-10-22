@@ -250,7 +250,7 @@ export async function duplicateTemplate(id: string, actorId?: string) {
       organizationId: src.organizationId,
       name: `${src.name} (copy)`,
       channel: src.channel as "EMAIL" | "SMS",
-      category: src.category === "SYSTEM" ? "MARKETING" : (src.category as any),
+      category: src.category === "SYSTEM" ? "MARKETING" : (src.category as "MARKETING" | "TRANSACTIONAL"),
       subject: src.subject,
       body: src.body,
       active: src.active,
@@ -390,7 +390,7 @@ export async function sendBulk(input: SendBulkInput) {
       });
       if (res.ok) sent++;
       else failed++;
-    } catch (err: any) {
+    } catch (err) {
       failed++;
       console.error("[marketing] send failed for", m.id, err);
     }
@@ -514,7 +514,7 @@ export async function sendDueScheduledMessages(now = new Date()): Promise<number
       processed++;
     } catch (err) {
       console.error("[marketing] scheduled send failed", m.id, err);
-      await prisma.message.update({ where: { id: m.id }, data: { status: "FAILED", providerError: String((err as any)?.message ?? err) } }).catch(() => {});
+      await prisma.message.update({ where: { id: m.id }, data: { status: "FAILED", providerError: (err instanceof Error ? err.message : String(err)) } }).catch(() => {});
     }
   }
   return processed;

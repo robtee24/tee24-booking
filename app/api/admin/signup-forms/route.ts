@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { apiError, guardMarketing, readJson } from "../marketing/_shared";
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!g.ok) return g.response;
   if (!body.name) return NextResponse.json({ error: "name required" }, { status: 400 });
   try {
-    const data: any = signupFormDataFromBody(body);
+    const data = signupFormDataFromBody(body) as Prisma.SignupFormUncheckedCreateInput;
     if (!data.slug) data.slug = slugify(body.name);
     const exists = await getPrisma().signupForm.findUnique({ where: { slug: data.slug } });
     if (exists) return NextResponse.json({ error: `Slug "${data.slug}" is already in use` }, { status: 409 });

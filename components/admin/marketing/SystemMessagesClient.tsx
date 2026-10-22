@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Button, Card, CardHeader, Drawer, Input, Textarea, useToast } from "@/components/ui";
+import { Button, Card, Drawer, Input, Textarea, useToast } from "@/components/ui";
 import { Mail, MessageSquare, RotateCcw, Send } from "lucide-react";
 import { MergeFieldChips, SegmentCounter, Toggle, useErrorToast, useMarketingApi } from "./shared";
 import { SAMPLE_MEMBER_VARS, SYSTEM_MERGE_FIELDS, SYSTEM_TEMPLATE_GROUPS, renderSystemTemplate, type SystemTemplateGroup } from "@/lib/system-templates";
@@ -118,7 +118,7 @@ function EditDrawer({ entry, row, adminEmail, adminPhone, onClose, onSaved, onTe
   async function save(reset = false) {
     setSaving(true);
     try {
-      const res = await api<{ template: any }>("/api/admin/marketing/system-messages", {
+      const res = await api<{ template: { id: string; active: boolean; subject: string | null; body: string } }>("/api/admin/marketing/system-messages", {
         method: "PATCH",
         json: reset ? { id: row.id, resetToDefault: true } : { id: row.id, subject: isEmail ? subject : null, body },
       });

@@ -87,7 +87,7 @@ export async function listConversations(filter: InboxFilter): Promise<Conversati
         : r.messages.find((m) => m.fromAddress)?.fromAddress ?? "Unknown";
     const external = r.messages.filter((m) => m.channel !== "INTERNAL");
     const channels = new Set(external.map((m) => m.channel));
-    const channel = channels.size === 0 ? null : channels.size === 1 ? ([...channels][0] as any) : "MIXED";
+    const channel = channels.size === 0 ? null : channels.size === 1 ? ([...channels][0] as "EMAIL" | "SMS") : "MIXED";
     const unread = external.filter((m) => m.direction === "INBOUND" && !m.openedAt).length;
     const assign = r.messages.find((m) => m.channel === "INTERNAL" && m.body.startsWith(ASSIGN_PREFIX));
     const latest = external[0];

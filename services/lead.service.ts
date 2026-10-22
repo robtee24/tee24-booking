@@ -334,8 +334,8 @@ export async function importLeadsCsv(csv: string, ctx: { locationId: string; org
         actorId,
       );
       created++;
-    } catch (e: any) {
-      errors.push(`Row ${i + 1}: ${e?.message ?? e}`);
+    } catch (e) {
+      errors.push(`Row ${i + 1}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   return { created, skipped, errors };

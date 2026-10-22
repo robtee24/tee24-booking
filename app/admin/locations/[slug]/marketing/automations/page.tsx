@@ -16,7 +16,8 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
   const location = await prisma.location.findUnique({ where: { slug } });
   if (!location) return null;
 
-  const since = new Date(Date.now() - 30 * 86_400_000);
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
   const [automations, recentEnrollments] = await Promise.all([
     prisma.automation.findMany({
       where: { OR: [{ organizationId: location.organizationId }, { organizationId: null }] },

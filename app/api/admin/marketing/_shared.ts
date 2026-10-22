@@ -14,7 +14,8 @@ export type MarketingGuard =
 export async function guardMarketing(
   req: NextRequest,
   permission: Permission | Permission[],
-  opts?: { body?: any; slug?: string | null },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  opts?: { body?: Record<string, any> | null; slug?: string | null },
 ): Promise<MarketingGuard> {
   const slug = opts?.slug ?? req.nextUrl.searchParams.get("slug") ?? opts?.body?.locationSlug ?? null;
   const locationId = req.nextUrl.searchParams.get("locationId") ?? opts?.body?.locationId ?? null;
@@ -57,10 +58,11 @@ export async function guardMarketing(
 }
 
 export function apiError(e: unknown, status = 400) {
-  const msg = (e as any)?.message ?? String(e);
+  const msg = e instanceof Error ? e.message : String(e);
   return NextResponse.json({ error: msg }, { status: e instanceof ForbiddenError ? 403 : status });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readJson<T = any>(req: NextRequest): Promise<T> {
   try {
     return (await req.json()) as T;

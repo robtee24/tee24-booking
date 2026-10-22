@@ -14,7 +14,7 @@ type SendEmailResult = {
   ok: boolean;
   id?: string | null;
   error?: string;
-  provider?: any; // raw provider response/error for debugging
+  provider?: unknown; // raw provider response/error for debugging
   dryRun?: boolean;
 };
 
@@ -111,10 +111,10 @@ export async function sendEmail(
 
     const id = anyRes?.data?.id ?? anyRes?.id ?? null;
     return { ok: true, id, provider: res };
-  } catch (e: any) {
+  } catch (e) {
     return {
       ok: false,
-      error: e?.message || 'Email send threw',
+      error: e instanceof Error ? e.message : 'Email send threw',
       provider: e,
     };
   }

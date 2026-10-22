@@ -134,6 +134,7 @@ export function signupEmbedSnippet(slug: string): string {
 }
 
 /** Normalise an admin builder payload into SignupForm column values (admin API only). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function signupFormDataFromBody(body: Record<string, any>): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) data.name = String(body.name).trim();

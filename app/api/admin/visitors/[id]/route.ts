@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const g = await guardMarketing(req, "marketing.view-visitors", { body });
   if (!g.ok) return g.response;
   try {
-    const patch: any = { ...body };
+    const patch: Record<string, unknown> = { ...body };
     if (body.nextFollowUpAt !== undefined) patch.nextFollowUpAt = body.nextFollowUpAt ? new Date(body.nextFollowUpAt) : null;
     const lead = await updateLead(id, patch, g.admin.id);
     return NextResponse.json({ ok: true, lead });

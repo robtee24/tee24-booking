@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, guardMarketing, readJson } from "../marketing/_shared";
-import { createLead, listLeads } from "@/services/lead.service";
+import { createLead, listLeads, type LeadFilter } from "@/services/lead.service";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,10 @@ export async function GET(req: NextRequest) {
   try {
     const items = await listLeads({
       locationId: g.location.id,
-      stage: (sp.get("stage") as any) || "ALL",
+      stage: (sp.get("stage") as LeadFilter["stage"]) || "ALL",
       source: sp.get("source") || undefined,
       assignedToId: sp.get("assignedToId") || undefined,
-      followUp: (sp.get("followUp") as any) || undefined,
+      followUp: (sp.get("followUp") as LeadFilter["followUp"]) || undefined,
       search: sp.get("search") || undefined,
     });
     return NextResponse.json({ items });

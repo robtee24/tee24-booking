@@ -79,7 +79,7 @@ export function MarketingSettingsClient({ initial, automations: initialAutomatio
       <Card>
         <CardHeader title="Referral rewards" subtitle="What a member earns when someone they refer joins." action={<Toggle checked={s.referral.enabled} onChange={(v) => setS({ ...s, referral: { ...s.referral, enabled: v } })} label="Referral program enabled" />} />
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Select label="Reward type" value={s.referral.rewardKind} onChange={(e) => setS({ ...s, referral: { ...s.referral, rewardKind: e.target.value as any } })}>
+          <Select label="Reward type" value={s.referral.rewardKind} onChange={(e) => setS({ ...s, referral: { ...s.referral, rewardKind: e.target.value as "PAYMENT" | "CREDIT" } })}>
             <option value="CREDIT">Account credit</option>
             <option value="PAYMENT">Cash payout (PayPal)</option>
           </Select>

@@ -348,7 +348,7 @@ export async function runDueAutomationSteps(now = new Date()) {
       console.error("[automation] step failed", e.id, err);
       await prisma.automationEnrollment.update({
         where: { id: e.id },
-        data: { status: "FAILED", exitReason: String((err as any)?.message ?? err) },
+        data: { status: "FAILED", exitReason: (err instanceof Error ? err.message : String(err)) },
       });
       await prisma.automationEvent.create({
         data: { enrollmentId: e.id, step: e.currentStep, kind: "STEP_FAILED", detail: { error: String(err) } },
@@ -358,7 +358,7 @@ export async function runDueAutomationSteps(now = new Date()) {
         kind: "automation.failed",
         severity: "WARN",
         title: `Automation "${e.automation.name}" failed`,
-        body: String((err as any)?.message ?? err).slice(0, 200),
+        body: (err instanceof Error ? err.message : String(err)).slice(0, 200),
         data: { automationId: e.automationId, enrollmentId: e.id, memberId: e.memberId },
       });
     }

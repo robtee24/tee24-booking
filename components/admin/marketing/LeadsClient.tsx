@@ -36,6 +36,11 @@ type Props = {
   currentAdminId: string | null;
 };
 
+type LeadDetail = {
+  events: { id: string; kind: string; createdAt: string; data?: { note?: string; from?: string; to?: string } | null }[];
+  messages: { id: string; createdAt: string; direction: string; channel: string; subject: string | null; body: string }[];
+};
+
 const ACTIVITY_KINDS = ["NOTE", "CALL", "EMAIL", "SMS", "TOUR", "VISIT", "MEETING", "OTHER"];
 
 function leadName(l: Pick<LeadRow, "firstName" | "lastName" | "email" | "phone">) {
@@ -258,9 +263,9 @@ function LeadForm({ lead, sources, admins, stageLabels, onClose, onSaved }: { le
     try {
       const json = { ...f, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), nextFollowUpAt: f.nextFollowUpAt ? new Date(`${f.nextFollowUpAt}T09:00:00`).toISOString() : null, assignedToId: f.assignedToId || null };
       const res = lead
-        ? await api<{ lead: any }>(`/api/admin/visitors/${lead.id}`, { method: "PATCH", json })
-        : await api<{ lead: any }>("/api/admin/visitors", { method: "POST", json });
-      onSaved({ ...res.lead, stage: res.lead.stage === "ENGAGED" ? "CONTACTED" : res.lead.stage, tags: Array.isArray(res.lead.tags) ? res.lead.tags : [] });
+        ? await api<{ lead: Omit<LeadRow, "stage" | "tags"> & { stage: string; tags: unknown } }>(`/api/admin/visitors/${lead.id}`, { method: "PATCH", json })
+        : await api<{ lead: Omit<LeadRow, "stage" | "tags"> & { stage: string; tags: unknown } }>("/api/admin/visitors", { method: "POST", json });
+      onSaved({ ...res.lead, stage: (res.lead.stage === "ENGAGED" ? "CONTACTED" : res.lead.stage) as LeadStage, tags: Array.isArray(res.lead.tags) ? (res.lead.tags as string[]) : [] });
     } catch (e) {
       onError(e, "Save failed");
     } finally {
@@ -314,7 +319,7 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
   const { toast } = useToast();
   const onError = useErrorToast();
   const router = useRouter();
-  const [detail, setDetail] = React.useState<any>(null);
+  const [detail, setDetail] = React.useState<LeadDetail | null>(null);
   const [editing, setEditing] = React.useState(false);
   const [tab, setTab] = React.useState<"activity" | "message" | "convert">("activity");
   const [act, setAct] = React.useState({ kind: "NOTE", note: "", nextFollowUpAt: "" });
@@ -324,7 +329,7 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
 
   const load = React.useCallback(async () => {
     try {
-      const res = await api<{ lead: any }>(`/api/admin/visitors/${lead.id}`);
+      const res = await api<{ lead: LeadDetail }>(`/api/admin/visitors/${lead.id}`);
       setDetail(res.lead);
     } catch (e) {
       onError(e);
@@ -386,8 +391,8 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
   }
 
   const timeline: { id: string; at: string; label: string; detail?: string }[] = [
-    ...((detail?.events ?? []) as any[]).map((e) => ({ id: e.id, at: e.createdAt, label: e.kind.replace(/_/g, " ").toLowerCase(), detail: e.data?.note ?? (e.data?.from ? `${e.data.from} → ${e.data.to}` : undefined) })),
-    ...((detail?.messages ?? []) as any[]).map((m) => ({ id: m.id, at: m.createdAt, label: `${m.direction === "INBOUND" ? "received" : "sent"} ${m.channel.toLowerCase()}`, detail: m.subject ? `${m.subject} — ${m.body.slice(0, 120)}` : m.body.slice(0, 160) })),
+    ...(detail?.events ?? []).map((e) => ({ id: e.id, at: e.createdAt, label: e.kind.replace(/_/g, " ").toLowerCase(), detail: e.data?.note ?? (e.data?.from ? `${e.data.from} → ${e.data.to}` : undefined) })),
+    ...(detail?.messages ?? []).map((m) => ({ id: m.id, at: m.createdAt, label: `${m.direction === "INBOUND" ? "received" : "sent"} ${m.channel.toLowerCase()}`, detail: m.subject ? `${m.subject} — ${m.body.slice(0, 120)}` : m.body.slice(0, 160) })),
   ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
   if (editing) {

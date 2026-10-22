@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui";
 export function useMarketingApi() {
   const { slug } = useAdminLocation();
   return React.useCallback(
-    async <T = any,>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> => {
+    async <T = unknown,>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> => {
       const url = new URL(path, window.location.origin);
       if (!url.searchParams.has("slug")) url.searchParams.set("slug", slug);
       const { json, ...rest } = init ?? {};
@@ -20,7 +20,7 @@ export function useMarketingApi() {
         body: json !== undefined ? JSON.stringify(json) : rest.body,
       });
       const text = await res.text();
-      let data: any = null;
+      let data: { error?: string } | null = null;
       try {
         data = text ? JSON.parse(text) : null;
       } catch {
@@ -37,7 +37,7 @@ export function useErrorToast() {
   const { toast } = useToast();
   return React.useCallback(
     (e: unknown, title = "Something went wrong") => {
-      toast({ tone: "error", title, description: (e as any)?.message ?? String(e) });
+      toast({ tone: "error", title, description: e instanceof Error ? e.message : String(e) });
     },
     [toast],
   );
@@ -169,7 +169,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 export function MemberSearch({ onPick, placeholder = "Search members by name, email or phone…" }: { onPick: (m: { id: string; firstName: string; lastName: string; email: string; phone: string }) => void; placeholder?: string }) {
   const { slug } = useAdminLocation();
   const [q, setQ] = React.useState("");
-  const [results, setResults] = React.useState<any[]>([]);
+  const [results, setResults] = React.useState<{ id: string; firstName: string; lastName: string; email: string; phone: string }[]>([]);
   const [open, setOpen] = React.useState(false);
   React.useEffect(() => {
     if (q.trim().length < 2) {

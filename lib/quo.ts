@@ -12,6 +12,8 @@
  * (booking confirmations, password resets) bypass that gate.
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 type SendArgs = {
   to: string;
   text: string;
@@ -89,9 +91,9 @@ export async function sendQuoSms({ to, text, category = "TRANSACTIONAL" }: SendA
     }
     const data = (await res.json().catch(() => null)) as any;
     return { ok: true, providerId: data?.data?.id ?? data?.id };
-  } catch (err: any) {
+  } catch (err) {
     console.error("[quo] send error:", err);
-    return { ok: false, error: err?.message ?? String(err) };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -99,11 +101,32 @@ export async function sendQuoSms({ to, text, category = "TRANSACTIONAL" }: SendA
  * Verify a Quo webhook signature (HMAC).
  * Quo signs requests with X-Quo-Signature header.
  */
-export function verifyQuoSignature(_signature: string, _body: string): boolean {
-  // TODO: implement HMAC verification when QUO_WEBHOOK_SECRET is provisioned.
-  // For now we accept all webhooks if a webhook secret env var is missing,
-  // and the receiver should still validate the payload shape.
-  return true;
+export function verifyQuoSignature(signature: string | null | undefined, body: string): boolean {
+  const secret = process.env.QUO_WEBHOOK_SECRET || process.env.OPENPHONE_WEBHOOK_SECRET;
+  // Without a provisioned secret we accept the webhook; the receiver still validates payload shape.
+  if (!secret) return true;
+  if (!signature) return false;
+  try {
+    // OpenPhone format: "hmac;<version>;<timestamp>;<base64 signature>" over `${timestamp}.${body}`.
+    // Also accept a bare hex/base64 HMAC-SHA256 of the raw body.
+    const parts = signature.split(";");
+    const key = /^[A-Za-z0-9+/=]+$/.test(secret) && secret.length % 4 === 0 ? Buffer.from(secret, "base64") : Buffer.from(secret, "utf8");
+    if (parts.length === 4 && parts[0] === "hmac") {
+      const expected = createHmac("sha256", key).update(`${parts[2]}.${body}`).digest("base64");
+      return safeEqual(expected, parts[3]);
+    }
+    const hex = createHmac("sha256", key).update(body).digest("hex");
+    const b64 = createHmac("sha256", key).update(body).digest("base64");
+    return safeEqual(hex, signature) || safeEqual(b64, signature);
+  } catch {
+    return false;
+  }
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
 /**

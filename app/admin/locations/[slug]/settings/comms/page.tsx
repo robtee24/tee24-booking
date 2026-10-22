@@ -44,7 +44,7 @@ export default async function CommsSettingsPage({ params }: { params: Promise<{ 
       <div>
         <h2 className="text-apple-lg font-semibold text-apple-text">Member system messages</h2>
         <p className="mt-1 text-apple-sm text-apple-text-secondary">
-          Transactional messages sent automatically when something happens to a member. These always send (members can't opt out), unless the organization has
+          Transactional messages sent automatically when something happens to a member. These always send (members can&apos;t opt out), unless the organization has
           turned a channel off in <Link href={adminRoutes.settingsEmail()} className="text-apple-blue hover:underline">org email settings</Link>.
           Sender footer, BCC and reply-to come from the same place.
         </p>

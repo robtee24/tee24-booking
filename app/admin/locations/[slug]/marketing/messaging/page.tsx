@@ -71,7 +71,7 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
   });
 
   const channelData = channelMix
-    .map((c: any) => ({ name: c.channel ?? "Unknown", value: c._count?._all ?? 0 }))
+    .map((c) => ({ name: c.channel ?? "Unknown", value: c._count._all ?? 0 }))
     .filter((c) => c.value > 0);
 
   const sendVolumeTrend = dailyStats.slice(-7).map((d) => ({ y: d.sent }));

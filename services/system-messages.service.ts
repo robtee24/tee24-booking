@@ -47,7 +47,7 @@ async function findRow(organizationId: string | null, eventKey: string, channel:
 /** Ensure both channel rows exist for one catalog entry, seeding from defaults. */
 async function ensureRows(organizationId: string | null, def: SystemTemplateDef) {
   const prisma = getPrisma();
-  const out: Record<"EMAIL" | "SMS", SystemTemplateRow> = {} as any;
+  const out: Record<"EMAIL" | "SMS", SystemTemplateRow> = {} as Record<"EMAIL" | "SMS", SystemTemplateRow>;
   for (const channel of ["EMAIL", "SMS"] as const) {
     let row = await findRow(organizationId, def.eventKey, channel);
     if (!row) {

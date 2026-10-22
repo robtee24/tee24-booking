@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
     assertCan(actor, "marketing.send-payouts", {});
     const result = await sendPayoutBatch(body.payoutIds, { actorId: guard.admin.id });
     return NextResponse.json({ ok: true, ...result });
-  } catch (e: any) {
+  } catch (e) {
     if (e instanceof ForbiddenError) return NextResponse.json({ error: e.message }, { status: 403 });
-    return NextResponse.json({ error: e.message }, { status: 400 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

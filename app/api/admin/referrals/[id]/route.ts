@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const before = await prisma.referral.findUnique({ where: { id } });
     if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (before.payoutId) return NextResponse.json({ error: "Referral is already in a payout batch" }, { status: 400 });
-    const data: any = {};
+    const data: { referrerId?: string; earnedCents?: number } = {};
     if (body.referrerId) data.referrerId = body.referrerId;
     if (typeof body.earnedCents === "number") data.earnedCents = Math.max(0, Math.round(body.earnedCents));
     const after = await prisma.referral.update({ where: { id }, data });

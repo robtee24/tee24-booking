@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, Drawer, EmptyState, Input, Select, StatusBadge, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Card, Drawer, EmptyState, Input, Select, Textarea, useToast } from "@/components/ui";
 import { Copy, Pencil, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { adminRoutes } from "@/lib/admin/routes";
 import { useAdminLocation } from "@/components/admin/LocationContext";

@@ -80,13 +80,13 @@ export default async function MarketingDashboard({ params }: { params: Promise<{
   const trendSpark = signupTrend.map((s) => ({ y: s.signups }));
 
   const sourcesData = sourceBreakdown
-    .map((s: any) => ({ name: s.source ?? "Unknown", value: s._count?._all ?? 0 }))
+    .map((s) => ({ name: s.source ?? "Unknown", value: s._count._all ?? 0 }))
     .filter((s) => s.value > 0);
 
   const stageCounts = new Map<string, number>();
-  for (const s of visitorsByStage as any[]) {
+  for (const s of visitorsByStage) {
     const k = normalizeLeadStage(s.stage);
-    stageCounts.set(k, (stageCounts.get(k) ?? 0) + (s._count?._all ?? 0));
+    stageCounts.set(k, (stageCounts.get(k) ?? 0) + (s._count._all ?? 0));
   }
   const visitorStageData = Array.from(stageCounts.entries())
     .map(([name, value]) => ({ name: settings.leadStageLabels[name as keyof typeof settings.leadStageLabels] ?? name, value }))
@@ -199,7 +199,7 @@ export default async function MarketingDashboard({ params }: { params: Promise<{
           {followUps.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-apple-text-tertiary">
               <CalendarClock className="h-6 w-6" />
-              <p className="text-apple-sm">You're caught up.</p>
+              <p className="text-apple-sm">You&apos;re caught up.</p>
             </div>
           ) : (
             <ul className="divide-y divide-apple-divider">

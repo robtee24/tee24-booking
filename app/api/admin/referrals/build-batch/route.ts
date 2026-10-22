@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
     if (body.autoSend) assertCan(actor, "marketing.send-payouts", {});
     const result = await buildMonthlyPayoutBatch({ autoSend: !!body.autoSend, actorId: guard.admin.id });
     return NextResponse.json({ ok: true, created: result });
-  } catch (e: any) {
+  } catch (e) {
     if (e instanceof ForbiddenError) return NextResponse.json({ error: e.message }, { status: 403 });
-    return NextResponse.json({ error: e.message }, { status: 400 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }

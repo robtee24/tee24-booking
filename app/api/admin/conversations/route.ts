@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, guardMarketing, readJson } from "../marketing/_shared";
-import { listConversations, startConversation } from "@/services/inbox.service";
+import { listConversations, startConversation, type InboxFilter } from "@/services/inbox.service";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +12,8 @@ export async function GET(req: NextRequest) {
   try {
     const items = await listConversations({
       locationId: g.location.id,
-      status: (sp.get("status") as any) || "OPEN",
-      channel: (sp.get("channel") as any) || undefined,
+      status: (sp.get("status") as InboxFilter["status"]) || "OPEN",
+      channel: (sp.get("channel") as InboxFilter["channel"]) || undefined,
       unreadOnly: sp.get("unread") === "1",
       assignedToId: sp.get("assignedToId") || undefined,
       search: sp.get("search") || undefined,
