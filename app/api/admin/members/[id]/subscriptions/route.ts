@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { assertCan } from "@/lib/permissions";
 import { emitMemberEvent } from "@/lib/events";
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const startDate = parseDate(body.startDate) ?? new Date();
     let sub = await subscribeMember({ memberId: id, planId: String(body.planId), locationId: g.member.locationId, startDate, comp }, g.admin.id);
 
-    const patch: any = {};
+    const patch: Prisma.MembershipSubscriptionUpdateInput = {};
     if (body.priceOverrideCents != null && body.priceOverrideCents !== "") {
       const cents = Math.max(0, Math.round(Number(body.priceOverrideCents)));
       if (Number.isFinite(cents)) patch.priceCents = cents;

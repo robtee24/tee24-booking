@@ -48,10 +48,10 @@ export function PaymentsTab({ slug, memberId }: { slug: string; memberId: string
   }, [memberId, filter]);
   React.useEffect(load, [load]);
 
-  async function run(fn: () => Promise<any>, success: string) {
+  async function run(fn: () => Promise<unknown>, success: string) {
     setBusy(true);
     try {
-      const r = await fn();
+      const r = (await fn()) as { chargeError?: string | null } | null;
       if (r?.chargeError) toast({ tone: "info", title: "Invoice created, card charge failed", description: String(r.chargeError) });
       else toast({ tone: "success", title: success });
       setModal(null);
@@ -71,7 +71,7 @@ export function PaymentsTab({ slug, memberId }: { slug: string; memberId: string
   if (error) return <ErrorBanner message={error} onRetry={load} />;
   if (!data) return <LoadingRows n={3} />;
 
-  const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id: string) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   return (
     <div className="space-y-4">
@@ -254,7 +254,7 @@ function Footer({ onClose, onSubmit, busy, label, danger, disabled }: { onClose:
   );
 }
 
-function ChargeModal({ taxRateBps, hasCard, busy, onClose, onSubmit }: { taxRateBps: number; hasCard: boolean; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function ChargeModal({ taxRateBps, hasCard, busy, onClose, onSubmit }: { taxRateBps: number; hasCard: boolean; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [description, setDescription] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [quantity, setQuantity] = React.useState("1");
@@ -279,7 +279,7 @@ function ChargeModal({ taxRateBps, hasCard, busy, onClose, onSubmit }: { taxRate
           <Input label="Quantity" type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Select label="Discount" value={discountMode} onChange={(e) => setDiscountMode(e.target.value as any)}>
+          <Select label="Discount" value={discountMode} onChange={(e) => setDiscountMode(e.target.value as never)}>
             <option value="none">None</option>
             <option value="amount">Amount ($)</option>
             <option value="percent">Percent (%)</option>
@@ -301,7 +301,7 @@ function ChargeModal({ taxRateBps, hasCard, busy, onClose, onSubmit }: { taxRate
   );
 }
 
-function CreditModal({ busy, onClose, onSubmit }: { busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function CreditModal({ busy, onClose, onSubmit }: { busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [amount, setAmount] = React.useState("");
   const [type, setType] = React.useState("ADJUSTMENT");
   const [reason, setReason] = React.useState("");
@@ -320,7 +320,7 @@ function CreditModal({ busy, onClose, onSubmit }: { busy: boolean; onClose: () =
   );
 }
 
-function MarkPaidModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function MarkPaidModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [method, setMethod] = React.useState("CASH");
   const [note, setNote] = React.useState("");
   return (
@@ -338,7 +338,7 @@ function MarkPaidModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; busy: b
   );
 }
 
-function CancelInvoiceModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function CancelInvoiceModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [reason, setReason] = React.useState("");
   return (
     <Modal open onClose={onClose} title={`Cancel invoice #${inv.number}?`} description="The invoice is written off and will not be charged." footer={<Footer danger onClose={onClose} busy={busy} label="Cancel invoice" onSubmit={() => onSubmit({ reason: reason || undefined })} />}>
@@ -347,7 +347,7 @@ function CancelInvoiceModal({ inv, busy, onClose, onSubmit }: { inv: Invoice; bu
   );
 }
 
-function RefundModal({ charge, busy, onClose, onSubmit }: { charge: Charge; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function RefundModal({ charge, busy, onClose, onSubmit }: { charge: Charge; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const refunded = charge.refunds.filter((r) => r.status !== "FAILED").reduce((s, r) => s + r.amountCents, 0);
   const max = charge.amountCents - refunded;
   const [amount, setAmount] = React.useState((max / 100).toFixed(2));

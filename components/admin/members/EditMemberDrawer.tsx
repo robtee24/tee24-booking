@@ -49,7 +49,7 @@ export function customValueToString(field: CustomField, raw: unknown): string {
 function fieldOptions(field: CustomField): string[] {
   const o = field.options;
   if (Array.isArray(o)) return o.map(String);
-  if (o && typeof o === "object" && Array.isArray((o as any).options)) return (o as any).options.map(String);
+  if (o && typeof o === "object" && Array.isArray((o as { options?: unknown[] }).options)) return (o as { options: unknown[] }).options.map(String);
   return [];
 }
 

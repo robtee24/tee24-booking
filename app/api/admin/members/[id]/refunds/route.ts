@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!Number.isFinite(amountCents) || amountCents <= 0 || amountCents > charge.amountCents) return NextResponse.json({ error: "Invalid refund amount" }, { status: 400 });
     const reason = body.reason ? String(body.reason) : undefined;
 
-    let refund: any = null;
+    let refund: unknown = null;
     if (body.asCredit || !charge.squarePaymentId) {
       if (!body.asCredit) return NextResponse.json({ error: "This charge was not taken by card. Refund it as account credit instead." }, { status: 400 });
       refund = await addCredit({ memberId: id, amountCents, type: "REFUND_AS_CREDIT", reason: reason ?? `Refund of charge ${charge.id}`, actorId: g.admin.id });

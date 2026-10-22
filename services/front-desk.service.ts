@@ -11,6 +11,7 @@
  *    pending / visitor without pass), unsigned required document, invoice
  *    overdue past Location.overdueBlockDays.
  */
+import type { Prisma } from "@prisma/client";
 import { addHours, addMinutes, subMinutes } from "date-fns";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -141,7 +142,7 @@ export async function searchMembers(locationId: string, query: string): Promise<
   if (q.length < 2) return [];
   const digits = q.replace(/\D/g, "");
   const parts = q.split(/\s+/).filter(Boolean);
-  const or: any[] = [
+  const or: Prisma.MemberWhereInput[] = [
     { fullName: { contains: q, mode: "insensitive" } },
     { firstName: { contains: q, mode: "insensitive" } },
     { lastName: { contains: q, mode: "insensitive" } },
@@ -304,7 +305,7 @@ export async function walkInGuest(opts: { locationId: string; name: string; phon
   const email = opts.email?.trim().toLowerCase() || null;
 
   let visitor = phone || email
-    ? await prisma.visitor.findFirst({ where: { locationId: opts.locationId, OR: [phone ? { phone } : undefined, email ? { email } : undefined].filter(Boolean) as any } })
+    ? await prisma.visitor.findFirst({ where: { locationId: opts.locationId, OR: [phone ? { phone } : undefined, email ? { email } : undefined].filter((c): c is { phone: string } | { email: string } => !!c) } })
     : null;
   if (!visitor) {
     visitor = await prisma.visitor.create({

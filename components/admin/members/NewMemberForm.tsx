@@ -240,7 +240,7 @@ export function InviteModal({ slug, open, onClose, defaults }: { slug: string; o
     }>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Select label="Send via" value={channel} onChange={(e) => setChannel(e.target.value as any)}>
+          <Select label="Send via" value={channel} onChange={(e) => setChannel(e.target.value as never)}>
             <option value="EMAIL">Email</option>
             <option value="SMS">Text message</option>
           </Select>

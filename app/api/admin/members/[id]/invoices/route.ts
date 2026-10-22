@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { assertCan } from "@/lib/permissions";
 import { emitMemberEvent } from "@/lib/events";
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   try {
     assertCan(g.actor, "billing.view", { locationId: g.member.locationId });
     const status = req.nextUrl.searchParams.get("status");
-    const where: any = { memberId: id };
+    const where: Prisma.InvoiceWhereInput = { memberId: id };
     if (status && status !== "ALL") {
       if (status === "OPEN") where.status = { in: ["SCHEDULED", "PAST_DUE", "FAILED"] };
       else where.status = status;
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       g.admin.id,
     );
 
-    let charge: any = null;
+    let charge: Awaited<ReturnType<typeof runCharge>> | null = null;
     let chargeError: string | null = null;
     if (body.chargeNow) {
       const methods = await listPaymentMethods(id);

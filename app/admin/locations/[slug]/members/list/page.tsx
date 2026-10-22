@@ -40,7 +40,7 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
   ]);
 
   const sourceData = sourceRows
-    .map((r: any) => ({
+    .map((r) => ({
       source: r.source ?? "Unknown",
       members: r._count?._all ?? 0,
     }))

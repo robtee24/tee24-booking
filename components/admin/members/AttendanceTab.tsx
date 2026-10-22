@@ -122,7 +122,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function VisitModal({ visit, busy, onClose, onSubmit }: { visit: Visit | null; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function VisitModal({ visit, busy, onClose, onSubmit }: { visit: Visit | null; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [enteredAt, setEnteredAt] = React.useState(toLocalInput(visit?.enteredAt ?? new Date()));
   const [type, setType] = React.useState(visit?.type ?? "MANUAL");
   const [notes, setNotes] = React.useState(visit?.notes ?? "");

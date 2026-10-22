@@ -98,7 +98,7 @@ export function MessagingTab({ slug, memberId }: { slug: string; memberId: strin
         <div className="space-y-2 border-t border-apple-divider p-4">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="sm:w-40">
-              <Select value={channel} onChange={(e) => setChannel(e.target.value as any)}>
+              <Select value={channel} onChange={(e) => setChannel(e.target.value as never)}>
                 <option value="EMAIL" disabled={!data.canEmail}>Email</option>
                 <option value="SMS" disabled={!data.canSms}>Text (SMS)</option>
               </Select>

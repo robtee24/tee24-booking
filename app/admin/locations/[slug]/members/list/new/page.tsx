@@ -26,7 +26,7 @@ export default async function NewMemberPage({ params }: { params: Promise<{ slug
   ]);
   const visiblePlans = plans
     .filter((p) => !p.allowedLocations || p.allowedLocations.split(",").map((s) => s.trim()).includes(location.id))
-    .map(({ allowedLocations: _a, ...p }) => p);
+    .map(({ id, name, priceCents, signupFeeCents, billingCadence, durationDays }) => ({ id, name, priceCents, signupFeeCents, billingCadence, durationDays }));
 
   return (
     <div className="space-y-6">

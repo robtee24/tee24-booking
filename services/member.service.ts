@@ -5,6 +5,7 @@
  * directly) so we can attach audit logs, automation triggers, and
  * Kisi access syncs in one place.
  */
+import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit, diff } from "@/lib/audit";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
@@ -100,16 +101,16 @@ function dobRangeForAges(minAge?: number, maxAge?: number): { gte?: Date; lte?: 
   return out;
 }
 
-export async function buildMemberWhere(q: MemberQuery, opts: { ignoreStatus?: boolean } = {}): Promise<any> {
+export async function buildMemberWhere(q: MemberQuery, opts: { ignoreStatus?: boolean } = {}): Promise<Prisma.MemberWhereInput> {
   const prisma = getPrisma();
-  const and: any[] = [{ locationId: q.locationId }, { status: { not: "MERGED" } }];
+  const and: Prisma.MemberWhereInput[] = [{ locationId: q.locationId }, { status: { not: "MERGED" } }];
 
   if (!opts.ignoreStatus && q.status?.length) and.push({ status: { in: q.status } });
 
   if (q.search) {
     const s = q.search.trim();
     const digits = s.replace(/\D/g, "");
-    const or: any[] = [
+    const or: Prisma.MemberWhereInput[] = [
       { firstName: { contains: s, mode: "insensitive" } },
       { lastName: { contains: s, mode: "insensitive" } },
       { fullName: { contains: s, mode: "insensitive" } },
@@ -124,19 +125,19 @@ export async function buildMemberWhere(q: MemberQuery, opts: { ignoreStatus?: bo
   if (q.planId) and.push({ membershipSubscriptions: { some: { planId: q.planId, status: { in: ["ACTIVE", "FROZEN", "CANCEL_SCHEDULED", "FREEZE_SCHEDULED", "COMP", "PENDING"] } } } });
 
   if (q.joinedFrom || q.joinedTo) {
-    const r: any = {};
+    const r: Prisma.DateTimeNullableFilter = {};
     if (q.joinedFrom) r.gte = q.joinedFrom;
     if (q.joinedTo) r.lte = q.joinedTo;
     and.push({ joinDate: r });
   }
   if (q.membershipStartFrom || q.membershipStartTo) {
-    const r: any = {};
+    const r: Prisma.DateTimeFilter = {};
     if (q.membershipStartFrom) r.gte = q.membershipStartFrom;
     if (q.membershipStartTo) r.lte = q.membershipStartTo;
     and.push({ membershipSubscriptions: { some: { startDate: r } } });
   }
   if (q.membershipEndFrom || q.membershipEndTo) {
-    const r: any = {};
+    const r: Prisma.DateTimeNullableFilter = {};
     if (q.membershipEndFrom) r.gte = q.membershipEndFrom;
     if (q.membershipEndTo) r.lte = q.membershipEndTo;
     and.push({ membershipSubscriptions: { some: { OR: [{ endDate: r }, { paidThroughDate: r }] } } });
@@ -669,12 +670,12 @@ export async function setCustomFieldValues(memberId: string, values: Record<stri
       await prisma.customFieldValue.deleteMany({ where: { fieldId: def.id, memberId } });
       continue;
     }
-    const data: any = { valueText: null, valueNumber: null, valueDate: null, valueJson: null };
+    const data: { valueText: string | null; valueNumber: number | null; valueDate: Date | null; valueJson: Prisma.InputJsonValue | typeof Prisma.JsonNull } = { valueText: null, valueNumber: null, valueDate: null, valueJson: Prisma.JsonNull };
     switch (def.type) {
       case "NUMBER": data.valueNumber = Number(raw); break;
       case "DATE": data.valueDate = new Date(String(raw)); break;
       case "BOOLEAN": data.valueJson = Boolean(raw === true || raw === "true" || raw === "1"); break;
-      case "MULTI_SELECT": data.valueJson = Array.isArray(raw) ? raw : String(raw).split(",").map((s) => s.trim()).filter(Boolean); break;
+      case "MULTI_SELECT": data.valueJson = Array.isArray(raw) ? raw.map(String) : String(raw).split(",").map((s) => s.trim()).filter(Boolean); break;
       default: data.valueText = String(raw);
     }
     await prisma.customFieldValue.upsert({

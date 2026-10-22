@@ -145,7 +145,7 @@ export function DocumentsTab({ memberId }: { slug: string; memberId: string }) {
   );
 }
 
-function AssignModal({ library, pendingDocIds, signedDocIds, busy, onClose, onSubmit }: { library: LibDoc[]; pendingDocIds: Set<string>; signedDocIds: Set<string>; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function AssignModal({ library, pendingDocIds, signedDocIds, busy, onClose, onSubmit }: { library: LibDoc[]; pendingDocIds: Set<string>; signedDocIds: Set<string>; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const first = library.find((d) => !pendingDocIds.has(d.id) && !signedDocIds.has(d.id)) ?? library[0];
   const [documentId, setDocumentId] = React.useState(first?.id ?? "");
   const [expiresAt, setExpiresAt] = React.useState("");

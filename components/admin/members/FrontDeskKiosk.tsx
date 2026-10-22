@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Delete, FileSignature, QrCode, Search, UserPlus, Volume2, VolumeX } from "lucide-react";
 import { adminRoutes } from "@/lib/admin/routes";
 import { Badge, Button, Card, CardHeader, Input, Modal, Money, PageHeader, StatusBadge, useToast } from "@/components/ui";
-import { Avatar, api, errMsg, fmtTime, relTime } from "./shared";
+import { Avatar, api, errMsg, fmtTime, relTime, type ApiError } from "./shared";
 
 type FDMember = {
   id: string; firstName: string; lastName: string; email: string; phone: string; photoUrl: string | null; status: string; checkinCode: string | null;
@@ -81,7 +81,7 @@ export function FrontDeskKiosk({ slug, locationName, dedupeHours }: { slug: stri
   function beep(kind: "ok" | "warn" | "error") {
     if (!sound) return;
     try {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new Ctx();
       const tones = kind === "ok" ? [[880, 0.08], [1320, 0.12]] : kind === "warn" ? [[660, 0.15]] : [[220, 0.12], [180, 0.2]];
       let t = ctx.currentTime;
@@ -116,8 +116,9 @@ export function FrontDeskKiosk({ slug, locationName, dedupeHours }: { slug: stri
       showOutcome(r);
       setCode(""); setScan(""); setQuery(""); setResults([]);
       loadRecent();
-    } catch (e: any) {
-      if (e?.status === 409 && e?.data?.blocked) { beep("error"); showOutcome(e.data as CheckInResult); }
+    } catch (err) {
+      const e = err as ApiError;
+      if (e?.status === 409 && e?.data?.blocked) { beep("error"); showOutcome(e.data as unknown as CheckInResult); }
       else if (e?.status === 404 && e?.data?.notFound) { beep("error"); showOutcome({ ok: false, notFound: true }); }
       else toast({ tone: "error", title: "Check-in failed", description: errMsg(e) });
       setCode(""); setScan("");
@@ -201,7 +202,7 @@ export function FrontDeskKiosk({ slug, locationName, dedupeHours }: { slug: stri
           {mode === "scan" && (
             <Card className="text-center">
               <QrCode className="mx-auto mb-2 h-10 w-10 text-apple-text-tertiary" />
-              <p className="text-apple-sm text-apple-text-secondary">Point a USB/Bluetooth scanner at the member's portal QR code. The field below stays focused; scanners "type" the code and press Enter.</p>
+              <p className="text-apple-sm text-apple-text-secondary">Point a USB/Bluetooth scanner at the member&apos;s portal QR code. The field below stays focused; scanners &ldquo;type&rdquo; the code and press Enter.</p>
               <div className="mx-auto mt-4 max-w-md">
                 <Input
                   ref={scanRef}

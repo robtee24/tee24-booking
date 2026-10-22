@@ -8,6 +8,7 @@
  * Loser rows are kept (not deleted) so external ids (gymDeskId, Square, Kisi)
  * remain traceable.
  */
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 
@@ -155,7 +156,7 @@ export async function mergeMembers(opts: { survivorId: string; loserIds: string[
       if (loser.phone && normalizePhone(loser.phone) !== normalizePhone(survivor.phone)) secPhones.add(loser.phone);
       secEmails.delete(survivor.email.toLowerCase());
 
-      const fill: any = {
+      const fill: Prisma.MemberUpdateInput = {
         secondaryEmails: Array.from(secEmails),
         secondaryPhones: Array.from(secPhones),
         dob: survivor.dob ?? loser.dob ?? undefined,

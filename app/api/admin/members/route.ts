@@ -117,24 +117,27 @@ export async function POST(req: NextRequest) {
     }
 
     // Plan at creation
-    let subscription: any = null;
+    let subscription: { id: string; priceCents: number; planName: string } | null = null;
     if (planId) {
       try {
         assertCan(actor, "membership.subscribe", { locationId: location.id });
-        subscription = await subscribeMember(
+        const created = await subscribeMember(
           { memberId: member.id, planId, locationId: location.id, startDate: parseDate(body.planStartDate) ?? new Date(), comp: !!body.comp },
           guard.admin.id,
         );
+        let priceCents = created.priceCents;
         if (body.priceOverrideCents != null && Number.isFinite(Number(body.priceOverrideCents))) {
-          subscription = await getPrisma().membershipSubscription.update({ where: { id: subscription.id }, data: { priceCents: Math.max(0, Math.round(Number(body.priceOverrideCents))) } });
+          priceCents = Math.max(0, Math.round(Number(body.priceOverrideCents)));
+          await getPrisma().membershipSubscription.update({ where: { id: created.id }, data: { priceCents } });
         }
+        subscription = { id: created.id, priceCents, planName: created.plan?.name ?? "" };
         void emitMemberEvent("membership.activated", {
           memberId: member.id,
           locationId: location.id,
           organizationId: location.organizationId,
           actorAdminId: guard.admin.id,
           refs: { subscriptionId: subscription.id },
-          vars: { planName: subscription.plan?.name ?? "", priceCents: subscription.priceCents },
+          vars: { planName: subscription.planName, priceCents: subscription.priceCents },
         });
       } catch (e) {
         warnings.push(`Plan not added: ${e instanceof Error ? e.message : "error"}`);

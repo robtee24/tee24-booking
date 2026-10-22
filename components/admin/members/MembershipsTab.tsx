@@ -161,7 +161,7 @@ function Footer({ onClose, onSubmit, busy, label, danger, disabled }: { onClose:
 }
 
 /* ---------------- Add membership ---------------- */
-function AddMembershipModal({ plans, busy, onClose, onSubmit }: { plans: Plan[]; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function AddMembershipModal({ plans, busy, onClose, onSubmit }: { plans: Plan[]; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [planId, setPlanId] = React.useState(plans[0]?.id ?? "");
   const [startDate, setStartDate] = React.useState(todayInput());
   const [price, setPrice] = React.useState("");
@@ -188,7 +188,7 @@ function AddMembershipModal({ plans, busy, onClose, onSubmit }: { plans: Plan[];
 }
 
 /* ---------------- Cancel ---------------- */
-function CancelModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function CancelModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [timing, setTiming] = React.useState<"end_of_period" | "immediate" | "date">("end_of_period");
   const [date, setDate] = React.useState("");
   const [reason, setReason] = React.useState(CANCEL_REASONS[0]);
@@ -197,7 +197,7 @@ function CancelModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean
   return (
     <Modal open onClose={onClose} title={`Cancel ${sub.plan.name}`} footer={<Footer danger onClose={onClose} busy={busy} label="Cancel membership" disabled={timing === "date" && !date} onSubmit={() => onSubmit({ timing, date: timing === "date" ? date : undefined, reason, notes: notes || undefined, cancelFeeCents: fee ? Math.round(Number(fee) * 100) : undefined })} />}>
       <div className="space-y-3">
-        <Select label="When" value={timing} onChange={(e) => setTiming(e.target.value as any)}>
+        <Select label="When" value={timing} onChange={(e) => setTiming(e.target.value as never)}>
           <option value="end_of_period">End of paid period ({fmtDate(sub.paidThroughDate)})</option>
           <option value="date">Specific date</option>
           <option value="immediate">Immediately</option>
@@ -214,7 +214,7 @@ function CancelModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean
 }
 
 /* ---------------- Freeze ---------------- */
-function FreezeModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function FreezeModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [startDate, setStartDate] = React.useState(todayInput());
   const [resumeDate, setResumeDate] = React.useState("");
   const [fee, setFee] = React.useState("");
@@ -234,7 +234,7 @@ function FreezeModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean
 }
 
 /* ---------------- Extend ---------------- */
-function ExtendModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function ExtendModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const [days, setDays] = React.useState("30");
   const [charge, setCharge] = React.useState("");
   const [reason, setReason] = React.useState("");
@@ -250,7 +250,7 @@ function ExtendModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean
 }
 
 /* ---------------- Change plan ---------------- */
-function ChangePlanModal({ sub, plans, busy, onClose, onSubmit }: { sub: Sub; plans: Plan[]; busy: boolean; onClose: () => void; onSubmit: (b: any) => void }) {
+function ChangePlanModal({ sub, plans, busy, onClose, onSubmit }: { sub: Sub; plans: Plan[]; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
   const others = plans.filter((p) => p.id !== sub.plan.id);
   const [newPlanId, setNewPlanId] = React.useState(others[0]?.id ?? "");
   const [proration, setProration] = React.useState<"PROSPECTIVE" | "RETROACTIVE" | "NONE">("PROSPECTIVE");
@@ -261,7 +261,7 @@ function ChangePlanModal({ sub, plans, busy, onClose, onSubmit }: { sub: Sub; pl
         <Select label="New plan" value={newPlanId} onChange={(e) => setNewPlanId(e.target.value)}>
           {others.map((p) => <option key={p.id} value={p.id}>{p.name} — {(p.priceCents / 100).toFixed(2)} / {p.billingCadence.toLowerCase()}</option>)}
         </Select>
-        <Select label="Proration" value={proration} onChange={(e) => setProration(e.target.value as any)}>
+        <Select label="Proration" value={proration} onChange={(e) => setProration(e.target.value as never)}>
           <option value="PROSPECTIVE">Prospective — new price from the next invoice</option>
           <option value="RETROACTIVE">Retroactive — prorate the current period</option>
           <option value="NONE">None</option>

@@ -2,8 +2,10 @@
 
 import React from "react";
 
+export type ApiError = Error & { status: number; data: Record<string, unknown> | null };
+
 /** fetch JSON helper that throws the server's `error` message. */
-export async function api<T = any>(url: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+export async function api<T = unknown>(url: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const { json, ...rest } = init ?? {};
   const res = await fetch(url, {
     cache: "no-store",
@@ -13,7 +15,7 @@ export async function api<T = any>(url: string, init?: RequestInit & { json?: un
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data?.error || `Request failed (${res.status})`) as Error & { status: number; data: any };
+    const err = new Error(data?.error || `Request failed (${res.status})`) as ApiError;
     err.status = res.status;
     err.data = data;
     throw err;

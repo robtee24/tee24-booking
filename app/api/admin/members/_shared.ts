@@ -66,6 +66,7 @@ export function apiError(e: unknown, fallbackStatus = 400): NextResponse {
   return NextResponse.json({ error: message }, { status: fallbackStatus });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readJson<T = Record<string, any>>(req: Request): Promise<T> {
   try {
     return (await req.json()) as T;

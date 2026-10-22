@@ -32,9 +32,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = await readJson(req);
     const patch: UpdateMemberInput = {};
     for (const k of STRING_FIELDS) {
-      if (k in body) (patch as any)[k] = body[k] == null || body[k] === "" ? (k === "firstName" || k === "lastName" || k === "email" || k === "phone" ? undefined : null) : String(body[k]);
+      if (k in body) (patch as Record<string, unknown>)[k] = body[k] == null || body[k] === "" ? (k === "firstName" || k === "lastName" || k === "email" || k === "phone" ? undefined : null) : String(body[k]);
     }
-    for (const k of BOOL_FIELDS) if (k in body) (patch as any)[k] = Boolean(body[k]);
+    for (const k of BOOL_FIELDS) if (k in body) (patch as Record<string, unknown>)[k] = Boolean(body[k]);
     if ("dob" in body) patch.dob = parseDate(body.dob) ?? null;
     if ("joinDate" in body) patch.joinDate = parseDate(body.joinDate) ?? null;
     if ("status" in body && body.status) {
