@@ -109,7 +109,8 @@ export async function listConversations(filter: InboxFilter): Promise<Conversati
 
   let filtered = out;
   if (filter.unreadOnly) filtered = filtered.filter((c) => c.unread > 0);
-  if (filter.assignedToId) filtered = filtered.filter((c) => c.assignedToId === filter.assignedToId);
+  if (filter.assignedToId === "unassigned") filtered = filtered.filter((c) => !c.assignedToId);
+  else if (filter.assignedToId) filtered = filtered.filter((c) => c.assignedToId === filter.assignedToId);
   // Unread first, then most recent
   filtered.sort((a, b) => (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0) || b.lastMessageAt.getTime() - a.lastMessageAt.getTime());
   return filtered;
