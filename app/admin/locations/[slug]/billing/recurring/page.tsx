@@ -1,15 +1,13 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { Card, DataTable, EmptyState, PageHeader, Money, StatusBadge, type Column } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { KpiCard } from "@/components/ui/charts";
-import { RefreshCw } from "lucide-react";
-import { adminRoutes } from "@/lib/admin/routes";
 import { isSquareConfigured } from "@/lib/square";
 import { AD_HOC_PLAN_DESCRIPTION, cadenceLabel, previewNextInvoiceCents } from "@/services/recurring-billing.service";
 import { QueryTabs } from "@/components/admin/billing/QueryTabs";
 import { SquareConnectCallout } from "@/components/admin/billing/SquareConnectCallout";
-import { RecurringHeaderActions, SubscriptionRowActions } from "@/components/admin/billing/RecurringActions";
+import { RecurringHeaderActions } from "@/components/admin/billing/RecurringActions";
+import { RecurringTable, type RecurringRow } from "@/components/admin/billing/RecurringTable";
 import { squareStatusPayload } from "@/app/api/admin/billing/_shared";
 
 export const dynamic = "force-dynamic";
@@ -21,22 +19,6 @@ const TABS = [
   { value: "PENDING", label: "Pending" },
   { value: "CANCELLED", label: "Cancelled" },
 ];
-
-type Row = {
-  id: string;
-  status: string;
-  autoRenew: boolean;
-  priceCents: number;
-  billingCadence: string;
-  nextInvoiceDate: Date | null;
-  paidThroughDate: Date | null;
-  startDate: Date;
-  cancelScheduledFor: Date | null;
-  member: { id: string; firstName: string; lastName: string };
-  plan: { id: string; name: string; description: string | null };
-  nextAmountCents: number;
-  hasCard: boolean;
-};
 
 export default async function RecurringPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { slug } = await params;
@@ -63,22 +45,25 @@ export default async function RecurringPage({ params, searchParams }: { params: 
   ]);
   const countBy = Object.fromEntries(counts.map((c) => [c.status, c._count._all])) as Record<string, number>;
 
-  const rows: Row[] = await Promise.all(
-    subs.map(async (s) => ({
-      id: s.id,
-      status: s.status,
-      autoRenew: s.autoRenew,
-      priceCents: s.priceCents,
-      billingCadence: s.billingCadence,
-      nextInvoiceDate: s.nextInvoiceDate,
-      paidThroughDate: s.paidThroughDate,
-      startDate: s.startDate,
-      cancelScheduledFor: s.cancelScheduledFor,
-      member: { id: s.member.id, firstName: s.member.firstName, lastName: s.member.lastName },
-      plan: s.plan,
-      hasCard: s.member.paymentMethods.length > 0,
-      nextAmountCents: s.status === "ACTIVE" || s.status === "CANCEL_SCHEDULED" ? await previewNextInvoiceCents({ memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: location.taxRateBps }).catch(() => s.priceCents) : s.priceCents,
-    })),
+  const rows: RecurringRow[] = await Promise.all(
+    subs.map(async (s) => {
+      const live = s.status === "ACTIVE" || s.status === "CANCEL_SCHEDULED";
+      return {
+        id: s.id,
+        status: s.status,
+        autoRenew: s.autoRenew,
+        priceCents: s.priceCents,
+        cadenceLabel: cadenceLabel(s.billingCadence),
+        nextInvoiceDate: s.nextInvoiceDate?.toISOString() ?? null,
+        paidThroughDate: s.paidThroughDate?.toISOString() ?? null,
+        cancelScheduledFor: s.cancelScheduledFor?.toISOString() ?? null,
+        member: { id: s.member.id, firstName: s.member.firstName, lastName: s.member.lastName },
+        planName: s.plan.name,
+        adHoc: s.plan.description === AD_HOC_PLAN_DESCRIPTION,
+        hasCard: s.member.paymentMethods.length > 0,
+        nextAmountCents: live ? await previewNextInvoiceCents({ memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: location.taxRateBps }).catch(() => s.priceCents) : s.priceCents,
+      };
+    }),
   );
 
   // Normalised monthly recurring revenue
@@ -90,59 +75,7 @@ export default async function RecurringPage({ params, searchParams }: { params: 
   const squareConfigured = isSquareConfigured();
   const in30Days = new Date();
   in30Days.setDate(in30Days.getDate() + 30);
-  const next30 = rows.filter((r) => r.nextInvoiceDate && r.nextInvoiceDate < in30Days && r.status === "ACTIVE");
-
-  const cols: Column<Row>[] = [
-    {
-      key: "member",
-      header: "Member",
-      cell: (r) => (
-        <div className="min-w-0">
-          <Link href={adminRoutes.loc.members.detail(slug, r.member.id)} className="font-medium text-apple-text hover:underline">
-            {r.member.firstName} {r.member.lastName}
-          </Link>
-          <div className="truncate text-apple-xs text-apple-text-tertiary">
-            {r.plan.name}
-            {r.plan.description === AD_HOC_PLAN_DESCRIPTION && <span className="ml-1 rounded bg-apple-fill-secondary px-1 text-[10px] uppercase">ad-hoc</span>}
-          </div>
-        </div>
-      ),
-    },
-    { key: "price", header: "Price", align: "right", cell: (r) => <span className="text-apple-sm"><Money cents={r.priceCents} /> <span className="text-apple-text-tertiary">/ {cadenceLabel(r.billingCadence)}</span></span> },
-    {
-      key: "next",
-      header: "Next invoice",
-      cell: (r) =>
-        r.status === "ACTIVE" || r.status === "CANCEL_SCHEDULED" ? (
-          <div className="text-apple-sm">
-            <div className="text-apple-text">{r.nextInvoiceDate ? r.nextInvoiceDate.toLocaleDateString() : <span className="text-apple-text-tertiary">—</span>}</div>
-            <div className="text-apple-xs text-apple-text-tertiary"><Money cents={r.nextAmountCents} />{r.nextAmountCents !== r.priceCents ? " incl. tax/discount" : ""}</div>
-          </div>
-        ) : r.status === "CANCELLED" ? (
-          <span className="text-apple-xs text-apple-text-tertiary">—</span>
-        ) : (
-          <span className="text-apple-xs text-apple-text-tertiary">Paused</span>
-        ),
-    },
-    { key: "paidThrough", header: "Paid through", cell: (r) => <span className="text-apple-sm text-apple-text-secondary">{r.paidThroughDate ? r.paidThroughDate.toLocaleDateString() : "—"}</span> },
-    {
-      key: "status",
-      header: "Status",
-      cell: (r) => (
-        <div className="flex flex-col gap-1">
-          <StatusBadge status={r.status} size="sm" />
-          {r.cancelScheduledFor && <span className="text-[10px] text-apple-text-tertiary">ends {r.cancelScheduledFor.toLocaleDateString()}</span>}
-          {!r.hasCard && squareConfigured && (r.status === "ACTIVE" || r.status === "CANCEL_SCHEDULED") && <span className="text-[10px] text-apple-orange">no card on file</span>}
-        </div>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      align: "right",
-      cell: (r) => <SubscriptionRowActions slug={slug} subscriptionId={r.id} autoRenew={r.autoRenew} nextInvoiceDate={r.nextInvoiceDate ? r.nextInvoiceDate.toISOString() : null} status={r.status} />,
-    },
-  ];
+  const next30 = rows.filter((r) => r.nextInvoiceDate && new Date(r.nextInvoiceDate) < in30Days && r.status === "ACTIVE");
 
   return (
     <div className="space-y-6">
@@ -163,14 +96,14 @@ export default async function RecurringPage({ params, searchParams }: { params: 
         <QueryTabs defaultValue="ACTIVE" items={TABS.map((t) => ({ ...t, badge: countBy[t.value] ?? 0 }))} />
       </Suspense>
 
-      <Card padded={false}>
-        <DataTable
-          columns={cols}
-          rows={rows}
-          rowKey={(r) => r.id}
-          empty={<EmptyState icon={<RefreshCw className="h-6 w-6" />} title={`No ${TABS.find((t) => t.value === tab)?.label.toLowerCase()} subscriptions`} description={tab === "ACTIVE" ? "Subscriptions are created when a member signs up or an admin assigns a plan. Use “New recurring charge” for ad-hoc recurring fees." : undefined} />}
-        />
-      </Card>
+      <RecurringTable
+        slug={slug}
+        rows={rows}
+        currency={location.currency}
+        squareConfigured={squareConfigured}
+        emptyTitle={`No ${TABS.find((t) => t.value === tab)?.label.toLowerCase()} subscriptions`}
+        emptyDescription={tab === "ACTIVE" ? "Subscriptions are created when a member signs up or an admin assigns a plan. Use “New recurring charge” for ad-hoc recurring fees." : undefined}
+      />
     </div>
   );
 }

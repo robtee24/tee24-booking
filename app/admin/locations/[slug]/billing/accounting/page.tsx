@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { Card, CardHeader, DataTable, EmptyState, Money, PageHeader, StatusBadge, type Column } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import { AreaChart, BarChart, DonutChart, KpiCard } from "@/components/ui/charts";
-import { Calculator, BookOpen } from "lucide-react";
+import { Calculator } from "lucide-react";
 import { billingRevenueByMonth, lastNMonths, revenueByPlan } from "@/lib/chart-data";
 import { adminRoutes } from "@/lib/admin/routes";
-import { buildLedger, memberBalances, type LedgerRow } from "@/services/billing.service";
+import { buildLedger, memberBalances } from "@/services/billing.service";
+import { BalancesTable, LedgerTable, PlanRevenueTable } from "@/components/admin/billing/AccountingTables";
 import { QueryTabs } from "@/components/admin/billing/QueryTabs";
 import { LedgerFilters } from "@/components/admin/billing/LedgerFilters";
 
@@ -166,29 +167,24 @@ async function Ledger({ slug, locationId, currency, from, to, start, end }: { sl
     { net: 0, tax: 0, surcharge: 0, total: 0 },
   );
 
-  const cols: Column<LedgerRow>[] = [
-    { key: "date", header: "Date", cell: (r) => <span className="whitespace-nowrap text-apple-sm text-apple-text-secondary">{r.date.toLocaleDateString()}</span> },
-    { key: "type", header: "Type", cell: (r) => <StatusBadge status={r.type === "Payment" || r.type === "Sale" ? "PAID" : "REFUNDED"} size="sm" /> },
-    {
-      key: "who",
-      header: "Member / description",
-      cell: (r) => (
-        <div className="min-w-0">
-          {r.memberId ? <Link href={adminRoutes.loc.members.detail(slug, r.memberId)} className="font-medium text-apple-text hover:underline">{r.memberName}</Link> : <span className="font-medium text-apple-text">{r.memberName}</span>}
-          <div className="truncate text-apple-xs text-apple-text-tertiary">
-            {r.description}
-            {r.invoiceId && r.invoiceNumber != null && <> · <Link href={adminRoutes.loc.billing.invoiceDetail(slug, r.invoiceId)} className="hover:underline">#{r.invoiceNumber}</Link></>}
-          </div>
-        </div>
-      ),
-    },
-    { key: "method", header: "Method", cell: (r) => <span className="text-apple-xs text-apple-text-secondary">{r.method}</span> },
-    { key: "gl", header: "GL / category", cell: (r) => <span className="text-apple-xs text-apple-text-secondary">{[r.glCode, r.incomeCategory].filter(Boolean).join(" · ") || "—"}</span> },
-    { key: "net", header: "Net", align: "right", cell: (r) => <Money cents={r.amountCents * (r.totalCents < 0 ? -1 : 1)} currency={currency} /> },
-    { key: "tax", header: "Tax", align: "right", cell: (r) => <span className="text-apple-text-secondary"><Money cents={r.taxCents * (r.totalCents < 0 ? -1 : 1)} currency={currency} /></span> },
-    { key: "total", header: "Total", align: "right", cell: (r) => <Money cents={r.totalCents} currency={currency} className={`font-medium ${r.totalCents < 0 ? "text-apple-red" : ""}`} /> },
-    { key: "ref", header: "Reference", cell: (r) => <span className="font-mono text-[10px] text-apple-text-tertiary">{r.reference ?? ""}</span> },
-  ];
+  const sign = (r: { totalCents: number }) => (r.totalCents < 0 ? -1 : 1);
+  const tableRows = rows.map((r) => ({
+    id: r.id,
+    date: r.date.toISOString(),
+    type: r.type,
+    memberId: r.memberId,
+    memberName: r.memberName,
+    description: r.description,
+    method: r.method,
+    netCents: r.amountCents * sign(r),
+    taxCents: r.taxCents * sign(r),
+    totalCents: r.totalCents,
+    glCode: r.glCode,
+    incomeCategory: r.incomeCategory,
+    reference: r.reference,
+    invoiceId: r.invoiceId,
+    invoiceNumber: r.invoiceNumber,
+  }));
 
   return (
     <>
@@ -201,9 +197,7 @@ async function Ledger({ slug, locationId, currency, from, to, start, end }: { sl
         <KpiCard label="Card surcharges" value={`$${(totals.surcharge / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} />
         <KpiCard label="Total collected" value={`$${(totals.total / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} hint={`${rows.length} transactions`} />
       </div>
-      <Card padded={false}>
-        <DataTable columns={cols} rows={rows} rowKey={(r) => r.id} density="compact" empty={<EmptyState icon={<BookOpen className="h-6 w-6" />} title="No transactions in this range" description="Payments, refunds, and point-of-sale sales appear here once money moves." />} />
-      </Card>
+      <LedgerTable slug={slug} rows={tableRows} currency={currency} />
     </>
   );
 }
@@ -212,26 +206,15 @@ async function Ledger({ slug, locationId, currency, from, to, start, end }: { sl
 
 async function Plans({ slug, locationId, currency, from, to, start, end }: { slug: string; locationId: string; currency: string; from: string; to: string; start: Date; end: Date }) {
   const rows = await revenueByPlan({ locationId, start, end });
-  const total = rows.reduce((s, r) => s + r.netCents, 0);
-  type R = (typeof rows)[number];
-  const cols: Column<R>[] = [
-    { key: "plan", header: "Plan / line", cell: (r) => <span className="font-medium text-apple-text">{r.name}</span> },
-    { key: "gl", header: "GL / category", cell: (r) => <span className="text-apple-xs text-apple-text-secondary">{[r.glCode, r.incomeCategory].filter(Boolean).join(" · ") || "—"}</span> },
-    { key: "count", header: "Invoices", align: "right", cell: (r) => <span className="tabular-nums">{r.count}</span> },
-    { key: "gross", header: "Gross", align: "right", cell: (r) => <Money cents={r.grossCents} currency={currency} /> },
-    { key: "tax", header: "Tax", align: "right", cell: (r) => <span className="text-apple-text-secondary"><Money cents={r.taxCents} currency={currency} /></span> },
-    { key: "net", header: "Net", align: "right", cell: (r) => <Money cents={r.netCents} currency={currency} className="font-medium" /> },
-    { key: "share", header: "Share", align: "right", cell: (r) => <span className="tabular-nums text-apple-text-secondary">{total > 0 ? `${((r.netCents / total) * 100).toFixed(1)}%` : "—"}</span> },
-  ];
   return (
     <>
       <Suspense>
         <LedgerFilters slug={slug} from={from} to={to} />
       </Suspense>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" padded={false}>
-          <DataTable columns={cols} rows={rows} rowKey={(r) => r.name} empty={<EmptyState icon={<Calculator className="h-6 w-6" />} title="No paid invoices in this range" />} />
-        </Card>
+        <div className="lg:col-span-2">
+          <PlanRevenueTable rows={rows} currency={currency} />
+        </div>
         <Card>
           <CardHeader title="Share of net revenue" />
           <div className="mt-2">{rows.length === 0 ? <p className="py-8 text-center text-apple-sm text-apple-text-tertiary">Nothing yet.</p> : <DonutChart data={rows.map((r) => ({ name: r.name, value: r.netCents / 100 }))} height={240} />}</div>
@@ -245,26 +228,8 @@ async function Plans({ slug, locationId, currency, from, to, start, end }: { slu
 
 async function Balances({ slug, locationId, currency }: { slug: string; locationId: string; currency: string }) {
   const rows = await memberBalances(locationId);
-  type R = (typeof rows)[number];
   const owed = rows.reduce((s, r) => s + Math.max(0, r.outstandingCents), 0);
   const credit = rows.reduce((s, r) => s + Math.max(0, r.creditCents), 0);
-  const cols: Column<R>[] = [
-    {
-      key: "member",
-      header: "Member",
-      cell: (r) => (
-        <div className="flex items-center gap-2">
-          <Link href={adminRoutes.loc.members.detail(slug, r.memberId)} className="font-medium text-apple-text hover:underline">{r.name}</Link>
-          <StatusBadge status={r.status} size="sm" />
-        </div>
-      ),
-    },
-    { key: "open", header: "Open invoices", align: "right", cell: (r) => <span className="tabular-nums">{r.openInvoices}</span> },
-    { key: "owed", header: "Outstanding", align: "right", cell: (r) => <Money cents={r.outstandingCents} currency={currency} className={r.outstandingCents > 0 ? "font-medium text-apple-red" : ""} /> },
-    { key: "credit", header: "Credit", align: "right", cell: (r) => <Money cents={r.creditCents} currency={currency} className={r.creditCents > 0 ? "font-medium text-apple-green" : ""} /> },
-    { key: "net", header: "Net balance", align: "right", cell: (r) => <Money cents={r.netCents} currency={currency} className="font-medium" /> },
-    { key: "link", header: "", align: "right", cell: (r) => <Link href={`${adminRoutes.loc.billing.payments(slug)}?memberId=${r.memberId}`} className="text-apple-xs text-apple-blue hover:underline">Invoices →</Link> },
-  ];
   return (
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -272,9 +237,7 @@ async function Balances({ slug, locationId, currency }: { slug: string; location
         <KpiCard label="Member credit" value={`$${(credit / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} hint="unused balance" />
         <KpiCard label="Members with balance" value={rows.length} />
       </div>
-      <Card padded={false}>
-        <DataTable columns={cols} rows={rows} rowKey={(r) => r.memberId} empty={<EmptyState icon={<Calculator className="h-6 w-6" />} title="Everyone is settled up" description="Members with open invoices or account credit appear here." />} />
-      </Card>
+      <BalancesTable slug={slug} rows={rows} currency={currency} />
     </>
   );
 }
