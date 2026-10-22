@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { Card, CardHeader, PageHeader, Button } from "@/components/ui";
 import { AreaChart, BarChart, DonutChart } from "@/components/ui/charts";
-import { Plus, Download } from "lucide-react";
+import { Plus, ScanLine, Upload } from "lucide-react";
 import Link from "next/link";
 import { getPrisma } from "@/lib/db";
+import { adminRoutes } from "@/lib/admin/routes";
 import { memberGrowth, memberStatusBreakdown } from "@/lib/chart-data";
 import MembersListClient from "./MembersListClient";
 
@@ -11,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function MembersListPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const prisma = getPrisma();
-  const location = await prisma.location.findUnique({ where: { slug } });
+  const location = await prisma.location.findUnique({ where: { slug }, select: { id: true, organizationId: true } });
 
   if (!location) {
     return (
@@ -21,7 +23,7 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
     );
   }
 
-  const [statusBreakdown, growth, sourceRows, totalMembers] = await Promise.all([
+  const [statusBreakdown, growth, sourceRows, totalMembers, plans] = await Promise.all([
     memberStatusBreakdown({ locationId: location.id }),
     memberGrowth({ locationId: location.id, months: 12 }),
     prisma.member.groupBy({
@@ -30,6 +32,11 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
       _count: { _all: true },
     }),
     prisma.member.count({ where: { locationId: location.id } }),
+    prisma.membershipPlan.findMany({
+      where: { archived: false, OR: [{ organizationId: location.organizationId }, { organizationId: null }] },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   const sourceData = sourceRows
@@ -47,10 +54,13 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
         description="Members, visitors, frozen, and cancelled accounts"
         actions={
           <>
-            <Button variant="secondary" iconLeft={<Download className="h-4 w-4" />}>
-              Export
-            </Button>
-            <Link href={`/admin/locations/${slug}/members/list/new`}>
+            <Link href={adminRoutes.loc.frontDesk(slug)}>
+              <Button variant="secondary" iconLeft={<ScanLine className="h-4 w-4" />}>Front desk</Button>
+            </Link>
+            <Link href={adminRoutes.loc.members.import(slug)}>
+              <Button variant="secondary" iconLeft={<Upload className="h-4 w-4" />}>Import</Button>
+            </Link>
+            <Link href={adminRoutes.loc.members.new(slug)}>
               <Button iconLeft={<Plus className="h-4 w-4" />}>Add member</Button>
             </Link>
           </>
@@ -107,7 +117,9 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
         </Card>
       )}
 
-      <MembersListClient />
+      <Suspense fallback={<div className="h-64 animate-pulse rounded-apple bg-apple-fill-secondary" />}>
+        <MembersListClient slug={slug} plans={plans} />
+      </Suspense>
     </div>
   );
 }
