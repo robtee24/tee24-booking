@@ -222,18 +222,9 @@ export async function topMembersByVisits(opts: { locationId: string; limit: numb
     .filter((x): x is { name: string; visits: number } => Boolean(x));
 }
 
-/**
- * Lead pipeline stages (marketing module). ENGAGED is the legacy name for
- * CONTACTED and is treated as the same stage everywhere.
- */
-export const LEAD_STAGES = ["NEW", "CONTACTED", "BOOKED", "TRIAL", "CONVERTED", "LOST"] as const;
-export type LeadStage = (typeof LEAD_STAGES)[number];
-
-export function normalizeLeadStage(stage: string | null | undefined): LeadStage {
-  if (stage === "ENGAGED") return "CONTACTED";
-  if ((LEAD_STAGES as readonly string[]).includes(stage ?? "")) return stage as LeadStage;
-  return "NEW";
-}
+// Lead pipeline stages live in a client-safe module; re-exported here for server callers.
+export { LEAD_STAGES, normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
+import { normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
 
 /** Stages that count as "reached at least X" for funnel math. */
 const STAGE_RANK: Record<LeadStage, number> = { NEW: 0, CONTACTED: 1, BOOKED: 2, TRIAL: 3, CONVERTED: 4, LOST: -1 };

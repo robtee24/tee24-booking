@@ -1,25 +1,39 @@
-import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { getPrisma } from "@/lib/db";
+import { PageHeader } from "@/components/ui";
+import { MarketingSettingsClient } from "@/components/admin/marketing/MarketingSettingsClient";
+import { getMarketingSettings } from "@/services/marketing.service";
+import { getCommsSettings } from "@/lib/notify";
+import { getQuoFromNumber } from "@/lib/quo";
+
+export const dynamic = "force-dynamic";
 
 export default async function MarketingSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
-  await params;
+  const { slug } = await params;
+  const prisma = getPrisma();
+  const location = await prisma.location.findUnique({ where: { slug }, select: { id: true, organizationId: true } });
+  if (!location) return null;
+
+  const [settings, comms, groups] = await Promise.all([
+    getMarketingSettings(location.organizationId),
+    getCommsSettings(location.organizationId),
+    prisma.automation.groupBy({ by: ["active"], _count: { _all: true }, where: { OR: [{ organizationId: location.organizationId }, { organizationId: null }] } }),
+  ]);
+  const automations = {
+    active: groups.find((g) => g.active)?._count._all ?? 0,
+    paused: groups.find((g) => !g.active)?._count._all ?? 0,
+  };
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Marketing settings" description="Sender identities, opt-in defaults, attribution windows." />
-
-      <Card>
-        <CardHeader title="Email sender" subtitle="Default From address for marketing emails." />
-        <p className="mt-3 text-apple-sm text-apple-text-tertiary">Configured at organization level. See <code className="rounded bg-apple-fill-secondary px-1.5 py-0.5">/admin/settings#resend</code>.</p>
-      </Card>
-
-      <Card>
-        <CardHeader title="SMS sender (Quo)" />
-        <p className="mt-3 text-apple-sm text-apple-text-tertiary">Phone number, opt-in language, and brand keyword.</p>
-      </Card>
-
-      <Card>
-        <CardHeader title="Attribution" subtitle="UTM capture, attribution window, traffic sources." />
-        <p className="mt-3 text-apple-sm text-apple-text-tertiary">Default attribution window: 30 days from first touch.</p>
-      </Card>
+      <PageHeader title="Marketing settings" description="Automations master switch, referral rewards, acquisition sources, lead stages, and SMS compliance." />
+      <MarketingSettingsClient
+        initial={settings}
+        automations={automations}
+        smsFrom={getQuoFromNumber()}
+        paypalConfigured={!!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET)}
+        emailEnabled={comms.emailEnabled}
+        smsEnabled={comms.smsEnabled}
+      />
     </div>
   );
 }
