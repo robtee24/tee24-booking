@@ -125,7 +125,7 @@ export function AdminActionsPanel({ admin, canDelete }: { admin: StaffAdminDTO; 
       {canDelete && (
         <Card>
           <CardHeader title="Danger zone" />
-          <p className="mt-2 text-apple-xs text-apple-text-tertiary">Removes this admin's access immediately. Their tasks become unassigned; the audit trail is kept.</p>
+          <p className="mt-2 text-apple-xs text-apple-text-tertiary">Removes this admin&apos;s access immediately. Their tasks become unassigned; the audit trail is kept.</p>
           <div className="mt-3">
             <Button size="sm" variant="danger" iconLeft={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setConfirmDelete(true)}>
               Delete admin

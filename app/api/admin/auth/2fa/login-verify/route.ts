@@ -16,12 +16,13 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const code = String((body as any).code ?? (body as any).totp ?? "");
+    const b = body as Record<string, unknown>;
+    const code = String(b.code ?? b.totp ?? "");
     await adminAuthService.completeTwoFactorLogin(code);
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    if (err?.name === "AdminAuthError") {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AdminAuthError") {
+      return NextResponse.json({ error: err.message }, { status: (err as { status?: number }).status ?? 400 });
     }
     console.error("admin/auth/2fa/login-verify error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

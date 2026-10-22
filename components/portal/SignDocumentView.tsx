@@ -52,7 +52,7 @@ export function SignDocumentView({ token, view, backHref, backLabel, loggedIn }:
   if (view.state === "invalid") {
     return (
       <Shell title="Link not recognised" icon={<AlertTriangle className="h-6 w-6 text-apple-red" />}>
-        <p className="text-apple-sm text-apple-text-secondary">This signing link isn't valid. It may have been copied incorrectly — ask the front desk to resend it.</p>
+        <p className="text-apple-sm text-apple-text-secondary">This signing link isn&apos;t valid. It may have been copied incorrectly — ask the front desk to resend it.</p>
         <Back href={backHref} label={backLabel} />
       </Shell>
     );

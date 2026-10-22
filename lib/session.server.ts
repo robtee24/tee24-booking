@@ -177,6 +177,6 @@ export async function clearPending2faSession() {
   });
 }
 
-export const isRoot = (s: any): s is { role: "ROOT" } => !!s && s.role === "ROOT";
-export const hasFullAccess = (s: any): s is { role: "ROOT" | "FULL" } =>
+export const isRoot = (s: { role?: string } | null | undefined): s is { role: "ROOT" } => !!s && s.role === "ROOT";
+export const hasFullAccess = (s: { role?: string } | null | undefined): s is { role: "ROOT" | "FULL" } =>
   !!s && (s.role === "ROOT" || s.role === "FULL");

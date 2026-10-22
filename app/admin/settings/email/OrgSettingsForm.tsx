@@ -84,7 +84,7 @@ export function OrgSettingsForm({ org }: { org: OrgDTO }) {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <span className="font-semibold">Outbound {[!d.emailEnabled && "email", !d.smsEnabled && "SMS"].filter(Boolean).join(" and ")} is paused.</span>{" "}
-            Members will not receive receipts, reminders, waivers, or campaigns on the paused channel until it's re-enabled.
+            Members will not receive receipts, reminders, waivers, or campaigns on the paused channel until it&apos;s re-enabled.
           </div>
         </div>
       )}

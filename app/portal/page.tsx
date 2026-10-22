@@ -39,7 +39,7 @@ export default async function PortalProfile() {
               <Link href="/portal/membership" className="mt-3 inline-block text-apple-sm font-medium text-apple-blue hover:underline">Manage membership →</Link>
             </>
           ) : (
-            <p className="mt-3 text-apple-sm text-apple-text-tertiary">You don't have an active membership.</p>
+            <p className="mt-3 text-apple-sm text-apple-text-tertiary">You don&apos;t have an active membership.</p>
           )}
         </Card>
 

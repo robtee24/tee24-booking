@@ -33,11 +33,11 @@ export async function POST(req: Request) {
 
     const result = await adminAuthService.loginWithOtp(phone, code);
     return NextResponse.json(result);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("admin/auth/verify error:", err);
 
-    if (err.name === "AdminAuthError") {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof Error && err.name === "AdminAuthError") {
+      return NextResponse.json({ error: err.message }, { status: (err as { status?: number }).status ?? 400 });
     }
 
     return NextResponse.json({ error: "Server error" }, { status: 500 });

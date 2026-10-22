@@ -127,7 +127,6 @@ export async function computeAttentionItems(opts: { locationId: string; location
   const in7d = new Date(now.getTime() + 7 * 86_400_000);
   const ago14d = new Date(now.getTime() - 14 * 86_400_000);
   const ago30d = new Date(now.getTime() - 30 * 86_400_000);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const memberSel = { select: { id: true, firstName: true, lastName: true } } as const;
   const profile = (memberId: string) => adminRoutes.loc.members.detail(slug, memberId);
   const billingTab = (memberId: string) => adminRoutes.loc.members.detailTab(slug, memberId, "payments");

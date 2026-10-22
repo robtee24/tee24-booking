@@ -73,7 +73,7 @@ export default async function PortalMembershipPage() {
             </div>
           ) : (
             <div className="mt-3 space-y-3">
-              <p className="text-apple-sm text-apple-text-tertiary">You don't have an active membership.</p>
+              <p className="text-apple-sm text-apple-text-tertiary">You don&apos;t have an active membership.</p>
               <Link href="/portal/contact" className="inline-block text-apple-sm font-medium text-apple-blue hover:underline">Ask us about joining →</Link>
             </div>
           )}

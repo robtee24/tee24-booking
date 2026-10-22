@@ -19,11 +19,11 @@ export default async function PortalSettings({ searchParams }: { searchParams: P
 
       {sp.deleted === "requested" && (
         <div className="rounded-apple-sm bg-apple-green/10 px-4 py-3 text-apple-sm text-apple-green">
-          Your deletion request has been sent to our team. We'll confirm by email once it's reviewed.
+          Your deletion request has been sent to our team. We&apos;ll confirm by email once it&apos;s reviewed.
         </div>
       )}
       {sp.error === "impersonating" && (
-        <div className="rounded-apple-sm bg-apple-orange/10 px-4 py-3 text-apple-sm text-apple-orange">That action isn't available while staff are viewing this account.</div>
+        <div className="rounded-apple-sm bg-apple-orange/10 px-4 py-3 text-apple-sm text-apple-orange">That action isn&apos;t available while staff are viewing this account.</div>
       )}
 
       <SettingsClient
@@ -60,7 +60,7 @@ function DeleteAccountButton() {
         Request data deletion
       </summary>
       <form action="/api/portal/delete-request" method="post" className="mt-3 w-full max-w-md space-y-3 rounded-apple-sm border border-apple-red/20 bg-white p-4">
-        <p className="text-apple-sm text-apple-text">This asks our team to permanently delete your account and personal data. It can't be undone once processed.</p>
+        <p className="text-apple-sm text-apple-text">This asks our team to permanently delete your account and personal data. It can&apos;t be undone once processed.</p>
         <label className="block">
           <span className="mb-1 block text-apple-xs font-medium text-apple-text-secondary">Reason (optional)</span>
           <textarea name="reason" rows={2} maxLength={1000} className="input w-full" placeholder="Let us know why you're leaving" />

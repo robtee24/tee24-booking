@@ -32,14 +32,14 @@ function sanitizeHours(input: unknown): DayHours[] {
   if (!Array.isArray(input)) return [];
   const rows: DayHours[] = [];
   for (const raw of input) {
-    const r = raw as any;
+    const r = raw as Record<string, unknown>;
     const day = Number(r?.day);
     if (!Number.isFinite(day) || day < 0 || day > 6) continue;
     const closed = Boolean(r?.closed);
     const row: DayHours = { day, closed };
     if (!closed) {
-      row.open = isHHMM(r?.open) ? r.open : '09:00';
-      row.close = isHHMM(r?.close) ? r.close : '21:00';
+      row.open = isHHMM(r?.open) ? (r.open as string) : '09:00';
+      row.close = isHHMM(r?.close) ? (r.close as string) : '21:00';
     }
     rows.push(row);
   }
@@ -54,8 +54,8 @@ function sanitizeHours(input: unknown): DayHours[] {
   return defaults.map((d) => byDay.get(d.day) ?? d);
 }
 
-function pickDefined<T extends Record<string, any>>(src: T) {
-  const out: Record<string, any> = {};
+function pickDefined<T extends Record<string, unknown>>(src: T) {
+  const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(src)) if (v !== undefined) out[k] = v;
   return out;
 }
@@ -103,7 +103,8 @@ async function loadSettings(where: { id: string } | { slug: string }) {
   if (!loc) return null;
   const emailConf = loc.notifications.find((n) => n.channel === 'EMAIL');
   const smsConf = loc.notifications.find((n) => n.channel === 'TEXT');
-  const { notifications: _n, bays, ...rest } = loc;
+  const { notifications, bays, ...rest } = loc;
+  void notifications;
   return {
     ...rest,
     bays: bays.map((b) => b.number),
@@ -145,8 +146,8 @@ export async function GET(req: Request) {
     const settings = await loadSettings({ slug });
     if (!settings) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ settings });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Server error' }, { status: 500 });
   }
 }
 
@@ -175,8 +176,8 @@ export async function PATCH(req: Request) {
     let details: Record<string, unknown>;
     try {
       details = sanitizeLocationDetails(body);
-    } catch (e: any) {
-      return NextResponse.json({ error: e?.message ?? 'Invalid details' }, { status: 400 });
+    } catch (e: unknown) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Invalid details' }, { status: 400 });
     }
     // Only ROOT/FULL may disable/enable a location.
     if (details.disabled !== undefined && guard.admin.role === 'SCOPED') {
@@ -273,7 +274,7 @@ export async function PATCH(req: Request) {
 
     const settings = await loadSettings({ id: updated.id });
     return NextResponse.json({ settings });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Server error' }, { status: 500 });
   }
 }

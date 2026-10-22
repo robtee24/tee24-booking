@@ -335,7 +335,7 @@ export function TasksClient({
           </>
         }
       >
-        <p className="text-apple-sm text-apple-text-secondary">This can't be undone. Completed tasks are kept in history unless deleted.</p>
+        <p className="text-apple-sm text-apple-text-secondary">This can&apos;t be undone. Completed tasks are kept in history unless deleted.</p>
       </Modal>
     </>
   );

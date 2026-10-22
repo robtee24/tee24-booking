@@ -200,7 +200,7 @@ function TwoFactorSection({ enabled }: { enabled: boolean }) {
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpauthUrl)}`}
               />
               <div className="text-center text-apple-xs text-apple-text-tertiary">
-                Can't scan? Enter this key manually:
+                Can&apos;t scan? Enter this key manually:
                 <code className="mt-1 block break-all rounded bg-apple-fill-secondary px-2 py-1 font-mono text-apple-text">{secret}</code>
               </div>
             </div>
