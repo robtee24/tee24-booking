@@ -1,4 +1,5 @@
 # Fly.io app for the Tee24 MeshCentral remote-support server.
+# Public hostname: remote.tee24.golf (CNAME -> tee24-remote.fly.dev; cert via `fly certs add`).
 #   deploy:  fly deploy --config infra/meshcentral/fly.toml --ha=false
 # Bay PCs keep a WebSocket open to this server, so it must never auto-stop.
 app = "tee24-remote"

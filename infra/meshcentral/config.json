@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
   "__comment__": "MeshCentral config for the Tee24 remote-support server on Fly.io. Fly terminates TLS at its edge and forwards plain HTTP to port 8080, so tlsOffload is on and certUrl points back at the public hostname so agents learn the real certificate.",
   "settings": {
-    "cert": "tee24-remote.fly.dev",
+    "cert": "remote.tee24.golf",
     "port": 8080,
     "redirPort": 0,
     "tlsOffload": true,
@@ -24,7 +24,7 @@
       "title2": "Bay computers",
       "newAccounts": false,
       "minify": true,
-      "certUrl": "https://tee24-remote.fly.dev:443",
+      "certUrl": "https://remote.tee24.golf:443",
       "allowedOrigin": false,
       "localSessionRecording": false,
       "agentInviteCodes": false,
