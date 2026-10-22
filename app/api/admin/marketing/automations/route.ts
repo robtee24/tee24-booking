@@ -1,51 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentAdmin } from "@/lib/access";
 import { getPrisma } from "@/lib/db";
-import { audit } from "@/lib/audit";
+import { apiError, guardMarketing, readJson } from "../_shared";
+import { createAutomation } from "@/services/automation.service";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/** GET ?slug= — automations for the org with counts. */
+export async function GET(req: NextRequest) {
+  const g = await guardMarketing(req, "marketing.manage-automations");
+  if (!g.ok) return g.response;
   const items = await getPrisma().automation.findMany({
-    orderBy: { createdAt: "desc" },
+    where: { OR: [{ organizationId: g.location.organizationId }, { organizationId: null }] },
+    orderBy: [{ active: "desc" }, { name: "asc" }],
     include: { _count: { select: { steps: true, enrollments: true } } },
   });
   return NextResponse.json({ items });
 }
 
+/** POST ?slug= AutomationInput */
 export async function POST(req: NextRequest) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await req.json();
-  const a = await getPrisma().automation.create({
-    data: {
-      organizationId: body.organizationId ?? null,
-      name: body.name,
-      description: body.description ?? null,
-      trigger: body.trigger,
-      triggerConfig: body.triggerConfig ?? undefined,
-      goalConfig: body.goalConfig ?? undefined,
-      active: body.active ?? false,
-      steps: body.steps?.length
-        ? {
-            create: body.steps.map((s: any, i: number) => ({
-              order: s.order ?? i,
-              kind: s.kind,
-              config: s.config ?? {},
-            })),
-          }
-        : undefined,
-    },
-    include: { steps: true },
-  });
-  void audit({
-    actorId: admin.id,
-    action: "automation.enroll",
-    entityType: "Automation",
-    entityId: a.id,
-    after: a,
-  });
-  return NextResponse.json({ ok: true, automation: a });
+  const body = await readJson(req);
+  const g = await guardMarketing(req, "marketing.manage-automations", { body });
+  if (!g.ok) return g.response;
+  if (!body.name || !body.trigger) return NextResponse.json({ error: "name and trigger required" }, { status: 400 });
+  try {
+    const a = await createAutomation(
+      {
+        organizationId: g.location.organizationId,
+        name: body.name,
+        description: body.description ?? null,
+        trigger: body.trigger,
+        triggerConfig: body.triggerConfig ?? {},
+        goalConfig: body.goalConfig ?? null,
+        active: body.active ?? false,
+        maxSteps: body.maxSteps,
+        steps: body.steps ?? [],
+      },
+      g.admin.id,
+    );
+    return NextResponse.json({ ok: true, automation: a });
+  } catch (e) {
+    return apiError(e);
+  }
 }

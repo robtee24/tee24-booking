@@ -133,6 +133,31 @@ export function signupEmbedSnippet(slug: string): string {
   return `<iframe src="${src}" width="100%" height="900" style="border:0;max-width:720px" loading="lazy" title="Join"></iframe>`;
 }
 
+/** Normalise an admin builder payload into SignupForm column values (admin API only). */
+export function signupFormDataFromBody(body: Record<string, any>): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  if (body.name !== undefined) data.name = String(body.name).trim();
+  if (body.slug !== undefined) data.slug = slugify(String(body.slug));
+  if (body.description !== undefined) data.description = body.description?.trim() || null;
+  if (body.active !== undefined) data.active = !!body.active;
+  if (body.allowedPlanIds !== undefined) data.allowedPlanIds = parseIdList(body.allowedPlanIds);
+  if (body.defaultPlanId !== undefined) data.defaultPlanId = body.defaultPlanId || null;
+  if (body.requiredFields !== undefined) data.requiredFields = parseSignupFieldConfig(body.requiredFields);
+  if (body.customFieldIds !== undefined) data.customFieldIds = parseIdList(body.customFieldIds);
+  if (body.requiredDocumentIds !== undefined) data.requiredDocumentIds = parseIdList(body.requiredDocumentIds);
+  if (body.allowDiscountCode !== undefined) data.allowDiscountCode = !!body.allowDiscountCode;
+  if (body.autoApplyDiscountId !== undefined) data.autoApplyDiscountId = body.autoApplyDiscountId || null;
+  if (body.photoRequired !== undefined) data.photoRequired = !!body.photoRequired;
+  if (body.authSetup !== undefined && ["NONE", "MAGIC_LINK", "PASSWORD"].includes(body.authSetup)) data.authSetup = body.authSetup;
+  if (body.themeOverrides !== undefined) data.themeOverrides = body.themeOverrides ?? null;
+  if (body.confirmationUrl !== undefined) data.confirmationUrl = body.confirmationUrl?.trim() || null;
+  if (body.collectTax !== undefined) data.collectTax = !!body.collectTax;
+  if (body.autoTagIds !== undefined) data.autoTagIds = parseIdList(body.autoTagIds);
+  if (body.autoEnrollAutomationIds !== undefined) data.autoEnrollAutomationIds = parseIdList(body.autoEnrollAutomationIds);
+  if (body.embedAllowed !== undefined) data.embedAllowed = !!body.embedAllowed;
+  return data;
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()
