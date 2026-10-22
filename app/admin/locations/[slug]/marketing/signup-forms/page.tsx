@@ -3,6 +3,8 @@ import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, EmptyState, PageHeader, Button, StatusBadge } from "@/components/ui";
 import { BarChart, KpiCard } from "@/components/ui/charts";
 import { Plus, ClipboardList } from "lucide-react";
+import { adminRoutes } from "@/lib/admin/routes";
+import { publicSignupUrl } from "@/lib/signup-form-config";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +52,11 @@ export default async function SignupFormsPage({ params }: { params: Promise<{ sl
       <PageHeader
         title="Signup forms"
         description="Each form has its own URL — perfect for membership pages, day-pass landings, or referral links."
-        actions={<Button iconLeft={<Plus className="h-4 w-4" />}>New signup form</Button>}
+        actions={
+          <Link href={adminRoutes.loc.marketing.signupFormNew(slug)}>
+            <Button iconLeft={<Plus className="h-4 w-4" />}>New signup form</Button>
+          </Link>
+        }
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -79,29 +85,37 @@ export default async function SignupFormsPage({ params }: { params: Promise<{ sl
       )}
 
       {forms.length === 0 ? (
-        <EmptyState icon={<ClipboardList className="h-6 w-6" />} title="No signup forms yet" />
+        <EmptyState
+          icon={<ClipboardList className="h-6 w-6" />}
+          title="No signup forms yet"
+          description="Create a form to get a shareable join link and embed code."
+          action={
+            <Link href={adminRoutes.loc.marketing.signupFormNew(slug)}>
+              <Button iconLeft={<Plus className="h-4 w-4" />}>New signup form</Button>
+            </Link>
+          }
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {forms.map((f) => (
-            <Card key={f.id}>
-              <CardHeader
-                title={f.name}
-                subtitle={f.description ?? undefined}
-                action={<StatusBadge status={f.active ? "ACTIVE" : "CANCELLED"} size="sm" />}
-              />
-              <div className="mt-3 flex items-center justify-between text-apple-xs">
-                <code className="rounded bg-apple-fill-secondary px-2 py-1 text-apple-text-secondary">
-                  /signup/{f.slug}
-                </code>
-                <Link
-                  href={`/signup/${f.slug}`}
-                  className="font-medium text-apple-blue hover:underline"
-                >
-                  Preview →
-                </Link>
-              </div>
-            </Card>
-          ))}
+          {forms.map((f) => {
+            const signups = sourceCounts.get(`form:${f.slug}`) ?? sourceCounts.get(f.slug) ?? 0;
+            return (
+              <Card key={f.id}>
+                <CardHeader
+                  title={f.name}
+                  subtitle={f.description ?? `${signups} signup${signups === 1 ? "" : "s"} in the last 30 days`}
+                  action={<StatusBadge status={f.active ? "ACTIVE" : "PAUSED"} size="sm" />}
+                />
+                <div className="mt-3 flex items-center justify-between gap-2 text-apple-xs">
+                  <code className="truncate rounded bg-apple-fill-secondary px-2 py-1 text-apple-text-secondary">/signup/{f.slug}</code>
+                  <div className="flex shrink-0 gap-3">
+                    <Link href={adminRoutes.loc.marketing.signupFormDetail(slug, f.id)} className="font-medium text-apple-blue hover:underline">Edit</Link>
+                    <a href={publicSignupUrl(f.slug)} target="_blank" rel="noreferrer" className="font-medium text-apple-blue hover:underline">Preview →</a>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,8 +1,14 @@
 import { getPrisma } from "@/lib/db";
-import { Card, CardHeader, EmptyState, PageHeader, Money, StatusBadge } from "@/components/ui";
+import Link from "next/link";
+import { Button, Card, CardHeader, PageHeader } from "@/components/ui";
 import { AreaChart, BarChart, KpiCard } from "@/components/ui/charts";
-import { Gift } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import { lastNMonths } from "@/lib/chart-data";
+import { adminRoutes } from "@/lib/admin/routes";
+import { getActorContext } from "@/lib/actor";
+import { can } from "@/lib/permissions";
+import { getMarketingSettings } from "@/services/marketing.service";
+import { ReferralsClient, type ReferralsData } from "@/components/admin/marketing/ReferralsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +55,38 @@ export default async function ReferralsPage({ params }: { params: Promise<{ slug
     : [];
   const refById = new Map(referrers.map((r) => [r.id, r]));
 
+  // Grouped referral data for the client (mirrors GET /api/admin/referrals).
+  const [allReferrals, allPayouts, referredMembers, settings, actor] = await Promise.all([
+    prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
+    prisma.referralPayout.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
+    prisma.member.findMany({ where: { locationId: location.id, referredById: { not: null } }, select: { id: true, firstName: true, lastName: true, referredById: true, joinDate: true }, take: 200 }),
+    getMarketingSettings(location.organizationId),
+    getActorContext(),
+  ]);
+  const referredIds = new Set(allReferrals.map((r) => r.referredMemberId));
+  const unmatched = referredMembers.filter((m) => !referredIds.has(m.id));
+  const miniIds = Array.from(new Set([...allReferrals.map((r) => r.referrerId), ...allReferrals.map((r) => r.referredMemberId), ...allPayouts.map((p) => p.referrerId)]));
+  const minis = miniIds.length
+    ? await prisma.member.findMany({ where: { id: { in: miniIds } }, select: { id: true, firstName: true, lastName: true, email: true, status: true, referralCode: true, paypalAccount: { select: { paypalEmail: true } } } })
+    : [];
+  const miniById = new Map(minis.map((m) => [m.id, m]));
+  const payoutRows = allPayouts.map((p) => ({ ...p, periodStart: p.periodStart.toISOString(), periodEnd: p.periodEnd.toISOString(), createdAt: p.createdAt.toISOString(), paidAt: p.paidAt?.toISOString() ?? null, referrer: miniById.get(p.referrerId) ?? null }));
+  const payoutRowById = new Map(payoutRows.map((p) => [p.id, p]));
+  const referralsData: ReferralsData = {
+    items: allReferrals.map((r) => {
+      const payout = r.payoutId ? payoutRowById.get(r.payoutId) ?? null : null;
+      const state: "pending" | "confirmed" | "paid" = r.earnedKind === "CREDIT" ? "paid" : !payout ? "pending" : ["SENT", "PAID"].includes(payout.status) ? "paid" : "confirmed";
+      return { ...r, createdAt: r.createdAt.toISOString(), state, payout, referrer: miniById.get(r.referrerId) ?? null, referred: miniById.get(r.referredMemberId) ?? null };
+    }),
+    payouts: payoutRows,
+    unmatched: unmatched.map((m) => ({ ...m, joinDate: m.joinDate?.toISOString() ?? null })),
+    paypalConfigured: !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET),
+  };
+  const rewardLabel = !settings.referral.enabled
+    ? "program paused"
+    : `$${(settings.referral.rewardCents / 100).toFixed(0)} ${settings.referral.rewardKind === "CREDIT" ? "account credit" : "PayPal payment"}`;
+  const canSendPayouts = can(actor, "marketing.send-payouts", { locationId: location.id });
+
   const leaderboard = topReferrers
     .map((t) => {
       const m = refById.get(t.referrerId!);
@@ -75,6 +113,11 @@ export default async function ReferralsPage({ params }: { params: Promise<{ slug
       <PageHeader
         title="Referrals"
         description="Each member gets a unique code & URL. Earn payments (PayPal) or membership credit."
+        actions={
+          <Link href={adminRoutes.loc.marketing.settings(slug)}>
+            <Button variant="secondary" iconLeft={<Settings2 className="h-4 w-4" />}>Reward settings</Button>
+          </Link>
+        }
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -132,33 +175,7 @@ export default async function ReferralsPage({ params }: { params: Promise<{ slug
         </Card>
       </div>
 
-      <Card>
-        <CardHeader title="Pending payouts" />
-        {pendingPayouts.length === 0 ? (
-          <EmptyState
-            icon={<Gift className="h-6 w-6" />}
-            title="No pending payouts"
-            description="Payouts are batched at month-end and require admin approval before sending via PayPal."
-          />
-        ) : (
-          <ul className="mt-4 divide-y divide-apple-divider">
-            {pendingPayouts.map((p) => (
-              <li key={p.id} className="flex items-center justify-between py-2 text-apple-sm">
-                <div>
-                  <div className="font-medium text-apple-text">{p.referrerId}</div>
-                  <div className="text-apple-xs text-apple-text-tertiary">
-                    {new Date(p.periodStart).toLocaleDateString()} – {new Date(p.periodEnd).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Money cents={p.amountCents} className="font-medium" />
-                  <StatusBadge status={p.status} size="sm" />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <ReferralsClient initial={referralsData} rewardLabel={rewardLabel} canSendPayouts={canSendPayouts} />
     </div>
   );
 }
