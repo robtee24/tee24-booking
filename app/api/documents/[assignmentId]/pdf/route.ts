@@ -51,14 +51,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ assignmentI
     .replace(/[^A-Za-z0-9 _.-]+/g, "")
     .trim();
   const inline = req.nextUrl.searchParams.get("download") !== "1";
-  return new NextResponse(new Uint8Array(file.data), {
-    status: 200,
-    headers: {
-      "Content-Type": file.mimeType,
-      "Content-Length": String(file.sizeBytes),
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${safeName || "document"}.pdf"`,
-      "Cache-Control": "private, no-store",
-      "X-Content-Sha256": file.sha256,
-    },
-  });
+  // Imported GymDesk copies are stored as self-contained HTML (inline signature image);
+  // native signatures are PDFs. Pick the extension from the stored mime type.
+  const isHtml = file.mimeType.startsWith("text/html");
+  const ext = isHtml ? "html" : "pdf";
+  const headers: Record<string, string> = {
+    "Content-Type": isHtml ? "text/html; charset=utf-8" : file.mimeType,
+    "Content-Length": String(file.sizeBytes),
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${safeName || "document"}.${ext}"`,
+    "Cache-Control": "private, no-store",
+    "X-Content-Sha256": file.sha256,
+  };
+  // Stored HTML is rendered on our origin: forbid scripts/network, allow inline styles + data: images only.
+  if (isHtml) headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+  return new NextResponse(new Uint8Array(file.data), { status: 200, headers });
 }
