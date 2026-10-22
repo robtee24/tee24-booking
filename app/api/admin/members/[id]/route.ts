@@ -66,7 +66,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!g.ok) return g.response;
   try {
     assertCan(g.actor, "member.delete", { locationId: g.member.locationId });
-    await getPrisma().member.delete({ where: { id } });
+    // Visit.member is onDelete:SetNull; hard-deleting a member should not leave
+    // anonymous "Guest" visits behind in attendance / front-desk recent lists.
+    const prisma = getPrisma();
+    await prisma.$transaction([
+      prisma.visit.deleteMany({ where: { memberId: id } }),
+      prisma.member.delete({ where: { id } }),
+    ]);
     void audit({ organizationId: g.member.organizationId, actorId: g.admin.id, actorRole: g.admin.role, action: "member.delete", entityType: "Member", entityId: id, before: g.member });
     return NextResponse.json({ ok: true });
   } catch (e) {

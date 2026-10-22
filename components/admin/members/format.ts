@@ -67,4 +67,22 @@ export const GENDERS = [
   { value: "nonbinary", label: "Non-binary" },
   { value: "other", label: "Other" },
 ];
+/** Imported data stores "Male"/"Female"; map common spellings onto our option values. */
+export function normalizeGender(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v) return "";
+  const key = v.toLowerCase().replace(/[\s_-]/g, "");
+  if (key === "m" || key === "male" || key === "man") return "male";
+  if (key === "f" || key === "female" || key === "woman") return "female";
+  if (key === "nonbinary" || key === "nb" || key === "enby") return "nonbinary";
+  if (key === "other") return "other";
+  if (key === "prefernottosay" || key === "unknown" || key === "n/a") return "";
+  return v;
+}
+
+export function genderLabel(raw: string | null | undefined): string {
+  const v = normalizeGender(raw);
+  return GENDERS.find((g) => g.value === v)?.label ?? v;
+}
+
 export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

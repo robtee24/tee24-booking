@@ -6,7 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { adminRoutes } from "@/lib/admin/routes";
 import { Card, CardHeader, StatusBadge, Money, Badge } from "@/components/ui";
 import { TagsEditor, KisiAccessCard, CheckinCodeCard } from "@/components/admin/members/OverviewWidgets";
-import { ageFromDob, fmtDate, fmtDateTime, relTime } from "@/components/admin/members/format";
+import { ageFromDob, fmtDate, fmtDateTime, genderLabel, relTime } from "@/components/admin/members/format";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +53,7 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
           <div className="mt-4 flex flex-wrap gap-1.5">
             <Badge tone={member.optInEmailMarketing ? "success" : "muted"} size="sm">Email {member.optInEmailMarketing ? "opt-in" : "opt-out"}</Badge>
             <Badge tone={member.optInSmsMarketing ? "success" : "muted"} size="sm">SMS {member.optInSmsMarketing ? "opt-in" : "opt-out"}</Badge>
-            {member.gender && <Badge tone="muted" size="sm">{member.gender}</Badge>}
+            {member.gender && <Badge tone="muted" size="sm">{genderLabel(member.gender)}</Badge>}
           </div>
         </Card>
 
@@ -73,7 +73,12 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
                 {activeSub.nextInvoiceDate && <div className="text-apple-xs text-apple-text-tertiary">Next invoice {fmtDate(activeSub.nextInvoiceDate)}</div>}
               </>
             ) : (
-              <p className="text-apple-text-tertiary">No active membership{member.membershipType ? ` · ${member.membershipType}` : ""}</p>
+              <div className="space-y-1">
+                <p className="text-apple-text-tertiary">No active subscription</p>
+                {member.membershipType && (
+                  <p className="text-apple-xs text-apple-text-tertiary">Imported plan: {member.membershipType}</p>
+                )}
+              </div>
             )}
             <div className="flex items-center justify-between border-t border-apple-divider pt-2 text-apple-xs text-apple-text-tertiary">
               <span>Joined {fmtDate(member.joinDate)}</span>

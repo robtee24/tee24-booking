@@ -3,7 +3,7 @@
 import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Drawer, Input, Select, useToast } from "@/components/ui";
-import { ACQUISITION_SOURCES, Checkbox, GENDERS, api, errMsg, toDateInput } from "./shared";
+import { ACQUISITION_SOURCES, Checkbox, GENDERS, api, errMsg, normalizeGender, toDateInput } from "./shared";
 
 export type EditableMember = {
   id: string;
@@ -152,6 +152,9 @@ export function EditMemberDrawer({
             <Input label="Date of birth" type="date" value={form.dob} onChange={(e) => set("dob", e.target.value)} />
             <Select label="Gender" value={form.gender} onChange={(e) => set("gender", e.target.value)}>
               {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+              {form.gender && !GENDERS.some((g) => g.value === form.gender) && (
+                <option value={form.gender}>{form.gender}</option>
+              )}
             </Select>
             <Input label="Parent / guardian" hint="For minors" value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
             <Input label="Photo URL" value={form.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="https://" />
@@ -226,7 +229,7 @@ function toForm(m: EditableMember) {
     secondaryEmails: m.secondaryEmails ?? [],
     secondaryPhones: m.secondaryPhones ?? [],
     dob: toDateInput(m.dob),
-    gender: m.gender ?? "",
+    gender: normalizeGender(m.gender),
     guardianName: m.guardianName ?? "",
     joinDate: toDateInput(m.joinDate),
     membershipType: m.membershipType ?? "",
