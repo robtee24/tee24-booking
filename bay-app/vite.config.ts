@@ -7,6 +7,10 @@ export default defineConfig({
   base: './',
   root: 'src/renderer',
   server: { port: 5173, strictPort: true },
+  // The kiosk renderer uses plain CSS. An inline PostCSS config stops Vite from
+  // walking up to the Next.js app's postcss.config.js (Tailwind), whose plugins
+  // are not installed in bay-app/ on CI.
+  css: { postcss: { plugins: [] } },
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
