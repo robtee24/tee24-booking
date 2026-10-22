@@ -208,25 +208,23 @@ export function NewSaleScreen({ slug }: { slug: string }) {
     return <ReceiptView sale={receipt} currency={currency} slug={slug} onNew={resetSale} />;
   }
 
-  const cartPanel = (
-    <CartPanel
-      cart={cart} totals={totals} currency={currency} taxRateBps={taxRateBps}
-      discount={discount} setDiscount={setDiscount}
-      customer={customer} setCustomer={setCustomer} slug={slug}
-      notes={notes} setNotes={setNotes}
-      payment={payment} setPayment={setPayment}
-      tendered={tendered} setTendered={setTendered} changeCents={changeCents}
-      reference={reference} setReference={setReference}
-      giftCode={giftCode} setGiftCode={(v) => { setGiftCode(v); setGiftLookup(null); setGiftLookupError(null); }} giftLookup={giftLookup} giftLookupError={giftLookupError} onLookupGift={lookupGift}
-      squareReady={!!ctx?.squareReady} sourceId={sourceId} setSourceId={setSourceId}
-      sendReceipt={sendReceipt} setSendReceipt={setSendReceipt}
-      onQty={changeQty} onRemove={removeLine}
-      blocker={blocker} submitting={submitting} onComplete={complete}
-    />
-  );
+  const cartProps: CartPanelProps = {
+    cart, totals, currency, taxRateBps,
+    discount, setDiscount,
+    customer, setCustomer, slug,
+    notes, setNotes,
+    payment, setPayment,
+    tendered, setTendered, changeCents,
+    reference, setReference,
+    giftCode, setGiftCode: (v) => { setGiftCode(v); setGiftLookup(null); setGiftLookupError(null); }, giftLookup, giftLookupError, onLookupGift: lookupGift,
+    squareReady: !!ctx?.squareReady, sourceId, setSourceId,
+    sendReceipt, setSendReceipt,
+    onQty: changeQty, onRemove: removeLine,
+    blocker, submitting, onComplete: complete,
+  };
 
   return (
-    <div className="space-y-5 pb-24 lg:pb-0">
+    <div className="space-y-5 pb-20 lg:pb-0">
       <PageHeader
         title="New Sale"
         description={ctx ? `${ctx.location.name}${taxRateBps ? ` · tax ${(taxRateBps / 100).toFixed(2)}%` : " · no sales tax configured"}` : "Point of sale"}
@@ -315,19 +313,20 @@ export function NewSaleScreen({ slug }: { slug: string }) {
 
         {/* Cart — side column on desktop */}
         <div className="hidden lg:block">
-          <div className="sticky top-4">{cartPanel}</div>
+          <div className="sticky top-4"><CartPanel {...cartProps} /></div>
         </div>
       </div>
 
       {/* Cart — bottom bar + sheet on mobile/tablet portrait */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-apple-divider bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+      {/* Sits just above the admin shell's mobile tab bar (h-14 + safe area). */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 border-t border-apple-divider bg-white/95 p-3 backdrop-blur lg:hidden">
         <Button size="lg" className="w-full justify-between" onClick={() => setCartOpen(true)} iconLeft={<ShoppingCart className="h-5 w-5" />}>
           <span>{itemCount ? `${itemCount} item${itemCount === 1 ? "" : "s"}` : "Cart"}</span>
           <span className="tabular-nums">{formatMoney(totals.totalCents, currency)}</span>
         </Button>
       </div>
-      <Modal open={cartOpen} onClose={() => setCartOpen(false)} title="Cart" wide>
-        {cartPanel}
+      <Modal open={cartOpen} onClose={() => setCartOpen(false)} title="Cart" wide footer={<CartTotals {...cartProps} />}>
+        <CartBody {...cartProps} />
       </Modal>
 
       <CustomItemModal open={customOpen} onClose={() => setCustomOpen(false)} onAdd={addCustom} />
@@ -374,11 +373,21 @@ type CartPanelProps = {
   onComplete: () => void;
 };
 
+/** Desktop: self-scrolling card with sticky totals. In the mobile sheet, body and totals are split across Modal body/footer. */
 function CartPanel(p: CartPanelProps) {
+  return (
+    <Card padded={false} className="flex max-h-[calc(100dvh-7rem)] flex-col border border-apple-border">
+      <div className="flex-1 overflow-y-auto p-4"><CartBody {...p} /></div>
+      <div className="border-t border-apple-divider bg-apple-fill-secondary p-4"><CartTotals {...p} /></div>
+    </Card>
+  );
+}
+
+function CartBody(p: CartPanelProps) {
   const customerEmail = p.customer.kind === "member" ? p.customer.member.email : p.customer.kind === "walkin" ? p.customer.email : "";
   return (
-    <Card padded={false} className="flex max-h-[calc(100dvh-7rem)] flex-col lg:border lg:border-apple-border">
-      <div className="flex-1 space-y-5 overflow-y-auto p-4">
+    <>
+      <div className="space-y-5">
         {/* Lines */}
         <section>
           <SectionTitle icon={<ShoppingCart className="h-4 w-4" />}>Items</SectionTitle>
@@ -514,9 +523,13 @@ function CartPanel(p: CartPanelProps) {
           )}
         </section>
       </div>
+    </>
+  );
+}
 
-      {/* Totals + complete */}
-      <div className="border-t border-apple-divider bg-apple-fill-secondary p-4">
+function CartTotals(p: CartPanelProps) {
+  return (
+    <>
         <dl className="space-y-1 text-apple-sm">
           <Row label="Subtotal" value={formatMoney(p.totals.subtotalCents, p.currency)} />
           {p.totals.discountCents > 0 && <Row label="Discount" value={`−${formatMoney(p.totals.discountCents, p.currency)}`} />}
@@ -529,8 +542,7 @@ function CartPanel(p: CartPanelProps) {
         <Button size="lg" className="mt-3 w-full" disabled={!!p.blocker} loading={p.submitting} onClick={p.onComplete} iconLeft={<CheckCircle2 className="h-5 w-5" />}>
           {p.blocker ?? `Complete · ${formatMoney(p.totals.totalCents, p.currency)}`}
         </Button>
-      </div>
-    </Card>
+    </>
   );
 }
 

@@ -49,7 +49,7 @@ export function GiftCardsScreen({ slug }: { slug: string }) {
   const outstanding = (cards ?? []).filter((c) => c.status === "ACTIVE").reduce((a, c) => a + c.balanceCents, 0);
 
   const columns: Column<GiftCardDTO>[] = [
-    { key: "code", header: "Code", cell: (c) => <span className="font-mono text-apple-sm">{c.codeMasked}</span> },
+    { key: "code", header: "Code", cell: (c) => <span className="whitespace-nowrap font-mono text-apple-sm">{c.codeMasked}</span> },
     { key: "balance", header: "Balance", align: "right", cell: (c) => <span className="font-medium tabular-nums">{formatMoney(c.balanceCents)}<span className="text-apple-xs text-apple-text-tertiary"> / {formatMoney(c.initialCents)}</span></span> },
     { key: "status", header: "Status", cell: (c) => <StatusBadge status={c.status === "DEPLETED" ? "INACTIVE" : c.status === "VOID" ? "CANCELLED" : c.status} size="sm" /> },
     { key: "recipient", header: "Recipient", cell: (c) => <div className="min-w-0"><div className="truncate">{c.recipientName ?? "—"}</div>{c.recipientEmail && <div className="truncate text-apple-xs text-apple-text-tertiary">{c.recipientEmail}</div>}</div> },
@@ -70,13 +70,15 @@ export function GiftCardsScreen({ slug }: { slug: string }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex-1"><Input prefix={<Search className="h-4 w-4" />} placeholder="Recipient name, email, or last 4…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="ALL">All statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="DEPLETED">Depleted</option>
-              <option value="VOID">Void</option>
-            </Select>
+            <div className="min-w-0 flex-1"><Input prefix={<Search className="h-4 w-4" />} placeholder="Recipient name, email, or last 4…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+            <div className="sm:w-44">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="ALL">All statuses</option>
+                <option value="ACTIVE">Active</option>
+                <option value="DEPLETED">Depleted</option>
+                <option value="VOID">Void</option>
+              </Select>
+            </div>
           </div>
           {error && <div className="rounded-apple border border-apple-red/30 bg-apple-red/5 p-4 text-apple-sm text-apple-red">{error}</div>}
           <DataTable columns={columns} rows={cards ?? []} rowKey={(c) => c.id} loading={!cards && !error} onRowClick={setSelected} empty={<span className="inline-flex items-center gap-2"><Gift className="h-4 w-4" /> No gift cards yet.</span>} />

@@ -9,7 +9,7 @@ import { adminRoutes } from "@/lib/admin/routes";
 import { downloadCsv, posFetch, qs, todayISO } from "./api";
 import { SaleDetailDrawer } from "./SaleDetailDrawer";
 import type { PaymentKind, SaleDTO, SaleStatus, StaffDTO } from "./types";
-import { PAYMENT_KIND_LABELS } from "./types";
+import { PAYMENT_KIND_LABELS, PAYMENT_KIND_SHORT } from "./types";
 
 export function SalesListScreen({ slug }: { slug: string }) {
   const [sales, setSales] = React.useState<SaleDTO[] | null>(null);
@@ -59,7 +59,7 @@ export function SalesListScreen({ slug }: { slug: string }) {
       ),
     },
     { key: "items", header: "Items", cell: (s) => <span className="line-clamp-1 text-apple-text-secondary">{s.lineItems.map((li) => `${li.quantity > 1 ? `${li.quantity}× ` : ""}${li.description}`).join(", ")}</span> },
-    { key: "payment", header: "Payment", cell: (s) => <Badge tone="muted" size="sm">{PAYMENT_KIND_LABELS[s.paymentKind]}</Badge> },
+    { key: "payment", header: "Payment", cell: (s) => <Badge tone="muted" size="sm"><span className="whitespace-nowrap">{PAYMENT_KIND_SHORT[s.paymentKind]}</span></Badge> },
     { key: "staff", header: "Staff", cell: (s) => <span className="text-apple-text-secondary">{s.staffName ?? "—"}</span> },
     {
       key: "status", header: "Status",

@@ -972,6 +972,24 @@ function refundedCentsOf(s: ReportSale): number {
   return (splitNotes(s.notes).meta.refunds ?? []).reduce((a, r) => a + r.amountCents, 0);
 }
 
+/**
+ * Per-line "still sold" factor: 0 for lines that were refunded individually
+ * (or when the whole sale is refunded/void), else 1. Falls back to the
+ * sale-level net factor when a partial refund wasn't tied to specific lines.
+ */
+function lineFactors(s: ReportSale, refunded: number): Map<string, number> {
+  const out = new Map<string, number>();
+  const all = s.status === "REFUNDED" || s.status === "VOID" || (s.totalCents > 0 && refunded >= s.totalCents);
+  const refundedLineIds = new Set((splitNotes(s.notes).meta.refunds ?? []).flatMap((r) => r.lineItemIds));
+  const fallback = s.totalCents > 0 ? (s.totalCents - refunded) / s.totalCents : 0;
+  for (const li of s.lineItems) {
+    if (all) out.set(li.id, 0);
+    else if (refundedLineIds.size > 0) out.set(li.id, refundedLineIds.has(li.id) ? 0 : 1);
+    else out.set(li.id, refunded > 0 ? fallback : 1);
+  }
+  return out;
+}
+
 /** Net share of the sale attributable to a line (after discount, before tax). */
 function lineNetCents(s: ReportSale, li: ReportSale["lineItems"][number]): number {
   if (s.subtotalCents <= 0) return 0;
@@ -1000,8 +1018,9 @@ export async function salesSummary(loc: LocationCtx, from?: string, to?: string)
     totals.refundedCents += refunded;
     totals.netCents += s.totalCents - refunded;
     bump(byKind, s.paymentKind, s.totalCents - refunded);
+    const factors = lineFactors(s, refunded);
     for (const li of s.lineItems) {
-      const net = Math.round(lineNetCents(s, li) * factor);
+      const net = Math.round(lineNetCents(s, li) * (factors.get(li.id) ?? factor));
       const isGift = !li.productId && /^Gift card/i.test(li.description);
       bump(byIncome, li.product?.incomeCategory || (isGift ? "Gift cards" : li.productId ? "Uncategorized" : "Custom items"), net);
       bump(byGl, li.product?.glCode || (isGift ? "GIFT_CARD" : "UNASSIGNED"), net);
@@ -1059,10 +1078,12 @@ export async function salesReport(loc: LocationCtx, from?: string, to?: string):
     st.revenueCents += netRevenue;
     byStaff.set(sk, st);
 
+    const factors = lineFactors(s, refunded);
     for (const li of s.lineItems) {
-      const net = Math.round(lineNetCents(s, li) * factor);
-      const qty = Math.round(li.quantity * factor);
-      const cogs = li.product?.cogsCents != null ? Math.round(li.product.cogsCents * li.quantity * factor) : 0;
+      const lf = factors.get(li.id) ?? factor;
+      const net = Math.round(lineNetCents(s, li) * lf);
+      const qty = Math.round(li.quantity * lf);
+      const cogs = li.product?.cogsCents != null ? Math.round(li.product.cogsCents * li.quantity * lf) : 0;
       kpis.cogsCents += cogs;
       const pk = li.productId ?? `custom:${li.description.replace(/\s\*{4}.*$/, "")}`;
       const p = byProduct.get(pk) ?? { productId: li.productId, name: li.product?.name ?? li.description.replace(/\s\*{4}.*$/, ""), quantity: 0, revenueCents: 0, cogsCents: 0 };

@@ -14,6 +14,15 @@ export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
   CARD: "Card (Square)",
 };
 
+/** Compact labels for badges / tight table cells. */
+export const PAYMENT_KIND_SHORT: Record<PaymentKind, string> = {
+  CASH: "Cash",
+  OTHER: "Other",
+  CREDIT: "Credit",
+  GIFT_CARD: "Gift card",
+  CARD: "Card",
+};
+
 export type CategoryDTO = {
   id: string;
   name: string;
