@@ -245,3 +245,64 @@ export async function visitorFunnel(opts: { locationId: string; days: number }) 
     { label: "Converted to member", value: converted },
   ];
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Billing (owned by the billing module)                                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Revenue by month net of refunds: successful charges minus completed refunds,
+ * bucketed by the month the money moved. Shape: { month, revenue, refunds }.
+ */
+export async function billingRevenueByMonth(opts: { locationId: string; months: number }) {
+  const months = lastNMonths(opts.months);
+  const start = months[0].start;
+  const prisma = getPrisma();
+  const [charges, refunds] = await Promise.all([
+    prisma.charge.findMany({
+      where: { locationId: opts.locationId, status: { in: ["SUCCEEDED", "PARTIALLY_REFUNDED", "REFUNDED"] }, createdAt: { gte: start } },
+      select: { amountCents: true, createdAt: true },
+    }),
+    prisma.refund.findMany({
+      where: { status: "COMPLETED", createdAt: { gte: start }, charge: { locationId: opts.locationId } },
+      select: { amountCents: true, createdAt: true },
+    }),
+  ]);
+  const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const gross = new Map<string, number>();
+  const refunded = new Map<string, number>();
+  for (const m of months) {
+    gross.set(m.iso, 0);
+    refunded.set(m.iso, 0);
+  }
+  for (const c of charges) if (gross.has(key(c.createdAt))) gross.set(key(c.createdAt), (gross.get(key(c.createdAt)) ?? 0) + c.amountCents);
+  for (const r of refunds) if (refunded.has(key(r.createdAt))) refunded.set(key(r.createdAt), (refunded.get(key(r.createdAt)) ?? 0) + r.amountCents);
+  return months.map((m) => ({
+    month: m.label,
+    revenue: Math.round(((gross.get(m.iso) ?? 0) - (refunded.get(m.iso) ?? 0)) / 100),
+    refunds: Math.round((refunded.get(m.iso) ?? 0) / 100),
+  }));
+}
+
+/**
+ * Paid revenue grouped by membership plan for a date range (net of refunds).
+ * Invoices without a subscription are grouped under their description.
+ */
+export async function revenueByPlan(opts: { locationId: string; start: Date; end: Date }) {
+  const invoices = await getPrisma().invoice.findMany({
+    where: { locationId: opts.locationId, status: { in: ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"] }, paidAt: { gte: opts.start, lt: opts.end } },
+    select: { totalCents: true, refundedCents: true, taxCents: true, surchargeCents: true, description: true, subscription: { select: { plan: { select: { id: true, name: true, glCode: true, incomeCategory: true } } } } },
+  });
+  const byKey = new Map<string, { name: string; glCode: string | null; incomeCategory: string | null; count: number; grossCents: number; netCents: number; taxCents: number }>();
+  for (const inv of invoices) {
+    const plan = inv.subscription?.plan;
+    const k = plan ? `plan:${plan.id}` : `desc:${inv.description ?? "Other"}`;
+    const row = byKey.get(k) ?? { name: plan?.name ?? inv.description ?? "Other", glCode: plan?.glCode ?? null, incomeCategory: plan?.incomeCategory ?? null, count: 0, grossCents: 0, netCents: 0, taxCents: 0 };
+    row.count += 1;
+    row.grossCents += inv.totalCents;
+    row.netCents += inv.totalCents - inv.refundedCents;
+    row.taxCents += inv.taxCents;
+    byKey.set(k, row);
+  }
+  return Array.from(byKey.values()).sort((a, b) => b.netCents - a.netCents);
+}

@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Button, Card, CardHeader, EmptyState, Input, Money } from "@/components/ui";
+import { CardForm } from "@/components/payments/CardForm";
+import type { SquarePublicConfig } from "@/lib/square";
 
 type Props = {
-  location: { id: string; name: string; slug: string; organizationId: string | null };
+  location: { id: string; name: string; slug: string; organizationId: string | null; taxRateBps: number; cardSurchargeBps: number; currency: string };
   dayPasses: Array<{ id: string; name: string; description: string | null; priceCents: number; durationDays: number }>;
+  square: SquarePublicConfig;
 };
 
-export function DayPassClient({ location, dayPasses }: Props) {
+export function DayPassClient({ location, dayPasses, square }: Props) {
   const [planId, setPlanId] = useState(dayPasses[0]?.id ?? "");
   const [profile, setProfile] = useState({ firstName: "", lastName: "", email: "", phone: "" });
   const [waiverChecked, setWaiverChecked] = useState(false);
@@ -17,13 +20,22 @@ export function DayPassClient({ location, dayPasses }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const plan = dayPasses.find((p) => p.id === planId);
+  const currency = location.currency;
+
+  const totals = useMemo(() => {
+    const price = plan?.priceCents ?? 0;
+    const tax = Math.round((price * location.taxRateBps) / 10_000);
+    const surcharge = square.configured ? Math.round(((price + tax) * location.cardSurchargeBps) / 10_000) : 0;
+    return { price, tax, surcharge, total: price + tax + surcharge };
+  }, [plan, location.taxRateBps, location.cardSurchargeBps, square.configured]);
+
+  const detailsValid = Boolean(profile.firstName && profile.lastName && profile.email && profile.phone && waiverChecked);
 
   function set<K extends keyof typeof profile>(k: K, v: (typeof profile)[K]) {
     setProfile((p) => ({ ...p, [k]: v }));
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(card?: { sourceId: string; verificationToken: string | null }) {
     if (!plan) return;
     setSubmitting(true);
     setError(null);
@@ -36,12 +48,16 @@ export function DayPassClient({ location, dayPasses }: Props) {
           planId: plan.id,
           ...profile,
           waiverAccepted: waiverChecked,
+          sourceId: card?.sourceId ?? null,
+          verificationToken: card?.verificationToken ?? null,
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Something went wrong");
       setDone(true);
-    } catch (err: any) {
-      setError(err.message ?? "Something went wrong");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      throw err;
     } finally {
       setSubmitting(false);
     }
@@ -54,7 +70,7 @@ export function DayPassClient({ location, dayPasses }: Props) {
           <Card>
             <CardHeader title="You're all set" subtitle="Your day pass is ready." />
             <p className="mt-4 text-apple-sm text-apple-text">
-              Check your email and texts for your Kisi door access credential. It's good for the next 24 hours at {location.name}.
+              Check your email and texts for your Kisi door access credential. It&apos;s good for the next 24 hours at {location.name}.
             </p>
             <Button onClick={() => (window.location.href = "/")} className="mt-6">Done</Button>
           </Card>
@@ -73,6 +89,8 @@ export function DayPassClient({ location, dayPasses }: Props) {
     );
   }
 
+  const payOnline = square.configured && totals.total > 0;
+
   return (
     <div className="min-h-screen bg-apple-bg py-12">
       <div className="mx-auto max-w-2xl px-4">
@@ -81,7 +99,7 @@ export function DayPassClient({ location, dayPasses }: Props) {
           <p className="mt-1 text-apple-sm text-apple-text-secondary">{location.name}</p>
         </header>
 
-        <form onSubmit={submit} className="space-y-6">
+        <div className="space-y-6">
           <Card>
             <CardHeader title="Choose your pass" />
             <div className="mt-4 grid gap-3">
@@ -103,7 +121,7 @@ export function DayPassClient({ location, dayPasses }: Props) {
                           <div className="mt-1 text-apple-xs text-apple-text-tertiary">{p.description}</div>
                         )}
                       </div>
-                      <Money cents={p.priceCents} className="text-apple-lg font-semibold" />
+                      <Money cents={p.priceCents} currency={currency} className="text-apple-lg font-semibold" />
                     </div>
                   </button>
                 );
@@ -134,16 +152,44 @@ export function DayPassClient({ location, dayPasses }: Props) {
           </Card>
 
           <Card>
-            <CardHeader title="Payment" subtitle="Powered by Square. Card details never touch our servers." />
-            <div className="mt-4 rounded-apple-sm border border-dashed border-apple-border bg-apple-fill-secondary p-6 text-center text-apple-xs text-apple-text-secondary">
-              Square Web Payments SDK card form will mount here.
-            </div>
+            <CardHeader title="Payment" subtitle={payOnline ? "Powered by Square. Card details never touch our servers." : "Pay at the front desk when you arrive."} />
+            {plan && (totals.tax > 0 || totals.surcharge > 0) && (
+              <dl className="mt-3 space-y-1 text-apple-xs text-apple-text-secondary">
+                <div className="flex justify-between"><dt>{plan.name}</dt><dd><Money cents={totals.price} currency={currency} /></dd></div>
+                {totals.tax > 0 && <div className="flex justify-between"><dt>Tax</dt><dd><Money cents={totals.tax} currency={currency} /></dd></div>}
+                {totals.surcharge > 0 && <div className="flex justify-between"><dt>Card surcharge</dt><dd><Money cents={totals.surcharge} currency={currency} /></dd></div>}
+              </dl>
+            )}
+            {payOnline ? (
+              <div className="mt-4">
+                <CardForm
+                  square={square}
+                  intent="CHARGE"
+                  amountCents={totals.total}
+                  currency={currency}
+                  billingContact={{ givenName: profile.firstName, familyName: profile.lastName, email: profile.email, phone: profile.phone }}
+                  onToken={(card) => submit(card)}
+                  submitting={submitting}
+                  disabled={!plan || !detailsValid}
+                  buttonLabel={plan ? <>Pay <Money cents={totals.total} currency={currency} /> &amp; get door access</> : "Select a pass"}
+                />
+                {!detailsValid && <p className="mt-2 text-apple-xs text-apple-text-tertiary">Fill in your details and accept the waiver to pay.</p>}
+              </div>
+            ) : (
+              <>
+                {square.configured ? null : (
+                  <div className="mt-4 rounded-apple-sm border border-apple-border bg-apple-fill-secondary p-4 text-apple-xs text-apple-text-secondary">
+                    Online payments aren&apos;t available yet — the front desk will collect <Money cents={totals.total} currency={currency} /> when you arrive.
+                  </div>
+                )}
+                <Button onClick={() => submit().catch(() => {})} loading={submitting} className="mt-4 w-full" disabled={!plan || !detailsValid}>
+                  {plan ? <>Get my day pass{totals.total > 0 ? <> (<Money cents={totals.total} currency={currency} /> due at the desk)</> : null}</> : "Select a pass"}
+                </Button>
+              </>
+            )}
             {error && <p className="mt-3 text-apple-sm text-apple-red">{error}</p>}
-            <Button type="submit" loading={submitting} className="mt-4 w-full" disabled={!plan || !waiverChecked}>
-              {plan ? <>Pay <Money cents={plan.priceCents} /> &amp; get door access</> : "Select a pass"}
-            </Button>
           </Card>
-        </form>
+        </div>
       </div>
     </div>
   );

@@ -1,28 +1,36 @@
 import { Card, CardHeader, EmptyState, StatusBadge, Money } from "@/components/ui";
 import { BarChart, KpiCard } from "@/components/ui/charts";
-import { getCurrentMember } from "@/lib/member-session";
+import { getCurrentMember, getMemberSession } from "@/lib/member-session";
 import { getPrisma } from "@/lib/db";
+import { getSquarePublicConfig } from "@/lib/square";
 import { Receipt } from "lucide-react";
 import { lastNMonths } from "@/lib/chart-data";
+import { PortalCardManager, PortalPayButton } from "./BillingActions";
 
 export const dynamic = "force-dynamic";
 
+const PAYABLE = ["SCHEDULED", "PAST_DUE", "FAILED"];
+
 export default async function PortalBilling() {
-  const member = await getCurrentMember();
+  const [member, session] = await Promise.all([getCurrentMember(), getMemberSession()]);
   if (!member) return null;
   const prisma = getPrisma();
+  const readOnly = session?.role === "IMPERSONATED";
+  const square = getSquarePublicConfig();
 
   const yearAgo = new Date();
   yearAgo.setFullYear(yearAgo.getFullYear() - 1);
 
-  const [invoices, methods, paidYearInvoices] = await Promise.all([
-    prisma.invoice.findMany({ where: { memberId: member.id }, orderBy: { createdAt: "desc" }, take: 25 }),
-    prisma.paymentMethod.findMany({ where: { memberId: member.id }, orderBy: { isDefault: "desc" } }),
+  const [invoices, methods, paidYearInvoices, location] = await Promise.all([
+    prisma.invoice.findMany({ where: { memberId: member.id, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, take: 25 }),
+    prisma.paymentMethod.findMany({ where: { memberId: member.id }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
     prisma.invoice.findMany({
       where: { memberId: member.id, status: "PAID", paidAt: { gte: yearAgo } },
       select: { totalCents: true, paidAt: true },
     }),
+    prisma.location.findUnique({ where: { id: member.locationId }, select: { currency: true } }),
   ]);
+  const currency = location?.currency ?? "USD";
 
   const months = lastNMonths(12);
   const billingHistory = months.map((m) => {
@@ -38,7 +46,10 @@ export default async function PortalBilling() {
     .reduce((s, i) => s + i.totalCents, 0);
   const pastDue = invoices
     .filter((i) => i.status === "PAST_DUE" || i.status === "FAILED")
-    .reduce((s, i) => s + i.totalCents, 0);
+    .reduce((s, i) => s + i.totalCents - i.refundedCents, 0);
+
+  const memberContact = { firstName: member.firstName, lastName: member.lastName, email: member.email, phone: member.phone, zip: member.zip };
+  const hasCard = methods.some((m) => m.status !== "EXPIRED");
 
   return (
     <div className="space-y-6">
@@ -56,7 +67,7 @@ export default async function PortalBilling() {
         <KpiCard
           label="Past due"
           value={`$${(pastDue / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-          hint={pastDue > 0 ? "Please update payment method" : undefined}
+          hint={pastDue > 0 ? (hasCard ? "Pay now or update your card" : "Add a card to pay") : undefined}
         />
       </div>
 
@@ -76,20 +87,12 @@ export default async function PortalBilling() {
 
       <Card>
         <CardHeader title="Payment methods" subtitle="We charge your default card on the billing date of each cycle." />
-        <div className="mt-4 space-y-2">
-          {methods.length === 0 ? (
-            <p className="text-apple-sm text-apple-text-tertiary">No card on file.</p>
-          ) : (
-            methods.map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded-apple-sm border border-apple-divider px-3 py-2 text-apple-sm">
-                <div className="font-medium text-apple-text">{m.brand} •••• {m.last4}</div>
-                <div className="text-apple-xs text-apple-text-tertiary">
-                  {m.isDefault && "Default · "}Exp {m.expMonth?.toString().padStart(2, "0")}/{m.expYear}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <PortalCardManager
+          square={square}
+          cards={methods.map((m) => ({ id: m.id, brand: m.brand, last4: m.last4, expMonth: m.expMonth, expYear: m.expYear, isDefault: m.isDefault, status: m.status }))}
+          member={memberContact}
+          readOnly={readOnly}
+        />
       </Card>
 
       <Card>
@@ -99,18 +102,28 @@ export default async function PortalBilling() {
         ) : (
           <ul className="mt-3 divide-y divide-apple-divider">
             {invoices.map((i) => (
-              <li key={i.id} className="flex items-center justify-between py-2 text-apple-sm">
+              <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-apple-sm">
                 <div>
-                  <div className="font-medium text-apple-text">Invoice #{i.number}</div>
+                  <div className="font-medium text-apple-text">Invoice #{i.number}{i.description ? <span className="font-normal text-apple-text-secondary"> · {i.description}</span> : null}</div>
                   <div className="text-apple-xs text-apple-text-tertiary">
                     {i.paidAt
                       ? `Paid ${new Date(i.paidAt).toLocaleDateString()}`
                       : `Due ${new Date(i.dueDate).toLocaleDateString()}`}
+                    {i.lastFailureReason && PAYABLE.includes(i.status) ? ` · ${i.lastFailureReason}` : ""}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Money cents={i.totalCents} />
+                  <Money cents={i.totalCents} currency={currency} />
                   <StatusBadge status={i.status} size="sm" />
+                  {PAYABLE.includes(i.status) && i.totalCents - i.refundedCents > 0 && (
+                    <PortalPayButton
+                      invoice={{ id: i.id, number: i.number, remainingCents: i.totalCents - i.refundedCents, currency }}
+                      square={square}
+                      hasCard={hasCard}
+                      member={memberContact}
+                      readOnly={readOnly}
+                    />
+                  )}
                 </div>
               </li>
             ))}
