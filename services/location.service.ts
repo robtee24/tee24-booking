@@ -247,6 +247,188 @@ export async function updateLocationDisabled({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH: Location details (name/business/contact/address/timezone/branding)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Common US zones first; any valid IANA zone is accepted by `isValidTimezone`. */
+export const COMMON_TIMEZONES: { value: string; label: string }[] = [
+  { value: "America/New_York", label: "Eastern (New York)" },
+  { value: "America/Chicago", label: "Central (Chicago)" },
+  { value: "America/Denver", label: "Mountain (Denver)" },
+  { value: "America/Phoenix", label: "Arizona (Phoenix, no DST)" },
+  { value: "America/Los_Angeles", label: "Pacific (Los Angeles)" },
+  { value: "America/Anchorage", label: "Alaska (Anchorage)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (Honolulu)" },
+  { value: "America/Puerto_Rico", label: "Atlantic (Puerto Rico)" },
+  { value: "America/Toronto", label: "Eastern (Toronto)" },
+  { value: "America/Vancouver", label: "Pacific (Vancouver)" },
+  { value: "Europe/London", label: "UK (London)" },
+  { value: "UTC", label: "UTC" },
+];
+
+export function isValidTimezone(tz: string): boolean {
+  if (!tz || typeof tz !== "string") return false;
+  try {
+    // Throws RangeError for unknown zones.
+    new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type LocationDetailsPatch = Partial<{
+  name: string;
+  businessName: string | null;
+  phone: string | null;
+  email: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+  timezone: string;
+  logoUrl: string | null;
+  bookingNote: string | null;
+  passAccessUrl: string | null;
+  disabled: boolean;
+}>;
+
+export const LOCATION_DETAILS_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  disabled: true,
+  businessName: true,
+  phone: true,
+  email: true,
+  addressLine1: true,
+  addressLine2: true,
+  city: true,
+  state: true,
+  zip: true,
+  country: true,
+  timezone: true,
+  logoUrl: true,
+  bookingNote: true,
+  passAccessUrl: true,
+} as const;
+
+function cleanNullable(v: unknown, max = 200): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s ? s.slice(0, max) : null;
+}
+
+/**
+ * Validate + normalize a details patch. Throws Error with a user-facing
+ * message on invalid input. Returns only the keys that were supplied.
+ */
+export function sanitizeLocationDetails(input: Record<string, unknown>): LocationDetailsPatch {
+  const out: LocationDetailsPatch = {};
+  if (input.name !== undefined) {
+    const nm = String(input.name ?? "").trim();
+    if (!nm) throw new Error("Name cannot be empty");
+    out.name = nm.slice(0, 120);
+  }
+  for (const k of ["businessName", "addressLine1", "addressLine2", "city", "state", "zip"] as const) {
+    if (input[k] !== undefined) out[k] = cleanNullable(input[k]);
+  }
+  if (input.country !== undefined) {
+    const c = cleanNullable(input.country, 2);
+    out.country = c ? c.toUpperCase() : null;
+  }
+  if (input.phone !== undefined) {
+    const p = cleanNullable(input.phone, 32);
+    if (p && p.replace(/\D/g, "").length < 7) throw new Error("Phone number looks too short");
+    out.phone = p;
+  }
+  if (input.email !== undefined) {
+    const e = cleanNullable(input.email, 200)?.toLowerCase() ?? null;
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new Error("Email address is invalid");
+    out.email = e;
+  }
+  if (input.timezone !== undefined) {
+    const tz = String(input.timezone ?? "").trim();
+    if (!isValidTimezone(tz)) throw new Error(`Unknown timezone "${tz}" — use an IANA name like America/New_York`);
+    out.timezone = tz;
+  }
+  if (input.logoUrl !== undefined) {
+    const u = cleanNullable(input.logoUrl, 500);
+    if (u && !/^https?:\/\//i.test(u)) throw new Error("Logo URL must start with http:// or https://");
+    out.logoUrl = u;
+  }
+  if (input.passAccessUrl !== undefined) {
+    const u = cleanNullable(input.passAccessUrl, 500);
+    if (u && !/^https?:\/\//i.test(u)) throw new Error("Pass access URL must start with http:// or https://");
+    out.passAccessUrl = u;
+  }
+  if (input.bookingNote !== undefined) {
+    out.bookingNote = input.bookingNote === null ? null : String(input.bookingNote).slice(0, 4000);
+  }
+  if (input.disabled !== undefined) out.disabled = Boolean(input.disabled);
+  return out;
+}
+
+export async function updateLocationDetails(slug: string, patch: LocationDetailsPatch) {
+  return getPrisma().location.update({ where: { slug }, data: patch, select: LOCATION_DETAILS_SELECT });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organization (parent of locations) — settings row + cheap comms status
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const ORG_SETTINGS_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  brandColor: true,
+  logoUrl: true,
+  contactEmail: true,
+  contactPhone: true,
+  defaultTimezone: true,
+  emailEnabled: true,
+  smsEnabled: true,
+  bccEmail: true,
+  replyToEmail: true,
+  emailFooter: true,
+  updatedAt: true,
+} as const;
+
+/** v1 has a single Organization row; create it lazily so settings always load. */
+export async function getOrCreateOrg() {
+  const prisma = getPrisma();
+  const existing = await prisma.organization.findFirst({ select: ORG_SETTINGS_SELECT, orderBy: { createdAt: "asc" } });
+  if (existing) return existing;
+  return prisma.organization.create({ data: { name: "Tee24", slug: "tee24" }, select: ORG_SETTINGS_SELECT });
+}
+
+export type CommsStatus = { emailEnabled: boolean; smsEnabled: boolean };
+let commsCache: { at: number; value: CommsStatus } | null = null;
+const COMMS_TTL_MS = 30_000;
+
+/**
+ * Email/SMS kill-switch state for the admin shell banner. Cached in-process
+ * for 30s so the layout stays cheap; `invalidateCommsStatus()` after a PATCH.
+ */
+export async function getCommsStatus(): Promise<CommsStatus> {
+  if (commsCache && Date.now() - commsCache.at < COMMS_TTL_MS) return commsCache.value;
+  try {
+    const org = await getPrisma().organization.findFirst({ select: { emailEnabled: true, smsEnabled: true }, orderBy: { createdAt: "asc" } });
+    const value = { emailEnabled: org?.emailEnabled ?? true, smsEnabled: org?.smsEnabled ?? true };
+    commsCache = { at: Date.now(), value };
+    return value;
+  } catch {
+    return { emailEnabled: true, smsEnabled: true };
+  }
+}
+
+export function invalidateCommsStatus() {
+  commsCache = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DELETE: Full location removal (with safety checks)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function deleteLocation(slug: string): Promise<void> {

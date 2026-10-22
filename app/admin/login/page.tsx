@@ -1,7 +1,9 @@
 // app/admin/login/page.tsx
 "use client";
 
-import OtpFlow from "@/components/OtpFlow";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import AdminLoginFlow from "./AdminLoginFlow";
 
 export default function AdminLoginPage() {
   return (
@@ -12,16 +14,15 @@ export default function AdminLoginPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
         </div>
-        <OtpFlow
-          title="Tee24 Admin Login"
-          subtitle="Enter your phone to receive a one-time code"
-          startEndpoint="/api/admin/auth/start"
-          verifyEndpoint="/api/admin/auth/verify"
-          onSuccess={() => {
-            window.location.href = "/admin";
-          }}
-        />
+        <Suspense fallback={<AdminLoginFlow />}>
+          <LoginWithRedirect />
+        </Suspense>
       </div>
     </div>
   );
+}
+
+function LoginWithRedirect() {
+  const sp = useSearchParams();
+  return <AdminLoginFlow redirectTo={sp.get("redirect")} />;
 }

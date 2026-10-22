@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { Card, CardHeader, StatusBadge, Money } from "@/components/ui";
 import { getCurrentMember } from "@/lib/member-session";
 import { getPrisma } from "@/lib/db";
+import { PortalSubNav } from "@/components/portal/PortalSubNav";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,10 @@ export default async function PortalProfile() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-apple-2xl font-semibold tracking-tight">Welcome back, {member.firstName}</h1>
+      <div className="space-y-3">
+        <h1 className="text-apple-2xl font-semibold tracking-tight">Welcome back, {member.firstName}</h1>
+        <PortalSubNav />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -31,14 +36,15 @@ export default async function PortalProfile() {
               {sub.paidThroughDate && (
                 <div className="mt-1 text-apple-xs text-apple-text-tertiary">Paid through {new Date(sub.paidThroughDate).toLocaleDateString()}</div>
               )}
+              <Link href="/portal/membership" className="mt-3 inline-block text-apple-sm font-medium text-apple-blue hover:underline">Manage membership →</Link>
             </>
           ) : (
-            <p className="mt-3 text-apple-sm text-apple-text-tertiary">You don't have an active membership.</p>
+            <p className="mt-3 text-apple-sm text-apple-text-tertiary">You don&apos;t have an active membership.</p>
           )}
         </Card>
 
         <Card>
-          <CardHeader title="Door access" />
+          <CardHeader title="Door access" action={<Link href="/portal/card" className="text-apple-sm font-medium text-apple-blue hover:underline">Member card</Link>} />
           <div className="mt-3">
             {member.kisiAccessEnabled ? (
               <p className="text-apple-sm text-apple-green">Enabled — open the door from your Kisi mobile app.</p>
@@ -49,7 +55,7 @@ export default async function PortalProfile() {
         </Card>
 
         <Card>
-          <CardHeader title="Profile" />
+          <CardHeader title="Profile" action={<Link href="/portal/profile" className="text-apple-sm font-medium text-apple-blue hover:underline">Edit</Link>} />
           <dl className="mt-3 space-y-1.5 text-apple-sm">
             <div className="flex justify-between"><dt className="text-apple-text-secondary">Email</dt><dd>{member.email}</dd></div>
             <div className="flex justify-between"><dt className="text-apple-text-secondary">Phone</dt><dd>{member.phone}</dd></div>

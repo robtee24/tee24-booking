@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { getPrisma } from "@/lib/db";
-import { getCurrentAdmin, isFullAccess } from "@/lib/access";
-import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { getCurrentAdmin } from "@/lib/access";
+import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { BarChart, DonutChart, KpiCard } from "@/components/ui/charts";
-import { Bell } from "lucide-react";
 import { lastNDays } from "@/lib/chart-data";
+import { inboxWhere, unreadWhere } from "@/services/staff.service";
+import { InboxClient } from "./InboxClient";
 
 export const dynamic = "force-dynamic";
 
@@ -13,21 +13,14 @@ export default async function NotificationsInbox() {
   if (!admin) return null;
   const prisma = getPrisma();
 
-  const where: any = {};
-  if (!isFullAccess(admin.role)) {
-    where.locationId = { in: admin.locations.map((l) => l.locationId) };
-  }
+  const scope = { role: admin.role, locationIds: admin.locations.map((l) => l.locationId) };
+  const where = inboxWhere(scope);
 
   const sevenAgo = new Date();
   sevenAgo.setDate(sevenAgo.getDate() - 7);
 
-  const [notes, unread, recentForChart] = await Promise.all([
-    prisma.adminNotification.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
-    prisma.adminNotification.count({ where: { ...where, readAt: null } }),
+  const [unread, recentForChart] = await Promise.all([
+    prisma.adminNotification.count({ where: unreadWhere(scope) }),
     prisma.adminNotification.findMany({
       where: { ...where, createdAt: { gte: sevenAgo } },
       select: { createdAt: true, severity: true },
@@ -50,7 +43,7 @@ export default async function NotificationsInbox() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Notifications" description="Operational alerts across your locations." />
+      <PageHeader title="Notifications" description="Operational alerts across your locations. Click to open and mark read, or snooze for a day." />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <KpiCard label="Unread" value={unread.toLocaleString()} hint="Tap a notification to mark read" />
@@ -88,36 +81,7 @@ export default async function NotificationsInbox() {
         </Card>
       </div>
 
-      <Card padded={false}>
-        <CardHeader title="Inbox" className="p-5" />
-        {notes.length === 0 ? (
-          <EmptyState icon={<Bell className="h-6 w-6" />} title="Inbox zero" description="No notifications yet." />
-        ) : (
-          <ul className="divide-y divide-apple-divider">
-            {notes.map((n) => (
-              <li key={n.id} className={`p-4 ${!n.readAt ? "bg-apple-blue/5" : ""}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-apple-text">{n.title}</span>
-                      <StatusBadge status={n.severity} size="sm" />
-                    </div>
-                    {n.body && <p className="mt-1 text-apple-sm text-apple-text-secondary">{n.body}</p>}
-                    <div className="mt-1 text-apple-xs text-apple-text-tertiary">
-                      {n.kind} · {new Date(n.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                  {n.link && (
-                    <Link href={n.link} className="text-apple-sm text-apple-blue hover:underline">
-                      Open
-                    </Link>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <InboxClient initialUnread={unread} />
     </div>
   );
 }

@@ -1,9 +1,19 @@
 // app/api/admin/location-settings/route.ts
+//
+//   GET   ?locationSlug=   → { settings }   (no slug → { locations } list)
+//   PATCH { locationSlug, ...fields }        → { settings }
+//
+// Fields: booking rules, hours, bay-app, confirmation templates (legacy) plus
+// the location *details* (business name, contact, address, timezone, logo,
+// disabled). Any admin who can access the location may read/write.
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
-import { getAdminSession } from '@/lib/session.server';
+import { requireAdminApi, requireLocationAdminApi } from '@/lib/api-auth';
+import { audit } from '@/lib/audit';
+import { LOCATION_DETAILS_SELECT, sanitizeLocationDetails } from '@/services/location.service';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /* ----------------------------- Types & Helpers ----------------------------- */
 type DayHours = { day: number; closed?: boolean; open?: string; close?: string };
@@ -22,14 +32,14 @@ function sanitizeHours(input: unknown): DayHours[] {
   if (!Array.isArray(input)) return [];
   const rows: DayHours[] = [];
   for (const raw of input) {
-    const r = raw as any;
+    const r = raw as Record<string, unknown>;
     const day = Number(r?.day);
     if (!Number.isFinite(day) || day < 0 || day > 6) continue;
     const closed = Boolean(r?.closed);
     const row: DayHours = { day, closed };
     if (!closed) {
-      row.open = isHHMM(r?.open) ? r.open : '09:00';
-      row.close = isHHMM(r?.close) ? r.close : '21:00';
+      row.open = isHHMM(r?.open) ? (r.open as string) : '09:00';
+      row.close = isHHMM(r?.close) ? (r.close as string) : '21:00';
     }
     rows.push(row);
   }
@@ -44,8 +54,8 @@ function sanitizeHours(input: unknown): DayHours[] {
   return defaults.map((d) => byDay.get(d.day) ?? d);
 }
 
-function pickDefined<T extends Record<string, any>>(src: T) {
-  const out: Record<string, any> = {};
+function pickDefined<T extends Record<string, unknown>>(src: T) {
+  const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(src)) if (v !== undefined) out[k] = v;
   return out;
 }
@@ -60,12 +70,52 @@ function normalizeSlug(s: unknown) {
     .replace(/^-+|-+$/g, '');
 }
 
+const SETTINGS_SELECT = {
+  ...LOCATION_DETAILS_SELECT,
+  open24Hours: true,
+  hours: true,
+  minBookingMinutes: true,
+  maxBookingMinutes: true,
+  maxActiveBookingsPerGuest: true,
+  activeBookingIdentifyBy: true,
+  activeBookingWindowHours: true,
+  maxConsecutiveBookingsPerGuest: true,
+  bayAppEnabled: true,
+  bayAppUnlockMinutes: true,
+  bayAppWarningMinutes: true,
+  bayAppAutoCancelOnTimeout: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+async function loadSettings(where: { id: string } | { slug: string }) {
+  const loc = await getPrisma().location.findUnique({
+    where,
+    select: {
+      ...SETTINGS_SELECT,
+      notifications: {
+        where: { kind: 'CONFIRMATION', channel: { in: ['EMAIL', 'TEXT'] } },
+        select: { channel: true, template: true, enabled: true },
+      },
+      bays: { select: { number: true }, orderBy: { number: 'asc' } },
+    },
+  });
+  if (!loc) return null;
+  const emailConf = loc.notifications.find((n) => n.channel === 'EMAIL');
+  const smsConf = loc.notifications.find((n) => n.channel === 'TEXT');
+  const { notifications, bays, ...rest } = loc;
+  void notifications;
+  return {
+    ...rest,
+    bays: bays.map((b) => b.number),
+    emailTemplate: emailConf?.template ?? null,
+    smsTemplate: smsConf?.template ?? null,
+    emailConfirmationEnabled: !!emailConf?.enabled,
+    smsConfirmationEnabled: !!smsConf?.enabled,
+  };
+}
+
 /* ---------------------------------- GET ----------------------------------- */
-/**
- * GET /api/admin/location-settings
- * - List mode (no ?locationSlug): { locations: [{id,name,slug}] }
- * - Single mode (?locationSlug=slug): { settings: {...} }
- */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -73,82 +123,31 @@ export async function GET(req: Request) {
 
     // LIST MODE
     if (!slug) {
-      const session = await getAdminSession();
-      if (!session) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-
-      let locations;
-      if (session.role === 'SCOPED' && session.locationSlugs?.length) {
-        locations = await getPrisma().location.findMany({
-          where: { slug: { in: session.locationSlugs } },
-          select: { id: true, name: true, slug: true },
-          orderBy: { name: 'asc' },
-        });
-      } else {
-        locations = await getPrisma().location.findMany({
-          select: { id: true, name: true, slug: true },
-          orderBy: { name: 'asc' },
-        });
-      }
+      const guard = await requireAdminApi();
+      if (!guard.ok) return guard.response;
+      const admin = guard.admin;
+      const locations =
+        admin.role === 'SCOPED'
+          ? await getPrisma().location.findMany({
+              where: { id: { in: admin.locations.map((l) => l.locationId) } },
+              select: { id: true, name: true, slug: true, disabled: true, timezone: true },
+              orderBy: { name: 'asc' },
+            })
+          : await getPrisma().location.findMany({
+              select: { id: true, name: true, slug: true, disabled: true, timezone: true },
+              orderBy: { name: 'asc' },
+            });
       return NextResponse.json({ locations });
     }
 
-    // SINGLE MODE — fetch location + confirmation notifications
-    const loc = await getPrisma().location.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        bookingNote: true,
-        passAccessUrl: true,
-        open24Hours: true,
-        hours: true,
-        minBookingMinutes: true,
-        maxBookingMinutes: true,
-        maxActiveBookingsPerGuest: true,
-        activeBookingIdentifyBy: true,
-        activeBookingWindowHours: true,
-        maxConsecutiveBookingsPerGuest: true,
-        bayAppEnabled: true,
-        bayAppUnlockMinutes: true,
-        bayAppWarningMinutes: true,
-        bayAppAutoCancelOnTimeout: true,
-        bays: { select: { number: true }, orderBy: { number: 'asc' } },
-        createdAt: true,
-        updatedAt: true,
-        notifications: {
-          where: {
-            kind: "CONFIRMATION",
-            channel: { in: ["EMAIL", "TEXT"] },
-          },
-          select: {
-            channel: true,
-            template: true,
-            enabled: true,
-          },
-        },
-      },
-    });
-
-    if (!loc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    const emailConf = loc.notifications.find(n => n.channel === "EMAIL");
-    const smsConf = loc.notifications.find(n => n.channel === "TEXT");
-
-    return NextResponse.json({
-      settings: {
-        ...loc,
-        bays: loc.bays.map(b => b.number),
-        emailTemplate: emailConf?.template ?? null,
-        smsTemplate: smsConf?.template ?? null,
-        emailConfirmationEnabled: !!emailConf?.enabled,
-        smsConfirmationEnabled: !!smsConf?.enabled,
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+    // SINGLE MODE
+    const guard = await requireLocationAdminApi({ locationSlug: slug });
+    if (!guard.ok) return guard.response;
+    const settings = await loadSettings({ slug });
+    if (!settings) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ settings });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Server error' }, { status: 500 });
   }
 }
 
@@ -161,21 +160,28 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Missing locationSlug' }, { status: 400 });
     }
 
+    const guard = await requireLocationAdminApi({ locationSlug: currentSlug });
+    if (!guard.ok) return guard.response;
+
     // Find existing
     const existing = await getPrisma().location.findUnique({
       where: { slug: currentSlug },
-      select: { id: true, name: true, slug: true },
+      select: LOCATION_DETAILS_SELECT,
     });
     if (!existing) {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 });
     }
 
-    // ----- Name / Slug updates (optional) -----
-    let nextName: string | undefined = undefined;
-    if (body.name !== undefined) {
-      const nm = String(body.name).trim();
-      if (!nm) return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 });
-      nextName = nm;
+    // ----- Details (name, contact, address, timezone, branding, disabled) -----
+    let details: Record<string, unknown>;
+    try {
+      details = sanitizeLocationDetails(body);
+    } catch (e: unknown) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Invalid details' }, { status: 400 });
+    }
+    // Only ROOT/FULL may disable/enable a location.
+    if (details.disabled !== undefined && guard.admin.role === 'SCOPED') {
+      return NextResponse.json({ error: 'Only ROOT/FULL admins can disable a location' }, { status: 403 });
     }
 
     let nextSlug: string | undefined = undefined;
@@ -206,26 +212,14 @@ export async function PATCH(req: Request) {
     const activeBookingWindowHours = body.activeBookingWindowHours === undefined ? undefined : clamp(body.activeBookingWindowHours, 1, 720, 24);
     const maxConsecutiveBookingsPerGuest = body.maxConsecutiveBookingsPerGuest === undefined ? undefined : clamp(body.maxConsecutiveBookingsPerGuest, 1, 10, 2);
 
-    let passAccessUrl: string | null | undefined = undefined;
-    if ('passAccessUrl' in body) {
-      if (body.passAccessUrl === null) {
-        passAccessUrl = null;
-      } else {
-        const s = String(body.passAccessUrl ?? '').trim();
-        passAccessUrl = s.length ? s : null;
-      }
-    }
-
     const bayAppEnabled = body.bayAppEnabled === undefined ? undefined : Boolean(body.bayAppEnabled);
     const bayAppUnlockMinutes = body.bayAppUnlockMinutes === undefined ? undefined : clamp(body.bayAppUnlockMinutes, 1, 60, 10);
     const bayAppWarningMinutes = body.bayAppWarningMinutes === undefined ? undefined : clamp(body.bayAppWarningMinutes, 1, 60, 5);
     const bayAppAutoCancelOnTimeout = body.bayAppAutoCancelOnTimeout === undefined ? undefined : Boolean(body.bayAppAutoCancelOnTimeout);
 
     const data = pickDefined({
-      name: nextName,
+      ...details,
       slug: nextSlug,
-      bookingNote: body.bookingNote ?? (body.bookingNote === null ? null : undefined),
-      passAccessUrl,
       open24Hours,
       hours,
       minBookingMinutes,
@@ -240,140 +234,47 @@ export async function PATCH(req: Request) {
       bayAppAutoCancelOnTimeout,
     });
 
-    // Update location (without email/sms templates)
     const updated = await getPrisma().location.update({
       where: { slug: existing.slug },
       data,
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        bookingNote: true,
-        passAccessUrl: true,
-        open24Hours: true,
-        hours: true,
-        minBookingMinutes: true,
-        maxBookingMinutes: true,
-        maxActiveBookingsPerGuest: true,
-        activeBookingIdentifyBy: true,
-        activeBookingWindowHours: true,
-        maxConsecutiveBookingsPerGuest: true,
-        bayAppEnabled: true,
-        bayAppUnlockMinutes: true,
-        bayAppWarningMinutes: true,
-        bayAppAutoCancelOnTimeout: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: { id: true, slug: true },
     });
 
-    // === MIGRATE CONFIRMATION TEMPLATES TO NOTIFICATION TABLE ===
+    // === Confirmation templates live in the Notification table ===
     if (body.emailTemplate !== undefined || body.smsTemplate !== undefined) {
       await getPrisma().$transaction(async (tx) => {
-        // Upsert EMAIL confirmation
-        if (body.emailTemplate !== undefined) {
+        for (const [channel, template] of [
+          ['EMAIL', body.emailTemplate],
+          ['TEXT', body.smsTemplate],
+        ] as const) {
+          if (template === undefined) continue;
           await tx.notification.upsert({
-            where: {
-              locationId_kind_channel_hoursBefore: {
-                locationId: updated.id,
-                kind: "CONFIRMATION",
-                channel: "EMAIL",
-                hoursBefore: 0,
-              },
-            },
-            create: {
-              locationId: updated.id,
-              kind: "CONFIRMATION",
-              channel: "EMAIL",
-              hoursBefore: 0,
-              enabled: true,
-              template: String(body.emailTemplate ?? ""),
-              order: 0,
-            },
-            update: {
-              template: String(body.emailTemplate ?? ""),
-            },
-          });
-        }
-
-        // Upsert SMS confirmation
-        if (body.smsTemplate !== undefined) {
-          await tx.notification.upsert({
-            where: {
-              locationId_kind_channel_hoursBefore: {
-                locationId: updated.id,
-                kind: "CONFIRMATION",
-                channel: "TEXT",
-                hoursBefore: 0,
-              },
-            },
-            create: {
-              locationId: updated.id,
-              kind: "CONFIRMATION",
-              channel: "TEXT",
-              hoursBefore: 0,
-              enabled: true,
-              template: String(body.smsTemplate ?? ""),
-              order: 0,
-            },
-            update: {
-              template: String(body.smsTemplate ?? ""),
-            },
+            where: { locationId_kind_channel_hoursBefore: { locationId: updated.id, kind: 'CONFIRMATION', channel, hoursBefore: 0 } },
+            create: { locationId: updated.id, kind: 'CONFIRMATION', channel, hoursBefore: 0, enabled: true, template: String(template ?? ''), order: 0 },
+            update: { template: String(template ?? '') },
           });
         }
       });
     }
 
-    // Re-fetch with notifications to return current values
-    const final = await getPrisma().location.findUnique({
-      where: { id: updated.id },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        bookingNote: true,
-        passAccessUrl: true,
-        open24Hours: true,
-        hours: true,
-        minBookingMinutes: true,
-        maxBookingMinutes: true,
-        maxActiveBookingsPerGuest: true,
-        activeBookingIdentifyBy: true,
-        activeBookingWindowHours: true,
-        maxConsecutiveBookingsPerGuest: true,
-        bayAppEnabled: true,
-        bayAppUnlockMinutes: true,
-        bayAppWarningMinutes: true,
-        bayAppAutoCancelOnTimeout: true,
-        createdAt: true,
-        updatedAt: true,
-        notifications: {
-          where: {
-            kind: "CONFIRMATION",
-            channel: { in: ["EMAIL", "TEXT"] },
-          },
-          select: {
-            channel: true,
-            template: true,
-            enabled: true,
-          },
-        },
-      },
-    });
+    if (Object.keys(data).length) {
+      const beforeSnap: Record<string, unknown> = {};
+      for (const k of Object.keys(data)) beforeSnap[k] = (existing as Record<string, unknown>)[k];
+      void audit({
+        actorId: guard.admin.id,
+        actorRole: guard.admin.role,
+        action: 'settings.update',
+        entityType: 'Location',
+        entityId: updated.id,
+        before: beforeSnap,
+        after: data,
+        metadata: { via: 'location-settings' },
+      });
+    }
 
-    const emailConf = final?.notifications.find(n => n.channel === "EMAIL");
-    const smsConf = final?.notifications.find(n => n.channel === "TEXT");
-
-    return NextResponse.json({
-      settings: {
-        ...final,
-        emailTemplate: emailConf?.template ?? null,
-        smsTemplate: smsConf?.template ?? null,
-        emailConfirmationEnabled: !!emailConf?.enabled,
-        smsConfirmationEnabled: !!smsConf?.enabled,
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+    const settings = await loadSettings({ id: updated.id });
+    return NextResponse.json({ settings });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Server error' }, { status: 500 });
   }
 }

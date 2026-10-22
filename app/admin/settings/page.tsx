@@ -14,96 +14,103 @@ import {
   Database,
   Users,
 } from "lucide-react";
+import { adminRoutes } from "@/lib/admin/routes";
+import { getCurrentAdmin, isFullAccess } from "@/lib/access";
+import { getPrisma } from "@/lib/db";
+import { MyAccountCard, type MeDTO } from "@/components/admin/staff/MyAccountCard";
+
+export const dynamic = "force-dynamic";
 
 const SECTIONS = [
   {
-    title: "Organization",
-    body: "Brand, contact info, default timezone, multi-org boundary.",
-    href: "/admin/settings",
+    title: "Organization, email & SMS",
+    body: "Brand, contact info, email/SMS kill switches, reply-to, BCC, and email footer.",
+    href: adminRoutes.settingsEmail(),
     icon: <Building2 className="h-5 w-5" />,
     accent: "blue" as const,
+    fullOnly: true,
   },
   {
     title: "Admins",
-    body: "Manage admin users, roles, permissions, and 2FA.",
-    href: "/admin/admins",
+    body: "Manage admin users, roles, permissions, invites, PINs, and 2FA.",
+    href: adminRoutes.admins(),
     icon: <Users className="h-5 w-5" />,
     accent: "blue" as const,
   },
   {
     title: "Locations",
-    body: "Hours, bays, Kisi door mappings, and Bay App settings per location.",
-    href: "/admin/locations",
+    body: "Details, hours, bays, Kisi door mappings, and Bay App settings per location.",
+    href: adminRoutes.locations(),
     icon: <Building2 className="h-5 w-5" />,
     accent: "blue" as const,
   },
   {
     title: "Square (payments)",
     body: "API token, webhook signature key, default location id.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsHealth(),
     icon: <CreditCard className="h-5 w-5" />,
     accent: "green" as const,
   },
   {
     title: "Kisi (door access)",
     body: "API key, webhook secret, door-to-location map.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsHealth(),
     icon: <KeyRound className="h-5 w-5" />,
     accent: "purple" as const,
   },
   {
     title: "Quo (SMS)",
     body: "API key, sender number, opt-in keyword, brand name.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsHealth(),
     icon: <MessageSquare className="h-5 w-5" />,
     accent: "orange" as const,
   },
   {
     title: "Resend (email)",
     body: "API key, default From, reply-to address, footer.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsEmail(),
     icon: <Mail className="h-5 w-5" />,
     accent: "orange" as const,
   },
   {
     title: "PayPal Payouts",
     body: "Client ID/Secret, sandbox/live, payout approval workflow.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsHealth(),
     icon: <Banknote className="h-5 w-5" />,
     accent: "green" as const,
   },
   {
     title: "Compliance",
     body: "TCPA opt-in language, CAN-SPAM unsubscribe, GDPR/CCPA export & deletion.",
-    href: "/admin/settings",
+    href: adminRoutes.settingsEmail(),
     icon: <Shield className="h-5 w-5" />,
     accent: "purple" as const,
   },
   {
     title: "Audit log",
-    body: "View and export audit log entries — every admin action is recorded.",
-    href: "/admin/settings/audit-log",
+    body: "View and filter audit log entries — every admin action is recorded.",
+    href: adminRoutes.settingsAuditLog(),
     icon: <ScrollText className="h-5 w-5" />,
     accent: "blue" as const,
   },
   {
     title: "Integration health",
     body: "Webhook delivery dashboard, reconciliation jobs, integration status.",
-    href: "/admin/settings/health",
+    href: adminRoutes.settingsHealth(),
     icon: <Activity className="h-5 w-5" />,
     accent: "green" as const,
   },
   {
     title: "Churn risk model",
     body: "Active model version, accuracy metrics, and v2 training history.",
-    href: "/admin/settings/churn-model",
+    href: adminRoutes.settingsChurnModel(),
     icon: <Bot className="h-5 w-5" />,
     accent: "purple" as const,
   },
   {
     title: "Migration",
     body: "Gymdesk import status, dry-run, sync, and cutover runbook.",
-    href: "/admin/settings/migration",
+    href: adminRoutes.settingsMigration(),
     icon: <Database className="h-5 w-5" />,
     accent: "orange" as const,
   },
@@ -116,18 +123,42 @@ const ACCENT: Record<string, string> = {
   purple: "bg-apple-purple/10 text-apple-purple",
 };
 
-export default function OrgSettingsPage() {
+export default async function OrgSettingsPage() {
+  const me = await getCurrentAdmin();
+  if (!me) return null;
+  const row = await getPrisma().admin.findUnique({
+    where: { id: me.id },
+    select: { id: true, name: true, email: true, phone: true, role: true, twoFactorEnabled: true, frontDeskPinHash: true, lastLoginAt: true },
+  });
+  const meDto: MeDTO | null = row
+    ? {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        role: row.role,
+        twoFactorEnabled: row.twoFactorEnabled,
+        hasPin: !!row.frontDeskPinHash,
+        lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
+      }
+    : null;
+
+  const full = isFullAccess(me.role);
+  const sections = SECTIONS.filter((s) => !s.fullOnly || full);
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Organization settings"
-        description="Centralize integrations, compliance, and reliability tooling."
+        title="Settings"
+        description="Your account, organization defaults, integrations, compliance, and reliability tooling."
       />
 
+      {meDto && <MyAccountCard me={meDto} />}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <Link key={s.title} href={s.href} className="group">
-            <Card className="transition-all hover:-translate-y-0.5 hover:shadow-apple-md">
+            <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-apple-md">
               <div className="flex items-start gap-3">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-apple-sm ${ACCENT[s.accent]}`}>
                   {s.icon}

@@ -12,17 +12,29 @@ import { adminRoutes } from "@/lib/admin/routes";
 import { SettingsSection, Field } from "@/components/admin/location-settings/SettingsSection";
 import { useLocationSettings, clampInt, type LocationSettings } from "@/components/admin/location-settings/useLocationSettings";
 import { SettingsPageState } from "@/components/admin/location-settings/SettingsPageState";
+import { DetailsSettings } from "@/components/admin/location-settings/DetailsSettings";
 
 export default function LocationDetailsPage() {
   const params = useParams<{ slug: string }>();
   const slug = decodeURIComponent(params?.slug ?? "");
   const { data, loading, error, saving, save, reload } = useLocationSettings(slug);
+  const [role, setRole] = React.useState<"ROOT" | "FULL" | "SCOPED" | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/auth/session", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => !cancelled && setRole(j?.role ?? null))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Location details"
-        description={data ? `Overview and booking settings for ${data.name}.` : "Overview and booking settings."}
+        description={data ? `Identity, contact, and booking settings for ${data.name}.` : "Identity, contact, and booking settings."}
         meta={data?.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleString()}` : undefined}
       />
 
@@ -30,6 +42,7 @@ export default function LocationDetailsPage() {
         {data && (
           <>
             <OverviewSection data={data} saving={saving} save={save} />
+            <DetailsSettings data={data} saving={saving} save={save} canDisable={role === "ROOT" || role === "FULL"} />
             <BookingNoteSection data={data} saving={saving} save={save} />
             <PassUrlSection data={data} saving={saving} save={save} />
             <BookingRulesSection data={data} saving={saving} save={save} />
