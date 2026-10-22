@@ -41,6 +41,7 @@ export const adminRoutes = {
   adminDetail: (id: string) => `/admin/admins/${enc(id)}`,
   bayApp: () => "/admin/bay-app",
   checkIns: () => "/admin/check-ins",
+  checkInAnalytics: () => "/admin/check-ins/analytics",
   doorAccess: () => "/admin/door-access",
   tasks: () => "/admin/tasks",
   notifications: () => "/admin/notifications",
@@ -58,6 +59,7 @@ export const adminRoutes = {
     troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
     frontDesk: (slug: string) => `/admin/locations/${enc(slug)}/front-desk`,
     checkIns: (slug: string) => `/admin/locations/${enc(slug)}/check-ins`,
+    checkInAnalytics: (slug: string) => `/admin/locations/${enc(slug)}/check-ins/analytics`,
 
     scheduling: {
       root: (slug: string) => `/admin/locations/${enc(slug)}/scheduling`,
@@ -367,6 +369,7 @@ export const SEGMENT_LABELS: Record<string, string> = {
   "churn-model": "Churn Model",
   "front-desk": "Front Desk",
   "check-ins": "Check Ins",
+  analytics: "Analytics",
   "door-access": "Door Access",
   sales: "Sales",
   products: "Products",

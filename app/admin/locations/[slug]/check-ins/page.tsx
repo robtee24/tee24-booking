@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
+import Link from "next/link";
+import { BarChart3 } from "lucide-react";
 import { PageHeader } from "@/components/ui";
+import { adminRoutes } from "@/lib/admin/routes";
 import { getActorContext } from "@/lib/actor";
 import { can } from "@/lib/permissions";
 import { kisiConfigured } from "@/lib/kisi";
@@ -29,6 +32,14 @@ export default async function LocationCheckInsPage({ params }: { params: Promise
         description={`Door unlocks at ${location.name}, matched to members by Kisi email. ${
           doors ? `${doors} door${doors === 1 ? "" : "s"} assigned.` : "No doors assigned to this location yet — assign them under Door Access."
         }`}
+        actions={
+          <Link
+            href={adminRoutes.loc.checkInAnalytics(location.slug)}
+            className="inline-flex h-10 items-center gap-1.5 rounded-apple-sm bg-apple-green px-4 text-apple-sm font-medium text-white hover:opacity-90"
+          >
+            <BarChart3 className="h-4 w-4" /> Analytics
+          </Link>
+        }
       />
       <CheckInsClient
         scope={{ kind: "location", locationId: location.id, slug: location.slug, name: location.name, timezone: location.timezone }}
