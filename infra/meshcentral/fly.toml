@@ -1,0 +1,32 @@
+# Fly.io app for the Tee24 MeshCentral remote-support server.
+#   deploy:  fly deploy --config infra/meshcentral/fly.toml --ha=false
+# Bay PCs keep a WebSocket open to this server, so it must never auto-stop.
+app = "tee24-remote"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DYNAMIC_CONFIG = "false"
+  CONFIG_FILE = "/opt/meshcentral/meshcentral-data/config.json"
+
+[[mounts]]
+  source = "meshcentral_data"
+  destination = "/opt/meshcentral/meshcentral-data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 500
+    hard_limit = 1000
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
