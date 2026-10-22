@@ -8,7 +8,7 @@ import { deliverEmail, deliverSms, isQuietHours, nextQuietHoursEnd } from "@/lib
 import type { EmailAttachment } from "@/lib/sendEmail";
 import { renderSystemTemplate } from "@/lib/system-templates";
 import { buildMemberVars } from "./system-messages.service";
-import { LEAD_STAGES, type LeadStage } from "@/lib/chart-data";
+import { ALL_LEAD_STAGES, type LeadStage } from "@/lib/chart-data";
 
 export type AudienceFilter = {
   locationId?: string;
@@ -376,8 +376,8 @@ export async function sendBulk(input: SendBulkInput) {
 
       const res =
         input.channel === "EMAIL"
-          ? await deliverEmail({ to, subject: subject ?? "", html: body, category: "MARKETING", organizationId: m.organizationId, attachments })
-          : await deliverSms({ to, text: body, category: "MARKETING", organizationId: m.organizationId, timeZone: m.location?.timezone });
+          ? await deliverEmail({ to, subject: subject ?? "", html: body, category: "MARKETING", organizationId: m.organizationId, attachments, ledger: false })
+          : await deliverSms({ to, text: body, category: "MARKETING", organizationId: m.organizationId, timeZone: m.location?.timezone, ledger: false });
 
       if (res.deferredUntil) {
         await prisma.message.update({ where: { id: msg.id }, data: { scheduledFor: res.deferredUntil } });
@@ -450,11 +450,12 @@ export async function sendTestToSelf(input: {
       organizationId: input.organizationId,
       attachments: attachmentsFromUrls(input.attachmentUrls),
       force: true,
+      ledger: false,
     });
     return { ok: res.ok, error: res.error, to: input.adminEmail, dryRun: res.dryRun };
   }
   if (!input.adminPhone) return { ok: false, error: "Your admin profile has no phone number" };
-  const res = await deliverSms({ to: input.adminPhone, text: `[TEST] ${rendered}`, category: "MARKETING", organizationId: input.organizationId, force: true });
+  const res = await deliverSms({ to: input.adminPhone, text: `[TEST] ${rendered}`, category: "MARKETING", organizationId: input.organizationId, force: true, ledger: false });
   return { ok: res.ok, error: res.error, to: input.adminPhone, dryRun: res.dryRun };
 }
 
@@ -497,8 +498,8 @@ export async function sendDueScheduledMessages(now = new Date()): Promise<number
       const orgId = m.member?.organizationId ?? null;
       const res =
         m.channel === "EMAIL"
-          ? await deliverEmail({ to, subject: m.subject ?? "", html: body, category, organizationId: orgId, attachments })
-          : await deliverSms({ to, text: body, category, organizationId: orgId, timeZone: m.member?.location?.timezone });
+          ? await deliverEmail({ to, subject: m.subject ?? "", html: body, category, organizationId: orgId, attachments, ledger: false })
+          : await deliverSms({ to, text: body, category, organizationId: orgId, timeZone: m.member?.location?.timezone, ledger: false });
 
       if (res.deferredUntil) {
         await prisma.message.update({ where: { id: m.id }, data: { scheduledFor: res.deferredUntil } });
@@ -575,7 +576,7 @@ export type MarketingSettings = {
 export const DEFAULT_MARKETING_SETTINGS: MarketingSettings = {
   referral: { rewardKind: "CREDIT", rewardCents: 2500, autoApprove: false, holdDays: 30, enabled: true },
   sources: DEFAULT_ACQUISITION_SOURCES,
-  leadStageLabels: { NEW: "New", CONTACTED: "Contacted", BOOKED: "Booked", TRIAL: "Trial", CONVERTED: "Converted", LOST: "Lost" },
+  leadStageLabels: { NEW: "New", CONTACTED: "Contacted", BOOKED: "Booked", TRIAL: "Trial", CONVERTED: "Converted", LOST: "Lost", ARCHIVED: "Archived", SPAM: "Spam" },
   quietHours: { enabled: true, start: 21, end: 9 },
   complianceText:
     "Marketing SMS is only sent to members who opted in. Reply STOP to opt out, START to re-subscribe. No marketing texts between 9pm and 9am local time.",
@@ -612,7 +613,7 @@ export async function saveMarketingSettings(organizationId: string | null, patch
     quietHours: { ...current.quietHours, ...(patch.quietHours ?? {}) },
     complianceText: patch.complianceText ?? current.complianceText,
   };
-  for (const s of LEAD_STAGES) if (!next.leadStageLabels[s]) next.leadStageLabels[s] = DEFAULT_MARKETING_SETTINGS.leadStageLabels[s];
+  for (const s of ALL_LEAD_STAGES) if (!next.leadStageLabels[s]) next.leadStageLabels[s] = DEFAULT_MARKETING_SETTINGS.leadStageLabels[s];
 
   const existing = await prisma.messageTemplate.findFirst({
     where: { organizationId: organizationId ?? null, eventKey: SETTINGS_KEY, channel: "SYSTEM" },

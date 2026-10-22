@@ -31,11 +31,17 @@ export default async function InboxPage({ params }: { params: Promise<{ slug: st
     <div className="space-y-6">
       <PageHeader
         title="Inbox"
-        description="Two-way texts and emails with members and leads. Inbound texts land here automatically."
+        description="Two-way texts and emails with members and leads at this location. Inbound texts, emails and website forms land here automatically."
         meta={smsFrom ? <Badge tone="muted">Texting from {smsFrom}</Badge> : <Badge tone="warn">No SMS number configured</Badge>}
       />
       <Suspense>
-        <InboxClient initial={initial} admins={admins} currentAdminId={admin?.id ?? null} />
+        <InboxClient
+          initial={initial}
+          admins={admins}
+          currentAdminId={admin?.id ?? null}
+          scope={{ kind: "location", locationId: location.id, slug }}
+          locations={[{ id: location.id, slug: location.slug, name: location.name }]}
+        />
       </Suspense>
     </div>
   );

@@ -104,7 +104,7 @@ export async function sendSaleReceipt(sale: SaleDTO, location: ReceiptLocation, 
   const recipient = (to ?? sale.customerEmail ?? "").trim();
   if (!recipient || !recipient.includes("@")) return false;
   try {
-    await sendEmail({ to: recipient, subject: receiptSubject(sale, location), html: buildReceiptHtml(sale, location) });
+    await sendEmail({ to: recipient, subject: receiptSubject(sale, location), html: buildReceiptHtml(sale, location), ledger: { memberId: sale.memberId ?? null, locationId: sale.locationId, source: "pos.receipt" } });
     return true;
   } catch (e) {
     console.error("[pos-receipt] failed to send receipt", e);

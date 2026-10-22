@@ -437,7 +437,7 @@ async function runOneStep(enrollment: any) {
       const msg = await prisma.message.create({
         data: { memberId: member.id, channel: "EMAIL", direction: "OUTBOUND", status: "QUEUED", category: "MARKETING", subject, body, toAddress: member.email, templateId: cfg.templateId ?? null, sentByAutomationId: automation.id },
       });
-      const res = await deliverEmail({ to: member.email, subject, html: body, category: "MARKETING", organizationId: member.organizationId });
+      const res = await deliverEmail({ to: member.email, subject, html: body, category: "MARKETING", organizationId: member.organizationId, ledger: false });
       await prisma.message.update({ where: { id: msg.id }, data: { status: res.ok ? "SENT" : res.skipped ? "QUEUED" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null } });
       break;
     }
@@ -452,7 +452,7 @@ async function runOneStep(enrollment: any) {
       const msg = await prisma.message.create({
         data: { memberId: member.id, channel: "SMS", direction: "OUTBOUND", status: "QUEUED", category: "MARKETING", body, toAddress: member.phone, templateId: cfg.templateId ?? null, sentByAutomationId: automation.id },
       });
-      const res = await deliverSms({ to: member.phone, text: body, category: "MARKETING", organizationId: member.organizationId, timeZone: member.location?.timezone });
+      const res = await deliverSms({ to: member.phone, text: body, category: "MARKETING", organizationId: member.organizationId, timeZone: member.location?.timezone, ledger: false });
       if (res.deferredUntil) {
         // Quiet hours: re-run this same step when the window opens.
         await prisma.message.update({ where: { id: msg.id }, data: { scheduledFor: res.deferredUntil } });

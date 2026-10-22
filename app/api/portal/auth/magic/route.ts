@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
     await sendEmail({
       to: member.email,
       subject: "Your sign-in link",
+      ledger: false, // contains a sign-in token
       html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Helvetica,sans-serif;padding:24px;color:#0f172a;">
   <h1 style="font-size:20px;margin:0 0 16px;">Sign in to your account</h1>

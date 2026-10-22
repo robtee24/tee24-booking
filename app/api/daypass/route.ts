@@ -163,11 +163,12 @@ export async function POST(req: NextRequest) {
     : `<p style="margin:0 0 12px;color:#94a3b8;">Door credential will be emailed shortly.</p>`}
   <p style="margin-top:16px;font-size:12px;color:#94a3b8;">Pass valid for the next 24 hours.</p>
 </div>`;
-    sendEmail({ to: email, subject: `Your ${location.name} day pass`, html }).catch(() => {});
+    sendEmail({ to: email, subject: `Your ${location.name} day pass`, html, ledger: { locationId: location.id, source: "daypass.purchase" } }).catch(() => {});
     if (credentialLink) {
       sendQuoSms({
         to: phone,
         text: `Welcome to ${location.name}! Your door access: ${credentialLink}`,
+        ledger: { locationId: location.id, source: "daypass.purchase" },
       }).catch(() => {});
     }
 

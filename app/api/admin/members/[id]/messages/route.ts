@@ -3,6 +3,7 @@ import { getPrisma } from "@/lib/db";
 import { assertCan } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { sendEmail, sendSMS } from "@/lib/notify";
+import { threadReplyTo } from "@/lib/inbound-email";
 import { apiError, readJson, requireMemberApi } from "../../_shared";
 
 export const dynamic = "force-dynamic";
@@ -60,10 +61,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     let status = "SENT";
     let providerError: string | null = null;
     try {
-      if (channel === "SMS") await sendSMS({ to: g.member.phone, text });
+      if (channel === "SMS") await sendSMS({ to: g.member.phone, text, ledger: false });
       else {
         const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto;white-space:pre-wrap;">${escapeHtml(text)}</div>`;
-        await sendEmail({ to: g.member.email, subject: subject!, html });
+        await sendEmail({ to: g.member.email, subject: subject!, html, ledger: false, replyTo: threadReplyTo(convo.id) });
       }
     } catch (e) {
       status = "FAILED";

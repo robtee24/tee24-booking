@@ -10,7 +10,7 @@ import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
 import { deliverEmail, deliverSms } from "@/lib/notify";
-import { LEAD_STAGES, normalizeLeadStage, type LeadStage } from "@/lib/chart-data";
+import { ALL_LEAD_STAGES, isClosedLeadStage, normalizeLeadStage, type LeadStage } from "@/lib/chart-data";
 import { toE164 } from "@/lib/phone";
 import { createMember } from "./member.service";
 import { mergeFields } from "./marketing.service";
@@ -34,8 +34,12 @@ export type LeadInput = {
 };
 
 export type LeadFilter = {
-  locationId: string;
-  stage?: LeadStage | "ALL";
+  /** Single location. */
+  locationId?: string;
+  /** Several locations (org-wide views). undefined with no locationId = every location. */
+  locationIds?: string[];
+  /** "ALL" = every pipeline stage (excludes ARCHIVED/SPAM); "CLOSED" = archived + spam; "EVERYTHING" = no stage filter. */
+  stage?: LeadStage | "ALL" | "CLOSED" | "EVERYTHING";
   source?: string;
   assignedToId?: string | "unassigned";
   followUp?: "due" | "overdue" | "today" | "none";
@@ -59,10 +63,13 @@ function normEmail(e?: string | null): string | null {
 
 export async function listLeads(filter: LeadFilter) {
   const prisma = getPrisma();
-  const where: any = { locationId: filter.locationId };
-  if (filter.stage && filter.stage !== "ALL") {
-    where.stage = filter.stage === "CONTACTED" ? { in: ["CONTACTED", "ENGAGED"] } : filter.stage;
-  }
+  const where: any = {};
+  if (filter.locationId) where.locationId = filter.locationId;
+  else if (filter.locationIds) where.locationId = { in: filter.locationIds };
+  const stage = filter.stage ?? "ALL";
+  if (stage === "ALL") where.stage = { notIn: ["ARCHIVED", "SPAM"] };
+  else if (stage === "CLOSED") where.stage = { in: ["ARCHIVED", "SPAM"] };
+  else if (stage !== "EVERYTHING") where.stage = stage === "CONTACTED" ? { in: ["CONTACTED", "ENGAGED"] } : stage;
   if (filter.source) where.source = filter.source;
   if (filter.assignedToId === "unassigned") where.assignedToId = null;
   else if (filter.assignedToId) where.assignedToId = filter.assignedToId;
@@ -152,11 +159,16 @@ export async function updateLead(id: string, patch: Partial<LeadInput>, actorId?
   if (patch.tags !== undefined) data.tags = patch.tags ?? [];
   if (patch.assignedToId !== undefined) data.assignedToId = patch.assignedToId || null;
   if (patch.nextFollowUpAt !== undefined) data.nextFollowUpAt = patch.nextFollowUpAt;
-  if (patch.stage !== undefined && (LEAD_STAGES as readonly string[]).includes(patch.stage)) data.stage = patch.stage;
+  if (patch.stage !== undefined && (ALL_LEAD_STAGES as readonly string[]).includes(patch.stage)) data.stage = patch.stage;
 
   const after = await prisma.visitor.update({ where: { id }, data });
   if (patch.stage && normalizeLeadStage(before.stage) !== patch.stage) {
     await prisma.visitorEvent.create({ data: { visitorId: id, kind: "STAGE_CHANGED", data: { from: normalizeLeadStage(before.stage), to: patch.stage, by: actorId ?? "system" } } });
+    // Archiving / marking spam closes the lead's open inbox threads so they stop cluttering the inbox.
+    if (isClosedLeadStage(patch.stage)) {
+      await prisma.conversation.updateMany({ where: { visitorId: id, status: "OPEN" }, data: { status: "RESOLVED" } });
+      await prisma.message.updateMany({ where: { conversation: { visitorId: id }, direction: "INBOUND", openedAt: null }, data: { openedAt: new Date() } });
+    }
   }
   void audit({ organizationId: before.organizationId, actorId, action: "member.update", entityType: "Visitor", entityId: id, before, after });
   return after;
@@ -208,8 +220,8 @@ export async function messageLead(
   const orgId = lead.organizationId ?? lead.location?.organizationId ?? null;
   const res =
     input.channel === "EMAIL"
-      ? await deliverEmail({ to, subject: subject ?? "", html: body, category: "TRANSACTIONAL", organizationId: orgId })
-      : await deliverSms({ to, text: body, category: "TRANSACTIONAL", organizationId: orgId, timeZone: lead.location?.timezone });
+      ? await deliverEmail({ to, subject: subject ?? "", html: body, category: "TRANSACTIONAL", organizationId: orgId, ledger: false })
+      : await deliverSms({ to, text: body, category: "TRANSACTIONAL", organizationId: orgId, timeZone: lead.location?.timezone, ledger: false });
   await prisma.message.update({ where: { id: msg.id }, data: { status: res.ok ? "SENT" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null } });
   await prisma.conversation.update({ where: { id: convo.id }, data: { lastMessageAt: new Date() } });
   await prisma.visitorEvent.create({ data: { visitorId: id, kind: input.channel === "EMAIL" ? "EMAIL_SENT" : "SMS_SENT", data: { messageId: msg.id, by: actor.id, ok: res.ok } } });
@@ -313,7 +325,7 @@ export async function importLeadsCsv(csv: string, ctx: { locationId: string; org
       continue;
     }
     const stageRaw = get(col.stage).toUpperCase();
-    const stage = (LEAD_STAGES as readonly string[]).includes(stageRaw) ? (stageRaw as LeadStage) : stageRaw === "ENGAGED" ? "CONTACTED" : "NEW";
+    const stage = (ALL_LEAD_STAGES as readonly string[]).includes(stageRaw) ? (stageRaw as LeadStage) : stageRaw === "ENGAGED" ? "CONTACTED" : "NEW";
     const followRaw = get(col.follow);
     const follow = followRaw ? new Date(followRaw) : null;
     try {
@@ -364,6 +376,43 @@ function parseCsvLine(line: string): string[] {
 }
 
 /** Find or create a lead for an unknown inbound phone number (used by the Quo webhook). */
+export async function findOrCreateLeadByEmail(
+  email: string,
+  ctx: { locationId?: string | null; organizationId?: string | null; source?: string; name?: string | null; phone?: string | null },
+) {
+  const prisma = getPrisma();
+  const normalized = normEmail(email) ?? email.trim().toLowerCase();
+  const existing = await prisma.visitor.findFirst({ where: { email: { equals: normalized, mode: "insensitive" } }, orderBy: { updatedAt: "desc" } });
+  if (existing) {
+    // Fill in details we didn't have before (name/phone from a form submission).
+    const fill: Record<string, unknown> = {};
+    const [fn, ...ln] = (ctx.name ?? "").trim().split(/\s+/).filter(Boolean);
+    if (!existing.firstName && fn) fill.firstName = fn;
+    if (!existing.lastName && ln.length) fill.lastName = ln.join(" ");
+    if (!existing.phone && ctx.phone) fill.phone = normPhone(ctx.phone);
+    if (!existing.locationId && ctx.locationId) fill.locationId = ctx.locationId;
+    return Object.keys(fill).length ? prisma.visitor.update({ where: { id: existing.id }, data: fill }) : existing;
+  }
+  let locationId = ctx.locationId ?? null;
+  if (!locationId) {
+    const loc = await prisma.location.findFirst({ where: { disabled: false }, orderBy: { name: "asc" }, select: { id: true, organizationId: true } });
+    locationId = loc?.id ?? null;
+    if (!ctx.organizationId) ctx.organizationId = loc?.organizationId ?? null;
+  }
+  if (!locationId) return null;
+  const [firstName, ...rest] = (ctx.name ?? "").trim().split(/\s+/).filter(Boolean);
+  return createLead({
+    locationId,
+    organizationId: ctx.organizationId ?? null,
+    email: normalized,
+    phone: ctx.phone ?? null,
+    firstName: firstName ?? null,
+    lastName: rest.length ? rest.join(" ") : null,
+    source: ctx.source ?? "Inbound email",
+    stage: "CONTACTED",
+  });
+}
+
 export async function findOrCreateLeadByPhone(phone: string, ctx: { locationId?: string | null; organizationId?: string | null; source?: string }) {
   const prisma = getPrisma();
   const normalized = normPhone(phone) ?? phone;

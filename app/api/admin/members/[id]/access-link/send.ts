@@ -33,12 +33,13 @@ export async function sendAccessLink(memberId: string, req?: Request, opts: { ch
   const channel = opts.channel ?? "EMAIL";
   if (channel === "SMS") {
     if (!member.phone) throw new Error("Member has no phone number");
-    await sendSMS({ to: member.phone, text: `Hi ${member.firstName}, here's your Tee24 account sign-in link (expires in 15 min): ${link}` });
+    await sendSMS({ to: member.phone, text: `Hi ${member.firstName}, here's your Tee24 account sign-in link (expires in 15 min): ${link}`, ledger: false });
   } else {
     if (!member.email) throw new Error("Member has no email address");
     await sendEmail({
       to: member.email,
       subject: "Your Tee24 account access",
+      ledger: false,
       html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto;">
   <h1 style="font-size:20px;margin:0 0 16px;">Welcome, ${escapeHtml(member.firstName)}</h1>

@@ -171,6 +171,7 @@ async function sendAllUnsent(): Promise<Array<{
         email: true,
         phone: true,
         managementToken: true,
+        locationId: true,
         Location: {
           select: { slug: true, name: true },
         },
@@ -248,7 +249,7 @@ async function sendAllUnsent(): Promise<Array<{
         const body = renderTemplate(n.template ?? "", vars);
         const html = htmlifyPreservingTags(body);
         const subject = `Reminder: ${vars.locationName} — Bay ${vars.bayNumber} at ${vars.startTime}`;
-        const res = await sendEmail(b.email, subject, html);
+        const res = await sendEmail({ to: b.email, subject, html, ledger: { locationId: b.locationId, source: "booking.reminder" } });
 
         if (res.ok) {
           await getPrisma().notificationLog.update({
@@ -314,7 +315,7 @@ async function sendAllUnsent(): Promise<Array<{
         const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
         if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(n.template ?? "", vars);
-        await sendSms({ from: smsFrom, to: [normalized], content: text });
+        await sendSms({ from: smsFrom, to: [normalized], content: text, ledger: { locationId: b.locationId, source: "booking.reminder" } });
 
         await getPrisma().notificationLog.update({
           where: { id: log.id },

@@ -607,7 +607,7 @@ async function sendConfirmations({
     try {
       const html = renderTemplate(emailTemplate, vars).replace(/\n/g, "<br>");
       const subject = `Confirmed: ${locationName} — Bay ${vars.bayNumber} on ${vars.date} at ${vars.startTime}`;
-      await sendEmail(booking.email, subject, html);
+      await sendEmail({ to: booking.email, subject, html, ledger: { locationId: booking.locationId ?? null, source: "booking.confirmation" } });
     } catch (e) {
       console.error("Email failed:", e);
     }
@@ -626,7 +626,7 @@ async function sendConfirmations({
         const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
         if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({ from: smsFrom, to: phones, content: text });
+        await sendSms({ from: smsFrom, to: phones, content: text, ledger: { locationId: booking.locationId ?? null, source: "booking.confirmation" } });
       } catch (e) {
         console.error("SMS failed:", e);
       }
@@ -670,7 +670,7 @@ async function sendChangeNotifications({
     try {
       const html = renderTemplate(emailTemplate, vars).replace(/\n/g, "<br>");
       const subject = `Reservation Updated: ${locationName} — Bay ${vars.bayNumber} on ${vars.date} at ${vars.startTime}`;
-      await sendEmail(booking.email, subject, html);
+      await sendEmail({ to: booking.email, subject, html, ledger: { locationId: booking.locationId ?? null, source: "booking.updated" } });
     } catch (e) {
       console.error("Change notification email failed:", e);
     }
@@ -689,7 +689,7 @@ async function sendChangeNotifications({
         const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
         if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({ from: smsFrom, to: phones, content: text });
+        await sendSms({ from: smsFrom, to: phones, content: text, ledger: { locationId: booking.locationId ?? null, source: "booking.updated" } });
       } catch (e) {
         console.error("Change notification SMS failed:", e);
       }

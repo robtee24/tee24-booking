@@ -435,10 +435,10 @@ export async function sendStaffInvite(adminId: string, actorId: string): Promise
     sms = true;
     email = !!admin.email;
   } else {
-    const r = await sendQuoSms({ to: admin.phone, text: smsText, category: "SYSTEM" }).catch(() => ({ ok: false }));
+    const r = await sendQuoSms({ to: admin.phone, text: smsText, category: "SYSTEM", ledger: false }).catch(() => ({ ok: false }));
     sms = !!r.ok;
     if (admin.email) {
-      await sendEmail({ to: admin.email, subject: "You're invited to Tee24 Admin", html })
+      await sendEmail({ to: admin.email, subject: "You're invited to Tee24 Admin", html, ledger: false })
         .then(() => (email = true))
         .catch(() => (email = false));
     }

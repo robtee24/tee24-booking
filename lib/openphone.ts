@@ -1,5 +1,6 @@
 // lib/openphone.ts
 import { ENV } from "@/lib/env";
+import { recordOutbound, type LedgerOption } from "@/lib/message-ledger";
 
 /**
  * Quo (OpenPhone) API helpers.
@@ -70,6 +71,8 @@ type SendSmsArgs = {
   to: string[];     // One or more E.164 recipient numbers
   content: string;  // Message body (max 1600 chars)
   userId?: string;  // Optional Quo user ID ("US...") — defaults to phone number owner
+  /** Message-ledger hint; `false` when the body contains a secret (OTP codes). */
+  ledger?: LedgerOption;
 };
 
 /**
@@ -79,7 +82,7 @@ type SendSmsArgs = {
  * This function fires one request per number and settles all in parallel.
  * If any individual send fails the error is rethrown after all settle.
  */
-export async function sendSms({ from, to, content, userId }: SendSmsArgs): Promise<void> {
+export async function sendSms({ from, to, content, userId, ledger }: SendSmsArgs): Promise<void> {
   if (!from || !isValidFrom(from)) {
     throw new Error(`Invalid 'from' value (must be E.164 or phoneNumberId), got: ${from}`);
   }
@@ -93,17 +96,42 @@ export async function sendSms({ from, to, content, userId }: SendSmsArgs): Promi
     throw new Error("SMS 'content' must be a non-empty string");
   }
 
+  const dryRun = process.env.SMS_DRY_RUN === "1" || process.env.COMMS_DRY_RUN === "1" || process.env.SMS_DRY_RUN === "true" || process.env.COMMS_DRY_RUN === "true";
+
   // Quo API: to maxItems = 1 — send one request per recipient
   const results = await Promise.allSettled(
-    to.map((recipient) => {
+    to.map(async (recipient) => {
+      if (dryRun) {
+        console.log("[openphone] DRY_RUN sms", { to: recipient, chars: content.length, preview: content.slice(0, 80) });
+        return `dry_${Date.now()}`;
+      }
       const body: Record<string, unknown> = { from, to: [recipient], content };
       if (userId) body.userId = userId;
-      return openphoneFetch("/v1/messages", {
+      const res = await openphoneFetch("/v1/messages", {
         method: "POST",
         body: JSON.stringify(body),
       });
+      const data = (await res.json().catch(() => null)) as { data?: { id?: string }; id?: string } | null;
+      return data?.data?.id ?? data?.id ?? null;
     })
   );
+
+  if (ledger !== false) {
+    await Promise.all(
+      results.map((r, i) =>
+        recordOutbound({
+          channel: "SMS",
+          to: to[i],
+          body: content,
+          ok: r.status === "fulfilled",
+          providerId: r.status === "fulfilled" ? r.value : null,
+          error: r.status === "rejected" ? (r.reason?.message ?? String(r.reason)) : null,
+          dryRun,
+          hint: ledger ?? undefined,
+        }),
+      ),
+    );
+  }
 
   const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
   if (failures.length > 0) {

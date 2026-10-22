@@ -155,6 +155,7 @@ export async function sendYearEndSummary(memberId: string, year: number) {
   await sendEmail({
     to: member.email,
     subject: `Your ${year} membership summary`,
+    ledger: { memberId: member.id, source: "billing.year-end-summary" },
     html: `
 <div style="font-family:-apple-system,Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto">
   <h1 style="margin:0 0 12px;font-size:20px;">Your ${year} summary</h1>

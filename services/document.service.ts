@@ -137,6 +137,7 @@ export async function assignDocument(input: AssignDocumentInput) {
       to: member.email,
       subject: `Action required: please sign ${doc.name}`,
       html: signingEmailHtml({ memberName: member.firstName, docName: doc.name, link }),
+      ledger: { memberId: member.id, source: "document.request" },
     }).catch(() => {});
   }
   if (input.notify?.sms && member.phone) {
@@ -144,6 +145,7 @@ export async function assignDocument(input: AssignDocumentInput) {
     await sendQuoSms({
       to: member.phone,
       text: `Hi ${member.firstName}, please sign your ${doc.name}: ${link}`,
+      ledger: { memberId: member.id, source: "document.request" },
     }).catch(() => {});
   }
 

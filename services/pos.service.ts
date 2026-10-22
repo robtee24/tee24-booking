@@ -717,6 +717,7 @@ export async function createSale(loc: LocationFull, req: CreateSaleRequest, acto
       await sendEmail({
         to: g.recipientEmail,
         subject: `You've received a ${loc.businessName || loc.name} gift card`,
+        ledger: { locationId: loc.id, source: "pos.gift-card" },
         html: `<p>${g.recipientName ? `Hi ${g.recipientName},` : "Hi,"}</p><p>${customerName ? `${customerName} sent` : "You've received"} a gift card worth <strong>$${(g.amountCents / 100).toFixed(2)}</strong> for ${loc.businessName || loc.name}.</p><p style="font-size:20px;letter-spacing:2px;font-family:monospace;"><strong>${g.code}</strong></p><p>Show this code at the counter to redeem.</p>`,
       }).catch(() => {});
     }

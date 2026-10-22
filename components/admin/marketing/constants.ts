@@ -5,12 +5,19 @@
  * treated as the same stage everywhere.
  */
 export const LEAD_STAGES = ["NEW", "CONTACTED", "BOOKED", "TRIAL", "CONVERTED", "LOST"] as const;
-export type LeadStage = (typeof LEAD_STAGES)[number];
+/** Stages that remove a lead from the working pipeline. Hidden from default lists. */
+export const LEAD_CLOSED_STAGES = ["ARCHIVED", "SPAM"] as const;
+export const ALL_LEAD_STAGES = [...LEAD_STAGES, ...LEAD_CLOSED_STAGES] as const;
+export type LeadStage = (typeof ALL_LEAD_STAGES)[number];
 
 export function normalizeLeadStage(stage: string | null | undefined): LeadStage {
   if (stage === "ENGAGED") return "CONTACTED";
-  if ((LEAD_STAGES as readonly string[]).includes(stage ?? "")) return stage as LeadStage;
+  if ((ALL_LEAD_STAGES as readonly string[]).includes(stage ?? "")) return stage as LeadStage;
   return "NEW";
+}
+
+export function isClosedLeadStage(stage: string | null | undefined): boolean {
+  return (LEAD_CLOSED_STAGES as readonly string[]).includes(stage ?? "");
 }
 
 export const LEAD_STAGE_TONES: Record<LeadStage, "info" | "warn" | "success" | "muted" | "default" | "danger"> = {
@@ -20,6 +27,8 @@ export const LEAD_STAGE_TONES: Record<LeadStage, "info" | "warn" | "success" | "
   TRIAL: "warn",
   CONVERTED: "success",
   LOST: "muted",
+  ARCHIVED: "muted",
+  SPAM: "danger",
 };
 
 export const AUTOMATION_TRIGGER_OPTIONS: { value: string; label: string; group: string }[] = [

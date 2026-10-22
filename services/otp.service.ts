@@ -71,6 +71,8 @@ export class OtpService {
       from: ENV.OPENPHONE_NUMBER!,
       to: [phone],
       content: message,
+      // One-time codes must never be stored in the message log.
+      ledger: false,
       ...(ENV.OPENPHONE_USER_ID ? { userId: ENV.OPENPHONE_USER_ID } : {}),
     });
 

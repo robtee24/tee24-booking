@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
         const html = ensureManageLinkInEmail(rawHtml, manageUrl);
         const subject = `Your Tee24 booking • Bay ${booking.bayNumber ?? "—"} at ${booking.Location.name}`;
         try {
-          const res = await sendEmail(booking.email, subject, html);
+          const res = await sendEmail({ to: booking.email, subject, html, ledger: { locationId: booking.locationId, source: "booking.confirmation" } });
           email = !!res.ok;
           if (!res.ok) emailError = res.error || "Unknown email send error";
         } catch (e: any) {
@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
           smsError = "Missing SMS 'from' number in environment configuration";
         } else {
           try {
-            await sendSms({ from, to: [normalized], content: text });
+            await sendSms({ from, to: [normalized], content: text, ledger: { locationId: booking.locationId, source: "booking.confirmation" } });
             sms = true;
           } catch (e: any) {
             smsError = e?.message || "SMS send failed";

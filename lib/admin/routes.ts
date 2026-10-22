@@ -43,6 +43,7 @@ export const adminRoutes = {
   checkIns: () => "/admin/check-ins",
   checkInAnalytics: () => "/admin/check-ins/analytics",
   doorAccess: () => "/admin/door-access",
+  inbox: () => "/admin/inbox",
   tasks: () => "/admin/tasks",
   notifications: () => "/admin/notifications",
   settings: () => "/admin/settings",
@@ -146,7 +147,7 @@ export const adminRoutes = {
 export type NavIcon =
   | "dashboard" | "calendar" | "users" | "card" | "megaphone" | "settings"
   | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench"
-  | "door-open" | "log-in";
+  | "door-open" | "log-in" | "inbox";
 
 export type NavLeaf = {
   label: string;
@@ -291,6 +292,7 @@ export const ORG_NAV: OrgNavItem[] = [
   { label: "Locations", href: adminRoutes.locations(), icon: "map-pin", exact: true },
   { label: "Check Ins", href: adminRoutes.checkIns(), icon: "log-in" },
   { label: "Door Access", href: adminRoutes.doorAccess(), icon: "door-open" },
+  { label: "Inbox", href: adminRoutes.inbox(), icon: "inbox" },
   { label: "Admins", href: adminRoutes.admins(), icon: "shield" },
   { label: "Tasks", href: adminRoutes.tasks(), icon: "check-square" },
   { label: "Notifications", href: adminRoutes.notifications(), icon: "bell" },

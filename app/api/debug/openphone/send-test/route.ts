@@ -60,6 +60,7 @@ async function handleSend(toRaw: string, text: string) {
       from: process.env.OPENPHONE_FROM || "system",
       to: [to],
       content: text,
+      ledger: false,
     });
     return NextResponse.json(
       { ok: true, sentTo: to, length: text.length },

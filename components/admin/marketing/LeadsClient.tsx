@@ -4,10 +4,10 @@ import React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge, Button, Card, Drawer, EmptyState, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
-import { Columns3, List, Mail, MessageSquare, Phone, Plus, Upload, UserCheck, UserPlus } from "lucide-react";
+import { Archive, Ban, Columns3, List, Mail, MessageSquare, Pencil, Phone, Plus, RotateCcw, Upload, UserCheck, UserPlus } from "lucide-react";
 import { adminRoutes } from "@/lib/admin/routes";
 import { useAdminLocation } from "@/components/admin/LocationContext";
-import { LEAD_STAGES, LEAD_STAGE_TONES, type LeadStage } from "./constants";
+import { ALL_LEAD_STAGES, LEAD_CLOSED_STAGES, LEAD_STAGES, LEAD_STAGE_TONES, isClosedLeadStage, type LeadStage } from "./constants";
 import { Field, SegmentCounter, fmtDate, useErrorToast, useMarketingApi } from "./shared";
 
 export type LeadRow = {
@@ -45,6 +45,11 @@ const ACTIVITY_KINDS = ["NOTE", "CALL", "EMAIL", "SMS", "TOUR", "VISIT", "MEETIN
 
 function leadName(l: Pick<LeadRow, "firstName" | "lastName" | "email" | "phone">) {
   return `${l.firstName ?? ""} ${l.lastName ?? ""}`.trim() || l.email || l.phone || "(no name)";
+}
+
+function plainText(s: string): string {
+  if (!/<[a-z][\s\S]*>/i.test(s)) return s;
+  return s.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 }
 
 function isDue(iso: string | null) {
@@ -94,7 +99,11 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
 
   async function moveStage(lead: LeadRow, stage: LeadStage) {
     if (lead.stage === stage) return;
-    setLeads((cur) => cur.map((l) => (l.id === lead.id ? { ...l, stage } : l)));
+    const leaving = (filters.stage === "ALL" && isClosedLeadStage(stage)) || (filters.stage === "CLOSED" && !isClosedLeadStage(stage));
+    if (leaving) {
+      setLeads((cur) => cur.filter((l) => l.id !== lead.id));
+      if (openId === lead.id) setOpenId(null);
+    } else setLeads((cur) => cur.map((l) => (l.id === lead.id ? { ...l, stage } : l)));
     try {
       await api(`/api/admin/visitors/${lead.id}`, { method: "PATCH", json: { stage } });
     } catch (e) {
@@ -103,8 +112,37 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
     }
   }
 
-  const visibleStages = LEAD_STAGES.filter((s) => filters.stage === "ALL" || filters.stage === s);
+  const visibleStages: readonly LeadStage[] =
+    filters.stage === "ALL" ? LEAD_STAGES : filters.stage === "CLOSED" ? LEAD_CLOSED_STAGES : filters.stage === "EVERYTHING" ? ALL_LEAD_STAGES : [filters.stage as LeadStage];
   const open = openId ? leads.find((l) => l.id === openId) ?? null : null;
+
+  /** Quick archive / spam / restore from a row, without opening the drawer. */
+  async function quickStage(e: React.MouseEvent, lead: LeadRow, stage: LeadStage) {
+    e.stopPropagation();
+    e.preventDefault();
+    const leaving = (filters.stage === "ALL" && isClosedLeadStage(stage)) || (filters.stage === "CLOSED" && !isClosedLeadStage(stage));
+    if (leaving) setLeads((cur) => cur.filter((l) => l.id !== lead.id));
+    else setLeads((cur) => cur.map((l) => (l.id === lead.id ? { ...l, stage } : l)));
+    if (openId === lead.id && leaving) setOpenId(null);
+    try {
+      await api(`/api/admin/visitors/${lead.id}`, { method: "PATCH", json: { stage } });
+    } catch (err) {
+      onError(err);
+      void reload();
+    }
+  }
+
+  function RowActions({ lead }: { lead: LeadRow }) {
+    if (lead.convertedToMemberId) return null;
+    return isClosedLeadStage(lead.stage) ? (
+      <span role="button" tabIndex={0} title="Restore lead" aria-label="Restore lead" onClick={(e) => void quickStage(e, lead, "NEW")} onKeyDown={(e) => { if (e.key === "Enter") void quickStage(e as never, lead, "NEW"); }} className="rounded p-1 text-apple-text-tertiary hover:bg-apple-fill-secondary hover:text-apple-blue"><RotateCcw className="h-3.5 w-3.5" /></span>
+    ) : (
+      <>
+        <span role="button" tabIndex={0} title="Archive" aria-label="Archive lead" onClick={(e) => void quickStage(e, lead, "ARCHIVED")} onKeyDown={(e) => { if (e.key === "Enter") void quickStage(e as never, lead, "ARCHIVED"); }} className="rounded p-1 text-apple-text-tertiary hover:bg-apple-fill-secondary hover:text-apple-text"><Archive className="h-3.5 w-3.5" /></span>
+        <span role="button" tabIndex={0} title="Mark as spam" aria-label="Mark as spam" onClick={(e) => void quickStage(e, lead, "SPAM")} onKeyDown={(e) => { if (e.key === "Enter") void quickStage(e as never, lead, "SPAM"); }} className="rounded p-1 text-apple-text-tertiary hover:bg-apple-red/10 hover:text-apple-red"><Ban className="h-3.5 w-3.5" /></span>
+      </>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -112,10 +150,15 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
         <div className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
           <div className="flex flex-1 flex-wrap gap-2">
             <Select value={filters.stage} onChange={(e) => setFilters({ ...filters, stage: e.target.value })} aria-label="Stage">
-              <option value="ALL">All stages</option>
+              <option value="ALL">All active stages</option>
               {LEAD_STAGES.map((s) => (
                 <option key={s} value={s}>{stageLabels[s]}</option>
               ))}
+              <option disabled>──────</option>
+              <option value="ARCHIVED">{stageLabels.ARCHIVED}</option>
+              <option value="SPAM">{stageLabels.SPAM}</option>
+              <option value="CLOSED">Archived + spam</option>
+              <option value="EVERYTHING">Everything</option>
             </Select>
             <Select value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })} aria-label="Source">
               <option value="">All sources</option>
@@ -168,15 +211,18 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
                   </div>
                   <div className="space-y-2">
                     {col.map((l) => (
-                      <button key={l.id} type="button" onClick={() => setOpenId(l.id)} className="w-full rounded-apple-sm border border-apple-border bg-white p-3 text-left shadow-apple-sm hover:border-apple-blue">
-                        <div className="truncate text-apple-sm font-medium text-apple-text">{leadName(l)}</div>
+                      <div key={l.id} role="button" tabIndex={0} onClick={() => setOpenId(l.id)} onKeyDown={(e) => { if (e.key === "Enter") setOpenId(l.id); }} className="group w-full cursor-pointer rounded-apple-sm border border-apple-border bg-white p-3 text-left shadow-apple-sm hover:border-apple-blue">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="truncate text-apple-sm font-medium text-apple-text">{leadName(l)}</div>
+                          <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"><RowActions lead={l} /></div>
+                        </div>
                         <div className="truncate text-apple-xs text-apple-text-tertiary">{l.email ?? l.phone ?? "—"}</div>
                         <div className="mt-2 flex flex-wrap items-center gap-1">
                           {l.source && <Badge tone="muted" size="sm">{l.source}</Badge>}
                           {l.nextFollowUpAt && <Badge tone={isDue(l.nextFollowUpAt) ? "warn" : "info"} size="sm">{isDue(l.nextFollowUpAt) ? "Due " : ""}{fmtDate(l.nextFollowUpAt, { month: "short", day: "numeric" })}</Badge>}
                           {l.assignedToId && <Badge tone="default" size="sm">{adminName(l.assignedToId)}</Badge>}
                         </div>
-                      </button>
+                      </div>
                     ))}
                     {col.length === 0 && <div className="rounded-apple-sm border border-dashed border-apple-border p-3 text-center text-apple-xs text-apple-text-tertiary">Empty</div>}
                   </div>
@@ -190,7 +236,7 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
           <ul className="divide-y divide-apple-divider">
             {leads.map((l) => (
               <li key={l.id}>
-                <button type="button" onClick={() => setOpenId(l.id)} className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-apple-fill-secondary/50">
+                <div role="button" tabIndex={0} onClick={() => setOpenId(l.id)} onKeyDown={(e) => { if (e.key === "Enter") setOpenId(l.id); }} className="group flex w-full cursor-pointer items-center justify-between gap-3 p-3 text-left hover:bg-apple-fill-secondary/50">
                   <div className="min-w-0">
                     <div className="truncate text-apple-sm font-medium text-apple-text">{leadName(l)}</div>
                     <div className="truncate text-apple-xs text-apple-text-tertiary">{[l.email, l.phone, l.source].filter(Boolean).join(" · ")}</div>
@@ -199,8 +245,9 @@ export function LeadsClient({ initial, sources, admins, stageLabels, currentAdmi
                     {l.nextFollowUpAt && <span className={`text-apple-xs ${isDue(l.nextFollowUpAt) ? "text-apple-orange" : "text-apple-text-tertiary"}`}>{fmtDate(l.nextFollowUpAt, { month: "short", day: "numeric" })}</span>}
                     {l.assignedToId && <Badge tone="default" size="sm">{adminName(l.assignedToId)}</Badge>}
                     <Badge tone={LEAD_STAGE_TONES[l.stage]} size="sm">{stageLabels[l.stage]}</Badge>
+                    <div className="flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"><RowActions lead={l} /></div>
                   </div>
-                </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -291,7 +338,7 @@ function LeadForm({ lead, sources, admins, stageLabels, onClose, onSaved }: { le
             {f.source && !sources.includes(f.source) && <option value={f.source}>{f.source}</option>}
           </Select>
           <Select label="Stage" value={f.stage} onChange={(e) => setF({ ...f, stage: e.target.value as LeadStage })}>
-            {LEAD_STAGES.map((s) => (
+            {ALL_LEAD_STAGES.map((s) => (
               <option key={s} value={s}>{stageLabels[s]}</option>
             ))}
           </Select>
@@ -326,6 +373,21 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
   const [msg, setMsg] = React.useState({ channel: lead.phone ? "SMS" : "EMAIL", subject: "", body: "" });
   const [conv, setConv] = React.useState({ firstName: lead.firstName ?? "", lastName: lead.lastName ?? "", email: lead.email ?? "", phone: lead.phone ?? "", status: "PENDING", optInSmsMarketing: false });
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [renaming, setRenaming] = React.useState(false);
+  const [nameDraft, setNameDraft] = React.useState({ firstName: lead.firstName ?? "", lastName: lead.lastName ?? "" });
+
+  async function saveName() {
+    setBusy("name");
+    try {
+      await api(`/api/admin/visitors/${lead.id}`, { method: "PATCH", json: nameDraft });
+      onChange({ id: lead.id, firstName: nameDraft.firstName.trim() || null, lastName: nameDraft.lastName.trim() || null });
+      setRenaming(false);
+    } catch (e) {
+      onError(e, "Rename failed");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const load = React.useCallback(async () => {
     try {
@@ -392,7 +454,10 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
 
   const timeline: { id: string; at: string; label: string; detail?: string }[] = [
     ...(detail?.events ?? []).map((e) => ({ id: e.id, at: e.createdAt, label: e.kind.replace(/_/g, " ").toLowerCase(), detail: e.data?.note ?? (e.data?.from ? `${e.data.from} → ${e.data.to}` : undefined) })),
-    ...(detail?.messages ?? []).map((m) => ({ id: m.id, at: m.createdAt, label: `${m.direction === "INBOUND" ? "received" : "sent"} ${m.channel.toLowerCase()}`, detail: m.subject ? `${m.subject} — ${m.body.slice(0, 120)}` : m.body.slice(0, 160) })),
+    ...(detail?.messages ?? []).map((m) => {
+      const text = plainText(m.body);
+      return { id: m.id, at: m.createdAt, label: `${m.direction === "INBOUND" ? "received" : "sent"} ${m.channel.toLowerCase()}`, detail: m.subject ? `${m.subject} — ${text.slice(0, 120)}` : text.slice(0, 160) };
+    }),
   ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
   if (editing) {
@@ -414,16 +479,43 @@ function LeadDrawer({ lead, sources, admins, stageLabels, onClose, onChange, onS
   return (
     <Drawer open onClose={onClose} width="lg" title={leadName(lead)} description={[lead.email, lead.phone, lead.source ? `via ${lead.source}` : null].filter(Boolean).join(" · ")}>
       <div className="space-y-5">
+        {renaming ? (
+          <form
+            className="flex flex-wrap items-end gap-2 rounded-apple-sm bg-apple-fill-secondary p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveName();
+            }}
+          >
+            <div className="min-w-[140px] flex-1"><Input label="First name" autoFocus value={nameDraft.firstName} onChange={(e) => setNameDraft({ ...nameDraft, firstName: e.target.value })} /></div>
+            <div className="min-w-[140px] flex-1"><Input label="Last name" value={nameDraft.lastName} onChange={(e) => setNameDraft({ ...nameDraft, lastName: e.target.value })} /></div>
+            <Button size="sm" type="submit" loading={busy === "name"}>Save name</Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setRenaming(true)} className="inline-flex items-center gap-1.5 text-apple-xs font-medium text-apple-blue hover:underline">
+            <Pencil className="h-3.5 w-3.5" /> {lead.firstName || lead.lastName ? "Edit name" : "Add a name"}
+          </button>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <Select value={lead.stage} onChange={(e) => onStage(e.target.value as LeadStage)} aria-label="Stage" disabled={!!lead.convertedToMemberId}>
-            {LEAD_STAGES.map((s) => (
+            {ALL_LEAD_STAGES.map((s) => (
               <option key={s} value={s}>{stageLabels[s]}</option>
             ))}
           </Select>
           {lead.nextFollowUpAt && <Badge tone={isDue(lead.nextFollowUpAt) ? "warn" : "info"}>Follow up {fmtDate(lead.nextFollowUpAt, { month: "short", day: "numeric" })}</Badge>}
           {lead.assignedToId && <Badge tone="default">{admins.find((a) => a.id === lead.assignedToId)?.name ?? "Assigned"}</Badge>}
           {lead.tags.map((t) => <Badge key={t} tone="muted" size="sm">{t}</Badge>)}
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex flex-wrap gap-1">
+            {!lead.convertedToMemberId && (isClosedLeadStage(lead.stage) ? (
+              <Button size="sm" variant="secondary" iconLeft={<RotateCcw className="h-4 w-4" />} onClick={() => onStage("NEW")}>Restore</Button>
+            ) : (
+              <>
+                <Button size="sm" variant="secondary" iconLeft={<Archive className="h-4 w-4" />} onClick={() => onStage("ARCHIVED")}>Archive</Button>
+                <Button size="sm" variant="secondary" iconLeft={<Ban className="h-4 w-4" />} onClick={() => onStage("SPAM")}><span className="text-apple-red">Spam</span></Button>
+              </>
+            ))}
             <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
             <Button size="sm" variant="ghost" onClick={remove}><span className="text-apple-red">Delete</span></Button>
           </div>

@@ -278,8 +278,8 @@ async function logAndDeliver(input: {
   });
   const res =
     input.channel === "EMAIL"
-      ? await deliverEmail({ to: input.to, subject: input.subject ?? "", html: input.body, category: "SYSTEM", organizationId: input.organizationId })
-      : await deliverSms({ to: input.to, text: input.body, category: "SYSTEM", organizationId: input.organizationId, timeZone: input.timeZone });
+      ? await deliverEmail({ to: input.to, subject: input.subject ?? "", html: input.body, category: "SYSTEM", organizationId: input.organizationId, ledger: false })
+      : await deliverSms({ to: input.to, text: input.body, category: "SYSTEM", organizationId: input.organizationId, timeZone: input.timeZone, ledger: false });
   await prisma.message.update({
     where: { id: msg.id },
     data: {
@@ -334,6 +334,7 @@ export async function sendSystemTestToAdmin(opts: {
       category: "SYSTEM",
       organizationId: opts.organizationId,
       force: true,
+      ledger: false,
     });
     return { ok: res.ok, error: res.error, to: opts.adminEmail, dryRun: res.dryRun };
   }
@@ -344,6 +345,7 @@ export async function sendSystemTestToAdmin(opts: {
     category: "SYSTEM",
     organizationId: opts.organizationId,
     force: true,
+    ledger: false,
   });
   return { ok: res.ok, error: res.error, to: opts.adminPhone, dryRun: res.dryRun };
 }

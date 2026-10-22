@@ -58,11 +58,12 @@ export async function POST(req: NextRequest) {
     const intro = custom || `You're invited to join ${guard.location.name}. Use the link below to sign up.`;
 
     if (channel === "SMS") {
-      await sendSMS({ to, text: `${greeting} ${intro} ${link}` });
+      await sendSMS({ to, text: `${greeting} ${intro} ${link}`, ledger: { locationId: guard.location.id, source: "member.invite" } });
     } else {
       await sendEmail({
         to,
         subject: `You're invited to join ${guard.location.name}`,
+        ledger: { locationId: guard.location.id, source: "member.invite" },
         html: `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto;"><p style="margin:0 0 16px;">${escapeHtml(greeting)}</p><p style="margin:0 0 16px;color:#475569;white-space:pre-wrap;">${escapeHtml(intro)}</p><a href="${link}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;">Sign up</a><p style="margin-top:16px;font-size:12px;color:#94a3b8;">Link: ${link}</p></div>`,
       });
     }

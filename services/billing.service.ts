@@ -1069,7 +1069,7 @@ export async function sendReceiptEmail(invoiceId: string) {
   <p style="margin:0 0 16px;color:#475569;">Hi ${esc(inv.member.firstName)}, thanks for your payment${inv.paidAt ? ` on ${inv.paidAt.toLocaleDateString()}` : ""}. Paid with ${esc(paidWith)}.</p>
   ${linesTable(inv)}`,
   );
-  await sendEmail({ to: inv.member.email, subject: `Receipt from ${inv.location.businessName ?? inv.location.name} — #${inv.number}`, html });
+  await sendEmail({ to: inv.member.email, subject: `Receipt from ${inv.location.businessName ?? inv.location.name} — #${inv.number}`, html, ledger: { memberId: inv.memberId, locationId: inv.locationId, source: "billing.receipt" } });
   return true;
 }
 
@@ -1087,7 +1087,7 @@ export async function sendPayLinkEmail(invoiceId: string, opts?: { message?: str
   <p style="margin:20px 0;"><a href="${url}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;">Pay now</a></p>
   <p style="font-size:12px;color:#94a3b8;">Or paste this link in your browser: ${url}</p>`,
   );
-  await sendEmail({ to: inv.member.email, subject: `Invoice #${inv.number} from ${inv.location.businessName ?? inv.location.name}`, html });
+  await sendEmail({ to: inv.member.email, subject: `Invoice #${inv.number} from ${inv.location.businessName ?? inv.location.name}`, html, ledger: { memberId: inv.memberId, locationId: inv.locationId, source: "billing.pay-link" } });
   return url;
 }
 

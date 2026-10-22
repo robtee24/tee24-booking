@@ -15,15 +15,17 @@
 import { getPrisma } from "@/lib/db";
 import { sendEmail as resendSend, type EmailAttachment } from "@/lib/sendEmail";
 import { sendQuoSms } from "@/lib/quo";
+import type { LedgerOption } from "@/lib/message-ledger";
+import { defaultReplyTo } from "@/lib/inbound-email";
 
 export type MessageCategory = "TRANSACTIONAL" | "MARKETING" | "SYSTEM";
 
-type EmailArgs = { to: string; subject: string; html: string };
-type SMSArgs = { to: string; text: string };
+type EmailArgs = { to: string; subject: string; html: string; ledger?: LedgerOption; replyTo?: string | null };
+type SMSArgs = { to: string; text: string; ledger?: LedgerOption };
 
 // ---------- Legacy wrappers (kept for compatibility) ----------
-export async function sendEmail({ to, subject, html }: EmailArgs): Promise<void> {
-  const res = await resendSend({ to, subject, html });
+export async function sendEmail({ to, subject, html, ledger, replyTo }: EmailArgs): Promise<void> {
+  const res = await resendSend({ to, subject, html, ledger, replyTo: replyTo ?? undefined });
   if (!res.ok) console.error("[notify] Resend email failed:", res.error);
 }
 
@@ -31,7 +33,7 @@ export async function sendSMS(to: string, text: string): Promise<void>;
 export async function sendSMS(args: SMSArgs): Promise<void>;
 export async function sendSMS(a: string | SMSArgs, b?: string): Promise<void> {
   const payload: SMSArgs = typeof a === "string" ? { to: a, text: b ?? "" } : a;
-  const res = await sendQuoSms({ to: payload.to, text: payload.text });
+  const res = await sendQuoSms({ to: payload.to, text: payload.text, ledger: payload.ledger });
   if (!res.ok) console.error("[notify] SMS failed:", res.error);
 }
 
@@ -130,6 +132,10 @@ export type DeliverEmailInput = {
   attachments?: EmailAttachment[];
   /** Skip the org emailEnabled gate (e.g. admin test sends). */
   force?: boolean;
+  /** Message-ledger hint; `false` when the caller writes its own Message row. */
+  ledger?: LedgerOption;
+  /** Override Reply-To (e.g. a per-thread inbound address). */
+  replyTo?: string | null;
 };
 
 export type DeliverResult = {
@@ -171,9 +177,11 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverRes
     subject: input.subject,
     html,
     bcc: settings.bccEmail || undefined,
-    replyTo: settings.replyToEmail || undefined,
+    // Inbound domain wins so replies thread into the inbox; org Reply-To is the fallback.
+    replyTo: input.replyTo ?? defaultReplyTo() ?? settings.replyToEmail ?? undefined,
     attachments: input.attachments,
     tags: [{ name: "category", value: input.category.toLowerCase() }],
+    ledger: input.ledger === false ? false : { category: input.category, ...(input.ledger ?? {}) },
   });
   return { ok: res.ok, providerId: res.id ?? null, error: res.error, dryRun: res.dryRun };
 }
@@ -187,6 +195,8 @@ export type DeliverSmsInput = {
   timeZone?: string | null;
   /** Skip the org smsEnabled gate + quiet hours (admin test sends). */
   force?: boolean;
+  /** Message-ledger hint; `false` when the caller writes its own Message row. */
+  ledger?: LedgerOption;
 };
 
 export async function deliverSms(input: DeliverSmsInput): Promise<DeliverResult> {
@@ -201,6 +211,6 @@ export async function deliverSms(input: DeliverSmsInput): Promise<DeliverResult>
     }
   }
 
-  const res = await sendQuoSms({ to: input.to, text: input.text, category: input.category });
+  const res = await sendQuoSms({ to: input.to, text: input.text, category: input.category, ledger: input.ledger });
   return { ok: res.ok, providerId: res.providerId ?? null, error: res.error, dryRun: res.dryRun };
 }

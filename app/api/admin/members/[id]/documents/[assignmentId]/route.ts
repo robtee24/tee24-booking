@@ -33,11 +33,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       await sendEmail({
         to: g.member.email,
         subject: `Reminder: please sign ${a.document.name}`,
+        ledger: { memberId: id, source: "document.request" },
         html: `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto;"><h1 style="font-size:20px;margin:0 0 16px;">Signature requested</h1><p style="margin:0 0 16px;color:#475569;">Hi ${g.member.firstName}, please review and sign <strong>${a.document.name}</strong>.</p><a href="${link}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;">Open &amp; sign</a><p style="margin-top:16px;font-size:12px;color:#94a3b8;">Link: ${link}</p></div>`,
       });
     }
     if ((channel === "SMS" || channel === "BOTH") && g.member.phone) {
-      await sendSMS({ to: g.member.phone, text: `Hi ${g.member.firstName}, please sign your ${a.document.name}: ${link}` });
+      await sendSMS({ to: g.member.phone, text: `Hi ${g.member.firstName}, please sign your ${a.document.name}: ${link}`, ledger: { memberId: id, source: "document.request" } });
     }
     await prisma.signatureEvent.create({ data: { assignmentId, memberId: id, kind: "RESENT", signedOnBehalfBy: g.admin.id } });
     void audit({ organizationId: g.member.organizationId, actorId: g.admin.id, actorRole: g.admin.role, action: "document.resend", entityType: "DocumentAssignment", entityId: assignmentId, metadata: { channel } });

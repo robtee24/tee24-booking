@@ -1238,6 +1238,11 @@ model Message {
   sentByAdminId      String?
   sentByAutomationId String?
   scheduledFor       DateTime?
+  // Location context (for messages without a member, e.g. booking confirmations)
+  locationId         String?
+  // Origin of the message: booking.confirmation | booking.reminder | billing.receipt |
+  // document.request | inbox.reply | marketing.campaign | automation | system | daypass | ...
+  source             String?
 
   // Stats
   openedAt  DateTime?
@@ -1254,6 +1259,8 @@ model Message {
   @@index([memberId, createdAt])
   @@index([conversationId])
   @@index([providerId])
+  @@index([locationId, createdAt])
+  @@index([createdAt])
 }
 
 /**

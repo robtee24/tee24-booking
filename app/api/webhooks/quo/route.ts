@@ -14,8 +14,13 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const body = await req.text();
   const signature = req.headers.get("x-quo-signature") ?? req.headers.get("x-openphone-signature") ?? req.headers.get("openphone-signature") ?? "";
+  const standard = {
+    id: req.headers.get("webhook-id"),
+    timestamp: req.headers.get("webhook-timestamp"),
+    signature: req.headers.get("webhook-signature"),
+  };
 
-  if (!verifyQuoSignature(signature, body)) {
+  if (!verifyQuoSignature(signature, body, standard)) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
@@ -73,7 +78,20 @@ type QuoEvent = { id?: string; event_id?: string; type?: string; event?: string;
 async function dispatchQuoEvent(event: QuoEvent): Promise<Record<string, unknown>> {
   const prisma = getPrisma();
   const type = String(event.type ?? event.event ?? "");
-  const data: QuoPayload = event.data?.object ?? event.data ?? {};
+  // Legacy envelope: data.object { id, from, to, body, direction, createdAt }.
+  // 2026-03-30 envelope: data.resource { id, text, direction, createdAt } +
+  // data.context { senderIdentifier, recipientIdentifiers }. Normalise to one shape.
+  const raw = event.data ?? {};
+  const data: QuoPayload = raw.object
+    ? raw.object
+    : raw.resource
+      ? {
+          ...raw.resource,
+          from: raw.resource.from ?? raw.context?.senderIdentifier,
+          to: raw.resource.to ?? raw.context?.recipientIdentifiers,
+          body: raw.resource.body ?? raw.resource.text,
+        }
+      : raw;
 
   // Delivery receipts for our outbound messages
   if (type === "message.delivered" || type === "message.failed" || type === "message.read" || type === "message.sent") {

@@ -223,14 +223,14 @@ export async function topMembersByVisits(opts: { locationId: string; limit: numb
 }
 
 // Lead pipeline stages live in a client-safe module; re-exported here for server callers.
-export { LEAD_STAGES, normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
+export { LEAD_STAGES, ALL_LEAD_STAGES, LEAD_CLOSED_STAGES, normalizeLeadStage, isClosedLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
 import { normalizeLeadStage, type LeadStage } from "@/components/admin/marketing/constants";
 
 /** Stages that count as "reached at least X" for funnel math. */
-const STAGE_RANK: Record<LeadStage, number> = { NEW: 0, CONTACTED: 1, BOOKED: 2, TRIAL: 3, CONVERTED: 4, LOST: -1 };
+const STAGE_RANK: Record<LeadStage, number> = { NEW: 0, CONTACTED: 1, BOOKED: 2, TRIAL: 3, CONVERTED: 4, LOST: -1, ARCHIVED: -1, SPAM: -1 };
 
 function reached(stage: LeadStage, target: LeadStage): boolean {
-  if (stage === "LOST") return false;
+  if (STAGE_RANK[stage] < 0) return false;
   return STAGE_RANK[stage] >= STAGE_RANK[target];
 }
 
@@ -239,7 +239,7 @@ export async function visitorFunnel(opts: { locationId: string; days: number }) 
   const start = new Date();
   start.setDate(start.getDate() - opts.days);
   const rows = await getPrisma().visitor.findMany({
-    where: { locationId: opts.locationId, createdAt: { gte: start } },
+    where: { locationId: opts.locationId, createdAt: { gte: start }, stage: { not: "SPAM" } },
     select: { stage: true },
   });
   const stages = rows.map((r) => normalizeLeadStage(r.stage));
@@ -321,7 +321,7 @@ export async function acquisitionFunnelBySource(opts: { locationId: string; days
   start.setDate(start.getDate() - opts.days);
   const prisma = getPrisma();
   const rows = await prisma.visitor.findMany({
-    where: { locationId: opts.locationId, createdAt: { gte: start } },
+    where: { locationId: opts.locationId, createdAt: { gte: start }, stage: { not: "SPAM" } },
     select: { source: true, stage: true, convertedToMemberId: true },
   });
   const memberIds = rows.map((r) => r.convertedToMemberId).filter((x): x is string => !!x);

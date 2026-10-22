@@ -9,6 +9,8 @@
  *   COMMS_DRY_RUN=1  → log instead of calling Resend (safe for local testing)
  */
 import { Resend } from 'resend';
+import { recordOutbound, type LedgerOption } from '@/lib/message-ledger';
+import { defaultReplyTo } from '@/lib/inbound-email';
 
 type SendEmailResult = {
   ok: boolean;
@@ -32,6 +34,11 @@ export type SendEmailOptions = {
   attachments?: EmailAttachment[];
   headers?: Record<string, string>;
   tags?: { name: string; value: string }[];
+  /**
+   * Message-ledger hint. Every send is logged to `Message` by default; pass
+   * `false` when the caller logs its own row or the body contains a secret.
+   */
+  ledger?: LedgerOption;
 };
 
 const API_KEY = process.env.RESEND_API_KEY || '';
@@ -74,6 +81,24 @@ export async function sendEmail(
 
   if (!opts.to) return { ok: false, error: 'Missing recipient' };
 
+  const result = await sendEmailInner(opts);
+  if (opts.ledger !== false) {
+    await recordOutbound({
+      channel: 'EMAIL',
+      to: opts.to,
+      subject: opts.subject,
+      body: opts.html || opts.text || '',
+      ok: result.ok,
+      providerId: result.id ?? null,
+      error: result.error ?? null,
+      dryRun: result.dryRun,
+      hint: opts.ledger ?? undefined,
+    });
+  }
+  return result;
+}
+
+async function sendEmailInner(opts: SendEmailOptions): Promise<SendEmailResult> {
   if (isEmailDryRun()) {
     console.log('[sendEmail] DRY_RUN', { to: opts.to, subject: opts.subject, bcc: opts.bcc, replyTo: opts.replyTo, attachments: opts.attachments?.length ?? 0 });
     return { ok: true, id: `dry_${Date.now()}`, dryRun: true };
@@ -95,7 +120,9 @@ export async function sendEmail(
     if (opts.text) payload.text = opts.text;
     if (opts.bcc) payload.bcc = opts.bcc;
     if (opts.cc) payload.cc = opts.cc;
-    if (opts.replyTo) payload.replyTo = opts.replyTo;
+    // Replies should land in the inbox: default Reply-To to the inbound domain when configured.
+    const replyTo = opts.replyTo ?? defaultReplyTo();
+    if (replyTo) payload.replyTo = replyTo;
     if (opts.headers) payload.headers = opts.headers;
     if (opts.tags) payload.tags = opts.tags;
     if (opts.attachments?.length) payload.attachments = opts.attachments;
