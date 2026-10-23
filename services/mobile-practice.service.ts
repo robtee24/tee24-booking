@@ -174,6 +174,7 @@ export async function listSessions(memberId: string, limit = 30) {
         clubs: sum?.clubs?.length ?? 0,
         topFlags: (sum?.flags ?? []).slice(0, 2).map((f) => ({ key: f.key, title: f.title, severity: f.severity })),
         highlights: sum?.highlights ?? [],
+        swingAnalysisId: (sum as { swingAnalysisId?: string } | null)?.swingAnalysisId ?? null,
       };
     }),
   };

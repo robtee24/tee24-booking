@@ -439,6 +439,7 @@ model Member {
   practiceProfile         PracticeProfile?
   practicePlans           PracticePlan[]
   practiceSessions        PracticeSession[]
+  swingAnalyses           SwingAnalysis[]
   drillLogs               DrillLog[]
 
   family        FamilyMember?
@@ -1970,7 +1971,7 @@ model PracticeSession {
   id         String   @id @default(cuid())
   memberId   String
   locationId String?
-  // SOURCE: MANUAL | GSPRO_CSV | BAY_APP
+  // SOURCE: MANUAL | GSPRO_CSV | BAY_APP | SWING_VIDEO
   source     String   @default("MANUAL")
   playedAt   DateTime
   durationMin Int?
@@ -1983,8 +1984,9 @@ model PracticeSession {
   fileName   String?
   createdAt  DateTime @default(now())
 
-  member Member      @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  shots  SwingShot[]
+  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  shots    SwingShot[]
+  analysis SwingAnalysis?
 
   @@index([memberId, playedAt])
 }
@@ -2036,4 +2038,39 @@ model DrillLog {
 
   @@index([memberId, completedAt])
   @@index([planId])
+}
+
+/// Video swing analysis run by the swinglab service. The phone uploads the clip
+/// straight to swinglab with a ticket we mint; we store the compact report here
+/// and mirror the derived flags into a PracticeSession so the plan can use them.
+model SwingAnalysis {
+  id          String   @id @default(cuid())
+  memberId    String
+  sessionId   String?  @unique
+  /// PENDING (ticket minted) | UPLOADED (job started) | DONE | ERROR | EXPIRED
+  status      String   @default("PENDING")
+  jobId       String?
+  /// RH | LH
+  handedness  String   @default("RH")
+  /// face_on | down_the_line | auto
+  view        String   @default("auto")
+  club        String?
+  title       String?
+  notes       String?
+  /// Compact swinglab report (metrics, phases, feedback, output names)
+  report      Json?
+  /// Derived plan flags (SwingFlag[])
+  flags       Json?
+  error       String?
+  seconds     Float?
+  recordedAt  DateTime @default(now())
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  member  Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  session PracticeSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([memberId, createdAt])
+  @@index([jobId])
 }
