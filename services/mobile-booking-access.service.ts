@@ -61,9 +61,12 @@ export async function getBookingAccess(memberId: string, forDate: Date = new Dat
     return true;
   });
 
-  // Included playing guests: the subscription's guest add-on count, the plan's
-  // maxGuests, or at least one for "+ Guest" plans.
-  const includedGuests = (s: (typeof subs)[number] | undefined) => (s ? Math.max(s.guestCount ?? 0, s.plan.maxGuests ?? 0, /\+\s*guest/i.test(s.plan.name) ? 1 : 0) : 0);
+  // Included playing guests = the guest add-on the member actually pays for
+  // (subscription.guestCount; for a day pass, the guests bought with it).
+  // A standard Gilmore / Noonan / Tin Cup covers the member only — plan.maxGuests
+  // is just the purchasable cap, never an entitlement.
+  const includedGuests = (s: (typeof subs)[number] | undefined) => (s ? Math.max(0, s.guestCount ?? 0) : 0);
+  const displayName = (s: (typeof subs)[number]) => (s.plan.productType === "DAY_PASS" || s.guestCount < 1 ? s.plan.name : s.guestCount === 1 ? `${s.plan.name} + Guest` : `${s.plan.name} + ${s.guestCount} Guests`);
   const guests = { included: includedGuests(live), extraFeeCents: GUEST_PLAY_FEE_CENTS, unauthorizedFeeCents: UNAUTHORIZED_GUEST_FEE_CENTS, maxExtra: MAX_EXTRA_GUESTS };
 
   if (live) {
@@ -71,10 +74,10 @@ export async function getBookingAccess(memberId: string, forDate: Date = new Dat
     return {
       eligible: true,
       reason: "ACTIVE",
-      title: live.plan.name,
-      message: validThrough ? `Good through ${validThrough.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.` : "Your membership is active.",
+      title: displayName(live),
+      message: validThrough ? `Good through ${validThrough.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.` : guests.included > 0 ? `Your membership is active and includes ${guests.included} playing guest${guests.included === 1 ? "" : "s"} per visit.` : "Your membership is active. It covers you only — add a guest to your plan or pay the guest fee when booking.",
       validThrough: validThrough?.toISOString() ?? null,
-      planName: live.plan.name,
+      planName: displayName(live),
       guests,
       options: [],
     };
