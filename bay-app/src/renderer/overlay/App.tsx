@@ -3,11 +3,12 @@ import { kiosk, isErr, useKioskState, useServerNow, formatCountdown, formatTime,
 import type { Booking, KioskState } from '../shared/types';
 import { TroubleshootFlow } from '../shared/TroubleshootFlow';
 import { ScheduleView } from '../shared/ScheduleView';
+import { ExportFlow } from '../shared/ExportFlow';
 import { CloseIcon, LockIcon, DeleteIcon, CheckIcon } from '../shared/Icons';
 
 /**
  * Transparent always-on-top overlay. Shows exactly one modal at a time, driven
- * by main's state machine: unlock → upcoming → help/schedule (user-initiated).
+ * by main's state machine: unlock → upcoming → help/schedule/export (user-initiated).
  */
 export function App() {
   const state = useKioskState();
@@ -29,6 +30,11 @@ export function App() {
       {mode === 'schedule' && (
         <Modal title={`Bay ${state.settings.bayNumber ?? ''} schedule`} eyebrow={state.settings.locationName ?? 'Tee24'} wide onClose={() => kiosk.openOverlay('none')}>
           <ScheduleView serverOffsetMs={state.serverOffsetMs} />
+        </Modal>
+      )}
+      {mode === 'export' && (
+        <Modal title="Send your shot data" eyebrow="GSPro export → Tee24" wide onClose={() => kiosk.openOverlay('none')}>
+          <ExportFlow currentBooking={state.status?.currentBooking ?? null} onClose={() => kiosk.openOverlay('none')} />
         </Modal>
       )}
     </div>

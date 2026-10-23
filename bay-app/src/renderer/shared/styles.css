@@ -598,6 +598,9 @@ a {
 .fab-help {
   color: #86efac;
 }
+.fab-export {
+  color: #93c5fd;
+}
 .fab-countdown {
   height: auto;
   padding: 10px 6px;
@@ -789,4 +792,87 @@ a {
   border-radius: var(--radius-sm);
   padding: 16px;
   border: 1px solid var(--border);
+}
+
+/* ---------- Export (GSPro shot data) ---------- */
+.export-files {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 300px;
+  overflow: auto;
+}
+.export-file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+.export-file.on {
+  border-color: var(--green);
+  background: rgba(34, 197, 94, 0.1);
+}
+.export-file .check {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  display: grid;
+  place-items: center;
+  color: #052e16;
+  flex: none;
+}
+.export-file.on .check {
+  background: var(--green);
+  border-color: var(--green);
+}
+.export-file .name {
+  font-weight: 700;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.export-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.export-choice button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.export-choice button.on {
+  border-color: var(--green);
+  background: rgba(34, 197, 94, 0.1);
+}
+.export-choice button b {
+  font-size: 18px;
+}
+.export-choice button span {
+  color: var(--text-2);
+  font-size: 14px;
+}
+.export-steps {
+  display: grid;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 15px;
+  padding-left: 18px;
 }

@@ -6,6 +6,7 @@ export type { KioskSettings } from '../../main/store';
 export type { UpdatePhase } from '../../main/updater';
 export type { RemoteAgentStatus } from '../../main/remote';
 export type { LauncherState } from '../../main/launcher';
+export type { FoundCsv, ExportResult } from '../../main/exports';
 
 export type TroubleshootStep = {
   question?: string;

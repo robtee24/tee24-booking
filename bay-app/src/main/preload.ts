@@ -24,11 +24,15 @@ const api = {
 
   // Player actions
   play: () => ipcRenderer.invoke('kiosk:play'),
-  openOverlay: (mode: 'help' | 'schedule' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
+  openOverlay: (mode: 'help' | 'schedule' | 'export' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
   acceptUpcoming: (bookingId: string) => ipcRenderer.invoke('kiosk:acceptUpcoming', bookingId),
   checkIn: (bookingId: string, phone: string) => ipcRenderer.invoke('kiosk:checkIn', bookingId, phone),
   getSchedule: (dateISO?: string) => ipcRenderer.invoke('kiosk:schedule', dateISO),
   getHelp: () => ipcRenderer.invoke('kiosk:help'),
+  // GSPro shot-data export → Tee24 app / email
+  findExports: () => ipcRenderer.invoke('kiosk:findExports'),
+  sendExports: (input: { paths: string[]; delivery: 'APP' | 'EMAIL' | 'BOTH'; bookingId?: string | null; phone?: string | null; email?: string | null }) =>
+    ipcRenderer.invoke('kiosk:sendExports', input),
 
   // Admin (Quo SMS sign-in)
   adminSendOtp: (phone: string) => ipcRenderer.invoke('admin:sendOtp', phone),

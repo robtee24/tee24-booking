@@ -208,6 +208,13 @@ model Booking {
   // Optional link to the member who made this booking
   memberId String?
 
+  // Playing guests declared by the member (spectators are free and not counted).
+  guestCount     Int     @default(0)
+  // Guests beyond the membership's included allowance, billed per head.
+  paidGuestCount Int     @default(0)
+  guestFeeCents  Int     @default(0)
+  guestInvoiceId String?
+
   createdAt DateTime @default(now())
   Location  Location @relation(fields: [locationId], references: [id])
 
@@ -421,6 +428,7 @@ model Member {
   documentAssignments     DocumentAssignment[]
   signatureEvents         SignatureEvent[]
   photo                   MemberPhoto?
+  uploads                 MemberUpload[]
   membershipSubscriptions MembershipSubscription[]
   customFieldValues       CustomFieldValue[]
   automationEnrollments   AutomationEnrollment[]
@@ -440,6 +448,7 @@ model Member {
   practicePlans           PracticePlan[]
   practiceSessions        PracticeSession[]
   swingAnalyses           SwingAnalysis[]
+  shotDataExports         ShotDataExport[]
   drillLogs               DrillLog[]
 
   family        FamilyMember?
@@ -553,6 +562,12 @@ model MembershipPlan {
   kisiDoorGroups          Json?
   glCode                  String?
   incomeCategory          String?
+  // Guest add-ons. Recurring plans: price per guest per billing period (null = no guest option).
+  // Day passes: per-guest tier prices as a JSON array, e.g. [1500, 1000, 500] for guest #1/#2/#3.
+  guestAddonCents         Int?
+  maxGuests               Int           @default(0)
+  dayPassGuestPricing     Json?
+  sortOrder               Int           @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -609,6 +624,16 @@ model MembershipSubscription {
   autoRenew           Boolean   @default(true)
   cancelRequestedAt   DateTime?
   cancelRequestReason String?
+
+  // Guest add-on snapshot: priceCents already includes guestCents (per period).
+  guestCount          Int       @default(0)
+  guestCents          Int       @default(0)
+  // Signup promotion chosen (Discount.showOnSignup) + minimum-term commitment it carries.
+  promoDiscountId     String?
+  commitmentMonths    Int?
+  commitmentEndsAt    DateTime?
+  // Charged if the member cancels before commitmentEndsAt (e.g. the waived half of month one).
+  earlyCancelFeeCents Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -785,6 +810,20 @@ model Discount {
   // Restrict to specific signup forms
   signupFormIds    Json?
 
+  // Signup promotion: shown as a selectable offer on the signup form (no code needed).
+  showOnSignup              Boolean @default(false)
+  signupTitle               String?
+  signupDescription         String?
+  // Member must upload proof (military / first responder / student / senior ID) — reviewed by staff.
+  requiresIdUpload          Boolean @default(false)
+  idUploadLabel             String?
+  // Minimum term: member must stay N billing periods; cancelling earlier charges the waived amount back.
+  commitmentMonths          Int?
+  commitmentAcknowledgement String?
+  // EARLY_CANCEL_POLICY: CHARGE_DISCOUNT_BACK | NONE
+  earlyCancelPolicy         String?
+  sortOrder                 Int     @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -916,6 +955,31 @@ model MemberPhoto {
   updatedAt DateTime @updatedAt
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/// Files a member uploads for staff review (e.g. ID for a service / student / senior discount).
+model MemberUpload {
+  id           String    @id @default(cuid())
+  memberId     String
+  // KIND: PROMO_ID
+  kind         String
+  label        String?
+  discountId   String?
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  data         Bytes
+  // STATUS: PENDING | APPROVED | REJECTED
+  status       String    @default("PENDING")
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  createdAt    DateTime  @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([status])
 }
 
 model DocumentFile {
@@ -1915,50 +1979,50 @@ model EventRsvp {
 
 /// Answers from the Game Improvement onboarding survey (one per member).
 model PracticeProfile {
-  id              String   @id @default(cuid())
-  memberId        String   @unique
-  handicap        Float?
+  id                String   @id @default(cuid())
+  memberId          String   @unique
+  handicap          Float?
   /// BEGINNER | INTERMEDIATE | ADVANCED
-  experience      String?
+  experience        String?
   /// Rounds/visits per month the member can realistically practice
-  sessionsPerWeek Int?
+  sessionsPerWeek   Int?
   minutesPerSession Int?
   /// Dominant hand: RH | LH
-  handedness      String?
+  handedness        String?
   /// Array of goal keys, e.g. ["break_90","more_distance","consistency"]
-  goals           Json
+  goals             Json
   /// Array of issue keys, e.g. ["slice","fat_shots","putting_lag"]
-  issues          Json
+  issues            Json
   /// Array of club groups they struggle with: ["driver","long_irons","wedges","putter"]
-  weakClubs       Json
+  weakClubs         Json
   /// Typical miss keys: ["slice","hook","thin","fat","push","pull"]
-  misses          Json
+  misses            Json
   /// Raw survey payload for forward compatibility
-  survey          Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  survey            Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }
 
 /// A generated plan. Only one is active; regenerating archives the previous.
 model PracticePlan {
-  id          String    @id @default(cuid())
-  memberId    String
-  version     Int       @default(1)
-  title       String
-  summary     String
+  id         String    @id @default(cuid())
+  memberId   String
+  version    Int       @default(1)
+  title      String
+  summary    String
   /// [{ key, label, weight, reason }]
-  focusAreas  Json
+  focusAreas Json
   /// [{ day, title, minutes, drills: [{ key, sets, reps, minutes }] }]
-  schedule    Json
+  schedule   Json
   /// Drill definitions snapshot used by this plan
-  drills      Json
+  drills     Json
   /// What this plan was built from: { surveyAt, sessionsAnalyzed, flags: [...] }
-  basis       Json
-  active      Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  archivedAt  DateTime?
+  basis      Json
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  archivedAt DateTime?
 
   member    Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
   drillLogs DrillLog[]
@@ -1968,54 +2032,92 @@ model PracticePlan {
 
 /// A practice session, logged manually or imported from GSPro shot data.
 model PracticeSession {
-  id         String   @id @default(cuid())
-  memberId   String
-  locationId String?
+  id          String   @id @default(cuid())
+  memberId    String
+  locationId  String?
   // SOURCE: MANUAL | GSPRO_CSV | BAY_APP | SWING_VIDEO
-  source     String   @default("MANUAL")
-  playedAt   DateTime
+  source      String   @default("MANUAL")
+  playedAt    DateTime
   durationMin Int?
-  title      String?
-  notes      String?
-  shotCount  Int      @default(0)
+  title       String?
+  notes       String?
+  shotCount   Int      @default(0)
   /// Per-club aggregates + detected flags: { clubs: {...}, flags: [...] }
-  summary    Json?
+  summary     Json?
   /// Original file name for imports
-  fileName   String?
-  createdAt  DateTime @default(now())
+  fileName    String?
+  createdAt   DateTime @default(now())
 
-  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member   Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
   shots    SwingShot[]
   analysis SwingAnalysis?
+  export   ShotDataExport?
 
   @@index([memberId, playedAt])
 }
 
+/// A GSPro shot-data CSV captured at the bay kiosk and parked for the member
+/// app to pull in ("Sync latest data"). Unmatched exports keep the phone the
+/// player typed so the owner can claim them later.
+model ShotDataExport {
+  id          String    @id @default(cuid())
+  memberId    String?
+  locationId  String
+  bayNumber   Int
+  bookingId   String?
+  deviceId    String?
+  /// Digits-only phone the player identified with (when no booking match)
+  phone       String?
+  fileName    String
+  csvText     String
+  byteSize    Int       @default(0)
+  shotCount   Int       @default(0)
+  /// First/last shot timestamps parsed from the file, when present
+  playedAt    DateTime?
+  /// DELIVERY: APP | EMAIL | BOTH
+  delivery    String    @default("APP")
+  emailTo     String?
+  emailedAt   DateTime?
+  /// STATUS: PENDING | IMPORTED | FAILED | SKIPPED
+  status      String    @default("PENDING")
+  sessionId   String?   @unique
+  error       String?
+  importedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  member  Member?          @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  session PracticeSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([memberId, status, createdAt])
+  @@index([phone, status])
+  @@index([locationId, createdAt])
+}
+
 /// One launch-monitor shot (GSPro export row). Units: mph, degrees, rpm, yards.
 model SwingShot {
-  id            String  @id @default(cuid())
-  sessionId     String
-  club          String
-  ballSpeed     Float?
-  clubSpeed     Float?
-  smashFactor   Float?
-  launchAngle   Float?
-  launchDir     Float?
-  backSpin      Float?
-  sideSpin      Float?
-  spinAxis      Float?
-  carry         Float?
-  total         Float?
-  offline       Float?
-  apex          Float?
-  descentAngle  Float?
-  clubPath      Float?
-  faceAngle     Float?
-  faceToPath    Float?
-  attackAngle   Float?
-  dynamicLoft   Float?
-  shotAt        DateTime?
-  raw           Json?
+  id           String    @id @default(cuid())
+  sessionId    String
+  club         String
+  ballSpeed    Float?
+  clubSpeed    Float?
+  smashFactor  Float?
+  launchAngle  Float?
+  launchDir    Float?
+  backSpin     Float?
+  sideSpin     Float?
+  spinAxis     Float?
+  carry        Float?
+  total        Float?
+  offline      Float?
+  apex         Float?
+  descentAngle Float?
+  clubPath     Float?
+  faceAngle    Float?
+  faceToPath   Float?
+  attackAngle  Float?
+  dynamicLoft  Float?
+  shotAt       DateTime?
+  raw          Json?
 
   session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -2044,16 +2146,16 @@ model DrillLog {
 /// straight to swinglab with a ticket we mint; we store the compact report here
 /// and mirror the derived flags into a PracticeSession so the plan can use them.
 model SwingAnalysis {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   memberId    String
-  sessionId   String?  @unique
+  sessionId   String?   @unique
   /// PENDING (ticket minted) | UPLOADED (job started) | DONE | ERROR | EXPIRED
-  status      String   @default("PENDING")
+  status      String    @default("PENDING")
   jobId       String?
   /// RH | LH
-  handedness  String   @default("RH")
+  handedness  String    @default("RH")
   /// face_on | down_the_line | auto
-  view        String   @default("auto")
+  view        String    @default("auto")
   club        String?
   title       String?
   notes       String?
@@ -2063,10 +2165,10 @@ model SwingAnalysis {
   flags       Json?
   error       String?
   seconds     Float?
-  recordedAt  DateTime @default(now())
+  recordedAt  DateTime  @default(now())
   completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   member  Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
   session PracticeSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)

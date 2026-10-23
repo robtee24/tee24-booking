@@ -5,6 +5,8 @@
 import { getPrisma } from "@/lib/db";
 import { getAvailability } from "@/services/availability.service";
 import { cancelBooking, createBooking } from "@/services/booking.service";
+import { createInvoice, writeOffInvoice } from "@/services/billing.service";
+import { getBookingAccess, GUEST_PLAY_FEE_CENTS, MAX_EXTRA_GUESTS } from "@/services/mobile-booking-access.service";
 import { MobileError } from "@/services/mobile-auth.service";
 
 export type MobileBookingView = {
@@ -14,10 +16,16 @@ export type MobileBookingView = {
   bayNumber: number;
   status: "UPCOMING" | "IN_PROGRESS" | "PAST" | "CANCELLED";
   checkedInAt: string | null;
+  guestCount: number;
+  paidGuestCount: number;
+  guestFeeCents: number;
   location: { id: string; slug: string; name: string; timezone: string };
 };
 
-function viewOf(b: { id: string; start: Date; end: Date; bayNumber: number; canceledAt: Date | null; checkedInAt: Date | null; Location: { id: string; slug: string; name: string; timezone: string } }, now = new Date()): MobileBookingView {
+type BookingRow = { id: string; start: Date; end: Date; bayNumber: number; canceledAt: Date | null; checkedInAt: Date | null; guestCount: number; paidGuestCount: number; guestFeeCents: number; Location: { id: string; slug: string; name: string; timezone: string } };
+const BOOKING_SELECT = { id: true, start: true, end: true, bayNumber: true, canceledAt: true, checkedInAt: true, guestCount: true, paidGuestCount: true, guestFeeCents: true, Location: { select: { id: true, slug: true, name: true, timezone: true } } } as const;
+
+function viewOf(b: BookingRow, now = new Date()): MobileBookingView {
   const status = b.canceledAt ? "CANCELLED" : b.end < now ? "PAST" : b.start <= now ? "IN_PROGRESS" : "UPCOMING";
   return {
     id: b.id,
@@ -26,6 +34,9 @@ function viewOf(b: { id: string; start: Date; end: Date; bayNumber: number; canc
     bayNumber: b.bayNumber,
     status,
     checkedInAt: b.checkedInAt?.toISOString() ?? null,
+    guestCount: b.guestCount,
+    paidGuestCount: b.paidGuestCount,
+    guestFeeCents: b.guestFeeCents,
     location: b.Location,
   };
 }
@@ -45,7 +56,7 @@ export async function listMemberBookings(memberId: string) {
       end: { gte: since },
     },
     orderBy: { start: "asc" },
-    select: { id: true, start: true, end: true, bayNumber: true, canceledAt: true, checkedInAt: true, Location: { select: { id: true, slug: true, name: true, timezone: true } } },
+    select: BOOKING_SELECT,
   });
   const now = new Date();
   const views = rows.map((r) => viewOf(r, now));
@@ -62,11 +73,29 @@ export async function getMobileAvailability(input: { locationSlug: string; date:
   return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: location?.minBookingMinutes ?? 60, maxBookingMinutes: location?.maxBookingMinutes ?? 120 };
 }
 
-export async function createMemberBooking(memberId: string, input: { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH" }) {
-  const member = await getPrisma().member.findUnique({ where: { id: memberId }, select: { firstName: true, lastName: true, email: true, phone: true } });
+export type CreateMemberBookingInput = { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH"; guests?: number };
+
+export async function createMemberBooking(memberId: string, input: CreateMemberBookingInput) {
+  const prisma = getPrisma();
+  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { firstName: true, lastName: true, email: true, phone: true, organizationId: true } });
   if (!member) throw new MobileError("Member not found", 404, "MEMBER_NOT_FOUND");
+
+  // Only active members / pass holders may reserve.
+  const startAt = new Date(input.startLocal);
+  const access = await getBookingAccess(memberId, Number.isNaN(startAt.getTime()) ? new Date() : startAt);
+  if (!access.eligible) throw new MobileError(access.message, 402, "MEMBERSHIP_INACTIVE", { access });
+
+  const kind = input.partyKind === "GROUP" ? "GROUP" : "SINGLE";
+  const guests = Math.max(0, Math.min(20, Math.round(Number(input.guests ?? 0)) || 0));
+  const included = access.guests.included;
+  const maxTotal = included + MAX_EXTRA_GUESTS[kind];
+  if (guests > maxTotal) throw new MobileError(`That's more playing guests than one ${kind === "GROUP" ? "group" : "single"} bay allows (${maxTotal}).`, 400, "TOO_MANY_GUESTS", { maxGuests: maxTotal });
+  const paidGuests = Math.max(0, guests - included);
+  const guestFeeCents = paidGuests * GUEST_PLAY_FEE_CENTS;
+
+  let booking: Awaited<ReturnType<typeof createBooking>>;
   try {
-    const booking = await createBooking({
+    booking = await createBooking({
       startLocal: input.startLocal,
       endLocal: input.endLocal,
       locationSlug: input.locationSlug,
@@ -74,23 +103,47 @@ export async function createMemberBooking(memberId: string, input: { locationSlu
       lastName: member.lastName,
       email: member.email,
       phone: member.phone,
-      partyKind: input.partyKind,
+      partyKind: kind,
       handedness: input.handedness ?? "RH",
       source: "PUBLIC",
       memberId,
     });
-    return booking;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Couldn't create the reservation";
     const code = /No bay available|not available/i.test(msg) ? "NO_BAY_AVAILABLE" : /limit|maximum|consecutive|active booking/i.test(msg) ? "BOOKING_LIMIT" : "BOOKING_FAILED";
     throw new MobileError(msg, 400, code);
   }
+
+  let guestInvoiceId: string | null = null;
+  if (guestFeeCents > 0) {
+    const loc = await prisma.location.findUnique({ where: { slug: input.locationSlug }, select: { id: true, timezone: true } });
+    if (loc) {
+      const when = booking.start.toLocaleString("en-US", { timeZone: loc.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      try {
+        const inv = await createInvoice({
+          organizationId: member.organizationId,
+          locationId: loc.id,
+          memberId,
+          description: `Playing guest fee — Bay ${booking.bayNumber}, ${when}`,
+          dueDate: booking.start,
+          lines: [{ description: `Playing guest (${when})`, quantity: paidGuests, unitCents: GUEST_PLAY_FEE_CENTS }],
+          adminNotes: `Member app reservation ${booking.id}: ${guests} playing guest(s), ${included} included by plan.`,
+        });
+        guestInvoiceId = inv.id;
+      } catch (err) {
+        console.error("[mobile/bookings] guest invoice failed", err);
+      }
+    }
+  }
+  await prisma.booking.update({ where: { id: booking.id }, data: { guestCount: guests, paidGuestCount: paidGuests, guestFeeCents, guestInvoiceId } });
+
+  return { ...booking, guestCount: guests, paidGuestCount: paidGuests, guestFeeCents, guestInvoiceId };
 }
 
 export async function cancelMemberBooking(memberId: string, bookingId: string) {
   const prisma = getPrisma();
   const [booking, member] = await Promise.all([
-    prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, memberId: true, email: true, phone: true, canceledAt: true, start: true } }),
+    prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, memberId: true, email: true, phone: true, canceledAt: true, start: true, guestInvoiceId: true } }),
     prisma.member.findUnique({ where: { id: memberId }, select: { email: true, phone: true } }),
   ]);
   if (!booking) throw new MobileError("Reservation not found", 404, "NOT_FOUND");
@@ -100,5 +153,9 @@ export async function cancelMemberBooking(memberId: string, bookingId: string) {
   if (booking.canceledAt) throw new MobileError("Already cancelled", 410, "ALREADY_CANCELLED");
   if (booking.start < new Date()) throw new MobileError("This reservation has already started", 400, "ALREADY_STARTED");
   await cancelBooking(bookingId);
+  if (booking.guestInvoiceId) {
+    const inv = await prisma.invoice.findUnique({ where: { id: booking.guestInvoiceId }, select: { status: true } });
+    if (inv && ["SCHEDULED", "PAST_DUE", "FAILED"].includes(inv.status)) await writeOffInvoice(booking.guestInvoiceId, { reason: "Reservation cancelled by member" }).catch(() => null);
+  }
   return { id: bookingId };
 }

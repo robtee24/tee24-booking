@@ -5,6 +5,7 @@
 // callers must have already resolved the member from the portal session
 // (or, for signing, from the token itself).
 import { getPrisma } from "@/lib/db";
+import { membershipDisplayName } from "@/lib/membership-pricing";
 import { audit } from "@/lib/audit";
 import { adminNotify } from "@/lib/admin-notify";
 import { adminRoutes } from "@/lib/admin/routes";
@@ -115,7 +116,7 @@ export async function getMembershipOverview(memberId: string) {
       where: { memberId },
       orderBy: { startDate: "desc" },
       take: 6,
-      select: { id: true, status: true, startDate: true, endDate: true, plan: { select: { name: true } } },
+      select: { id: true, status: true, startDate: true, endDate: true, guestCount: true, plan: { select: { name: true } } },
     }),
   ]);
   const plans = await prisma.membershipPlan.findMany({
@@ -159,20 +160,20 @@ export async function submitMembershipRequest(memberId: string, kind: RequestKin
     if (sub.cancelRequestedAt && !sub.cancelledAt) throw new PortalError("A cancellation request is already pending");
     await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { cancelRequestedAt: new Date(), cancelRequestReason: reason } });
     title = `Cancellation request · ${name}`;
-    body = `${name} asked to cancel ${sub.plan.name}.${reason ? `\nReason: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
+    body = `${name} asked to cancel ${membershipDisplayName(sub.plan.name, sub.guestCount)}.${reason ? `\nReason: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
     notifKind = "membership.cancel_requested";
   } else if (kind === "freeze") {
     const resume = input.resumeDate ? new Date(input.resumeDate) : null;
     if (resume && Number.isNaN(resume.getTime())) throw new PortalError("Resume date is invalid");
     title = `Freeze request · ${name}`;
-    body = `${name} asked to freeze ${sub.plan.name}${resume ? ` until ${resume.toLocaleDateString()}` : ""}.${reason ? `\nReason: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
+    body = `${name} asked to freeze ${membershipDisplayName(sub.plan.name, sub.guestCount)}${resume ? ` until ${resume.toLocaleDateString()}` : ""}.${reason ? `\nReason: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
     notifKind = "membership.freeze_requested";
   } else {
     const plan = input.targetPlanId ? await prisma.membershipPlan.findFirst({ where: { id: input.targetPlanId, archived: false }, select: { name: true } }) : null;
     if (!plan) throw new PortalError("Pick a plan to switch to");
     targetPlanName = plan.name;
     title = `Plan change request · ${name}`;
-    body = `${name} asked to switch from ${sub.plan.name} to ${plan.name}.${reason ? `\nNote: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
+    body = `${name} asked to switch from ${membershipDisplayName(sub.plan.name, sub.guestCount)} to ${plan.name}.${reason ? `\nNote: ${reason}` : ""}\nPhone ${member.phone} · ${member.email}`;
     notifKind = "membership.change_requested";
   }
 
@@ -233,7 +234,7 @@ export async function getMembershipCard(memberId: string) {
         where: { status: { in: ["ACTIVE", "CANCEL_SCHEDULED", "FROZEN", "COMP"] } },
         orderBy: { startDate: "desc" },
         take: 1,
-        select: { status: true, paidThroughDate: true, endDate: true, plan: { select: { name: true } } },
+        select: { status: true, paidThroughDate: true, endDate: true, guestCount: true, plan: { select: { name: true } } },
       },
     },
   });
@@ -247,7 +248,7 @@ export async function getMembershipCard(memberId: string) {
     checkinCode: m.checkinCode,
     memberSince: m.joinDate ?? m.createdAt,
     location: m.location,
-    plan: sub?.plan.name ?? null,
+    plan: sub ? membershipDisplayName(sub.plan.name, sub.guestCount) : null,
     planStatus: sub?.status ?? null,
     validThrough: sub?.paidThroughDate ?? sub?.endDate ?? null,
     qrPayload: `tee24:member:${m.id}`,

@@ -19,6 +19,7 @@ export type DiscountRow = {
   activeMembers: number;
   savedCents: number;
   status: string; // ACTIVE | EXPIRED | FROZEN (exhausted) | SCHEDULED | CANCELLED
+  showOnSignup: boolean;
 };
 
 export function DiscountTable({ slug, rows, currency }: { slug: string; rows: DiscountRow[]; currency: string }) {
@@ -29,7 +30,7 @@ export function DiscountTable({ slug, rows, currency }: { slug: string; rows: Di
       cell: (r) => (
         <div>
           <Link href={adminRoutes.loc.billing.discountDetail(slug, r.id)} className="font-mono font-medium text-apple-text hover:underline">{r.code}</Link>
-          <div className="text-apple-xs text-apple-text-tertiary">{r.name}</div>
+          <div className="text-apple-xs text-apple-text-tertiary">{r.name}{r.showOnSignup && <span className="ml-2 rounded-full bg-apple-blue/10 px-1.5 py-0.5 text-[10px] font-medium text-apple-blue">Signup promo</span>}</div>
         </div>
       ),
     },

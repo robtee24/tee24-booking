@@ -1,5 +1,6 @@
 // GET  /api/mobile/bookings                → { upcoming, past }
-// POST /api/mobile/bookings { locationSlug, startLocal, endLocal, partyKind, handedness }
+// POST /api/mobile/bookings { locationSlug, startLocal, endLocal, partyKind, handedness, guests }
+//      → 402 MEMBERSHIP_INACTIVE { access } when the member has no active membership/pass
 import { createMemberBooking, listMemberBookings } from "@/services/mobile-booking.service";
 import { fail, ok, readJson, withMobileAuth } from "../_shared";
 
@@ -20,6 +21,7 @@ export const POST = withMobileAuth("bookings", async (req, auth) => {
     endLocal,
     partyKind: body.partyKind === "SINGLE" ? "SINGLE" : "GROUP",
     handedness: body.handedness === "LH" ? "LH" : "RH",
+    guests: typeof body.guests === "number" ? body.guests : Number(body.guests ?? 0),
   });
   return ok({ booking: { ...booking, start: booking.start.toISOString(), end: booking.end.toISOString() } });
 });

@@ -66,14 +66,14 @@ export function createHome(): BrowserWindow {
   return win;
 }
 
-/** Narrow always-on-top strip hugging the right edge: Help / Schedule / countdown. */
+/** Narrow always-on-top strip hugging the right edge: Help / Schedule / Export / countdown. */
 export function createToolbar(): BrowserWindow {
   const existing = get('toolbar');
   if (existing) return existing;
   const win = new BrowserWindow(
     common({
       width: 92,
-      height: 300,
+      height: 400,
       frame: false,
       transparent: true,
       resizable: false,

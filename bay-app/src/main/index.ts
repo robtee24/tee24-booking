@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell, powerSaveBlocker } from 'electron';
 import log from 'electron-log';
 import * as api from './api';
+import * as exportsMod from './exports';
 import { ApiError } from './api';
 import { getSettings, updateSettings, clearRegistration, DEFAULT_LAUNCH_MONITOR_PATHS } from './store';
 import { launchPlay, launchHelperOnly, pathsExist } from './launcher';
@@ -81,7 +82,7 @@ function registerIpc() {
     poller.forcePublish();
     return st;
   });
-  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'none') => poller.setUserMode(mode));
+  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'export' | 'none') => poller.setUserMode(mode));
   handle('kiosk:acceptUpcoming', (id: string) => poller.acceptUpcoming(id));
   handle('kiosk:checkIn', async (bookingId: string, phone: string) => {
     const r = await api.checkIn(bookingId, phone);
@@ -90,6 +91,8 @@ function registerIpc() {
   });
   handle('kiosk:schedule', (dateISO?: string) => api.getSchedule(dateISO));
   handle('kiosk:help', () => api.getHelp());
+  handle('kiosk:findExports', () => exportsMod.findRecentCsvs());
+  handle('kiosk:sendExports', (input: Parameters<typeof exportsMod.sendExports>[0]) => exportsMod.sendExports(input));
 
   // ---- Admin ----
   handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));

@@ -4,8 +4,10 @@
  * writes (home facility, profile, cancellation request).
  */
 import { getPrisma } from "@/lib/db";
+import { membershipDisplayName } from "@/lib/membership-pricing";
 import { getVisitAllowance } from "@/services/visit-allowance.service";
 import { getActiveDevice, MobileError } from "@/services/mobile-auth.service";
+import { getBookingAccess } from "@/services/mobile-booking-access.service";
 import { submitMembershipRequest, updateOwnProfile } from "@/services/portal.service";
 
 export type MobileLocation = {
@@ -95,7 +97,7 @@ export async function getMemberHome(memberId: string) {
   });
   if (!member) throw new MobileError("Member not found", 404, "MEMBER_NOT_FOUND");
 
-  const [locations, sub, allowance, device, openInvoice, paymentMethod, nextBooking] = await Promise.all([
+  const [locations, sub, allowance, device, openInvoice, paymentMethod, nextBooking, bookingAccess] = await Promise.all([
     listMobileLocations(),
     prisma.membershipSubscription.findFirst({
       where: { memberId, status: { in: ["ACTIVE", "CANCEL_SCHEDULED", "FROZEN", "COMP", "PENDING"] } },
@@ -115,6 +117,7 @@ export async function getMemberHome(memberId: string) {
       orderBy: { start: "asc" },
       select: { id: true, start: true, end: true, bayNumber: true, Location: { select: { id: true, slug: true, name: true, timezone: true } } },
     }),
+    getBookingAccess(memberId),
   ]);
 
   const homeLocation = locations.find((l) => l.id === (member.homeLocationId ?? member.locationId)) ?? locations.find((l) => l.id === member.locationId) ?? locations[0] ?? null;
@@ -141,7 +144,7 @@ export async function getMemberHome(memberId: string) {
           id: sub.id,
           status: sub.status,
           planId: sub.plan.id,
-          planName: sub.plan.name,
+          planName: membershipDisplayName(sub.plan.name, sub.guestCount),
           planDescription: sub.plan.description,
           priceCents: sub.priceCents,
           billingCadence: sub.billingCadence,
@@ -162,6 +165,7 @@ export async function getMemberHome(memberId: string) {
       paymentMethod,
     },
     homeLocationId: homeLocation?.id ?? null,
+    bookingAccess,
     locations,
     device: device
       ? { id: device.id, name: device.name, model: device.model, platform: device.platform, boundAt: device.boundAt.toISOString(), lastSeenAt: device.lastSeenAt?.toISOString() ?? null }

@@ -18,12 +18,24 @@ export type PlanRow = {
   durationDays: number | null;
   visitsPerPeriod: number | null;
   visitPeriod: string;
+  guestAddonCents: number | null;
+  maxGuests: number;
+  dayPassGuestPricing: unknown;
   _count: { subscriptions: number };
+};
+
+const guestLabel = (r: PlanRow) => {
+  if (r.productType === "DAY_PASS") {
+    const tiers = Array.isArray(r.dayPassGuestPricing) ? (r.dayPassGuestPricing as number[]) : [];
+    return tiers.length ? tiers.map((c) => `$${(c / 100).toFixed(0)}`).join(" / ") : "—";
+  }
+  if (r.guestAddonCents == null || r.maxGuests < 1) return "—";
+  return `+$${(r.guestAddonCents / 100).toFixed(0)} each · up to ${r.maxGuests}`;
 };
 
 const visitLabel = (r: PlanRow) => (r.visitsPerPeriod == null ? "Unlimited" : `${r.visitsPerPeriod} / ${r.visitPeriod === "ROLLING_WEEK" ? "week" : "month"}`);
 
-export function PlansTable({ plans, newHref }: { plans: PlanRow[]; newHref: string }) {
+export function PlansTable({ plans, newHref, editHref }: { plans: PlanRow[]; newHref: string; editHref: (id: string) => string }) {
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = React.useState<PlanRow | null>(null);
@@ -64,7 +76,7 @@ export function PlansTable({ plans, newHref }: { plans: PlanRow[]; newHref: stri
       header: "Plan",
       cell: (r) => (
         <div>
-          <div className="font-medium text-apple-text">{r.name}</div>
+          <Link href={editHref(r.id)} className="font-medium text-apple-text hover:underline">{r.name}</Link>
           <div className="text-apple-xs text-apple-text-tertiary">
             {r.productType.replace("_", " ")} · {r.category}
           </div>
@@ -102,6 +114,11 @@ export function PlansTable({ plans, newHref }: { plans: PlanRow[]; newHref: stri
       ),
     },
     {
+      key: "guests",
+      header: "Guests",
+      cell: (r) => <span className="text-apple-sm text-apple-text-secondary">{guestLabel(r)}</span>,
+    },
+    {
       key: "subs",
       header: "Active subs",
       align: "right",
@@ -111,6 +128,16 @@ export function PlansTable({ plans, newHref }: { plans: PlanRow[]; newHref: stri
       key: "status",
       header: "Status",
       cell: (r) => (r.archived ? <StatusBadge status="CANCELLED" size="sm" /> : <StatusBadge status="ACTIVE" size="sm" />),
+    },
+    {
+      key: "edit",
+      header: "",
+      align: "right",
+      cell: (r) => (
+        <Link href={editHref(r.id)} className="inline-flex items-center gap-1 text-apple-sm text-apple-blue hover:underline">
+          <Pencil size={14} /> Edit
+        </Link>
+      ),
     },
   ];
 

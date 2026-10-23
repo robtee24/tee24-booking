@@ -22,7 +22,7 @@ import * as windows from './windows';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export';
 
 export interface KioskState {
   version: string;
