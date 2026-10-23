@@ -25,6 +25,7 @@ import {
   createInvoice,
 } from "./billing.service";
 import { computeDiscountCents, findRecurringDiscountForMember } from "./discount.service";
+import { applyPendingChangeIfDue } from "./portal-membership.service";
 import type { Prisma } from "@prisma/client";
 
 export const AD_HOC_PLAN_DESCRIPTION = "Ad-hoc recurring charge";
@@ -185,7 +186,16 @@ export async function generateDueInvoices(now = new Date(), opts?: { subscriptio
     }
 
     try {
-      const r = await issueInvoiceForSubscription(sub, billingDate, { actorId: opts?.actorId, now });
+      // Self-service downgrade scheduled for this renewal? Apply it first so the invoice reflects the new plan.
+      let billable = sub;
+      if (sub.pendingChangeAt && sub.pendingChangeAt <= billingDate) {
+        const applied = await applyPendingChangeIfDue(sub.id, billingDate);
+        if (applied) {
+          const fresh = await prisma.membershipSubscription.findUnique({ where: { id: sub.id }, include: { plan: true, member: { select: { id: true, organizationId: true, status: true } }, location: true } });
+          if (fresh) billable = fresh;
+        }
+      }
+      const r = await issueInvoiceForSubscription(billable, billingDate, { actorId: opts?.actorId, now });
       if (r.invoiceId) result.created.push(r.invoiceId);
       if (r.charged) result.charged.push(r.invoiceId!);
       if (r.failureReason && r.invoiceId) result.failed.push({ invoiceId: r.invoiceId, reason: r.failureReason });

@@ -29,7 +29,23 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const promoIds = [...new Set(subscriptions.map((s) => s.promoDiscountId).filter((x): x is string => !!x))];
   const promos = promoIds.length ? await prisma.discount.findMany({ where: { id: { in: promoIds } }, select: { id: true, code: true, name: true, type: true, value: true } }) : [];
   const promoById = new Map(promos.map((d) => [d.id, { id: d.id, code: d.code, name: d.name, label: promoTagLabel(d) }]));
-  return NextResponse.json({ subscriptions: subscriptions.map((s) => ({ ...s, promo: (s.promoDiscountId && promoById.get(s.promoDiscountId)) || null })), plans: visible });
+  // Scheduled self-service downgrades: resolve the target plan name for display.
+  const pendingIds = [...new Set(subscriptions.map((s) => s.pendingPlanId).filter((x): x is string => !!x))];
+  const pendingPlans = pendingIds.length ? await prisma.membershipPlan.findMany({ where: { id: { in: pendingIds } }, select: { id: true, name: true, productType: true } }) : [];
+  const pendingById = new Map(pendingPlans.map((p) => [p.id, p]));
+  return NextResponse.json({
+    subscriptions: subscriptions.map((s) => {
+      const pp = s.pendingPlanId ? pendingById.get(s.pendingPlanId) : null;
+      return {
+        ...s,
+        promo: (s.promoDiscountId && promoById.get(s.promoDiscountId)) || null,
+        pendingChange: pp && s.pendingChangeAt && s.pendingGuestCount != null && s.pendingPriceCents != null
+          ? { displayName: membershipDisplayName(pp.name, s.pendingGuestCount, pp.productType), priceCents: s.pendingPriceCents, effectiveAt: s.pendingChangeAt }
+          : null,
+      };
+    }),
+    plans: visible,
+  });
 }
 
 /**

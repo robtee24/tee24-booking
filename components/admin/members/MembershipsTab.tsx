@@ -17,6 +17,7 @@ type Sub = {
   freezeStartDate: string | null; freezeResumeDate: string | null; freezeReason: string | null; freezeFeeCents: number | null; autoRenew: boolean;
   guestCount: number; guestCents: number; promoDiscountId: string | null; commitmentMonths: number | null; commitmentEndsAt: string | null; earlyCancelFeeCents: number | null;
   promo?: { id: string; code: string; name: string; label: string } | null;
+  pendingChange?: { displayName: string; priceCents: number; effectiveAt: string } | null;
   plan: Plan;
 };
 type Upload = { id: string; kind: string; label: string | null; mimeType: string; sizeBytes: number; status: string; createdAt: string; reviewedAt: string | null; reviewNotes: string | null; discountId: string | null };
@@ -89,6 +90,7 @@ export function MembershipsTab({ memberId }: { slug: string; memberId: string })
                   {!s.autoRenew && <Badge tone="muted" size="sm">No auto-renew</Badge>}
                   {s.guestCount > 0 && <Badge tone="info" size="sm"><Users className="mr-1 inline h-3 w-3" />{s.guestCount} guest{s.guestCount === 1 ? "" : "s"} per visit</Badge>}
                   {s.promo && <span title={s.promo.name}><Badge tone="success" size="sm">{s.promo.label}</Badge></span>}
+                  {s.pendingChange && <span title={`Member scheduled this change in the clubhouse. Applies at the next renewal.`}><Badge tone="warn" size="sm">→ {s.pendingChange.displayName} · ${(s.pendingChange.priceCents / 100).toFixed(2)} from {fmtDate(s.pendingChange.effectiveAt)}</Badge></span>}
                   {earlyCancelFeeDue(s) > 0 && <Badge tone="warn" size="sm">Min. term through {fmtDate(s.commitmentEndsAt)}</Badge>}
                 </div>
                 <div className="text-apple-sm text-apple-text-secondary">

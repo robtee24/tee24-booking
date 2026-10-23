@@ -103,7 +103,7 @@ export async function getMembershipOverview(memberId: string) {
   const [sub, openInvoice, lastPaid, history] = await Promise.all([
     prisma.membershipSubscription.findFirst({
       where: { memberId, status: { in: ["ACTIVE", "CANCEL_SCHEDULED", "FROZEN", "COMP", "PENDING"] } },
-      include: { plan: { select: { id: true, name: true, description: true, billingCadence: true, productType: true, cancellationPolicy: true, freezePolicy: true } } },
+      include: { plan: { select: { id: true, name: true, description: true, billingCadence: true, productType: true, cancellationPolicy: true, freezePolicy: true, guestAddonCents: true, maxGuests: true, dayPassGuestPricing: true } } },
       orderBy: { startDate: "desc" },
     }),
     prisma.invoice.findFirst({
@@ -124,7 +124,19 @@ export async function getMembershipOverview(memberId: string) {
     orderBy: { priceCents: "asc" },
     select: { id: true, name: true, priceCents: true, billingCadence: true, description: true },
   });
-  return { sub, openInvoice, lastPaid, history, plans };
+  const pendingPlan = sub?.pendingPlanId ? await prisma.membershipPlan.findUnique({ where: { id: sub.pendingPlanId }, select: { name: true, productType: true } }) : null;
+  const pendingChange =
+    sub?.pendingPlanId && sub.pendingChangeAt && sub.pendingGuestCount != null && sub.pendingPriceCents != null
+      ? {
+          planId: sub.pendingPlanId,
+          planName: pendingPlan?.name ?? "New plan",
+          displayName: membershipDisplayName(pendingPlan?.name ?? "New plan", sub.pendingGuestCount, pendingPlan?.productType),
+          guestCount: sub.pendingGuestCount,
+          priceCents: sub.pendingPriceCents,
+          effectiveAt: sub.pendingChangeAt.toISOString(),
+        }
+      : null;
+  return { sub, openInvoice, lastPaid, history, plans, pendingChange };
 }
 
 type RequestKind = "cancel" | "freeze" | "change-plan";

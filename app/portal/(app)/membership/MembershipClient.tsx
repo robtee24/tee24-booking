@@ -3,31 +3,38 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, CalendarClock, PauseCircle, XCircle } from "lucide-react";
-import { Button, Card, CardHeader, Input, Modal, Select, Textarea } from "@/components/ui";
+import { ArrowRightLeft, CalendarClock, PauseCircle, Users, XCircle } from "lucide-react";
+import { Button, Card, CardHeader, Input, Modal, Textarea } from "@/components/ui";
+import { ChangePlanModal } from "./ChangePlanModal";
+import type { PendingChangeView } from "@/services/portal-membership.service";
 
 export type PlanOption = { id: string; name: string; priceCents: number; billingCadence: string; description: string | null };
 
-type Kind = "cancel" | "freeze" | "change-plan";
+type Kind = "cancel" | "freeze";
+type SelfServe = { focus: "plan" | "guests"; planId: string; guestCount: number };
 
 export function MembershipActions({
   canRequest,
   cancelPending,
   currentPlanId,
-  plans,
+  currentGuestCount,
+  maxGuests,
   frozen,
+  recurring,
 }: {
   canRequest: boolean;
   cancelPending: boolean;
   currentPlanId: string | null;
-  plans: PlanOption[];
+  currentGuestCount: number;
+  maxGuests: number;
   frozen: boolean;
+  recurring: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState<Kind | null>(null);
+  const [selfServe, setSelfServe] = React.useState<SelfServe | null>(null);
   const [reason, setReason] = React.useState("");
   const [resumeDate, setResumeDate] = React.useState("");
-  const [targetPlanId, setTargetPlanId] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState<string | null>(null);
@@ -35,7 +42,6 @@ export function MembershipActions({
   function start(k: Kind) {
     setReason("");
     setResumeDate("");
-    setTargetPlanId(plans.find((p) => p.id !== currentPlanId)?.id ?? "");
     setError(null);
     setOpen(k);
   }
@@ -48,11 +54,11 @@ export function MembershipActions({
       const res = await fetch("/api/portal/membership", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: open, reason: reason.trim() || undefined, resumeDate: resumeDate || undefined, targetPlanId: targetPlanId || undefined }),
+        body: JSON.stringify({ action: open, reason: reason.trim() || undefined, resumeDate: resumeDate || undefined }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-      setDone(open === "cancel" ? "We've received your cancellation request. A team member will confirm your end date shortly." : open === "freeze" ? "Freeze request sent. We'll confirm the dates and any freeze fee with you." : "Plan change request sent. We'll reach out to confirm pricing and timing.");
+      setDone(open === "cancel" ? "We've received your cancellation request. A team member will confirm your end date shortly." : "Freeze request sent. We'll confirm the dates and any freeze fee with you.");
       setOpen(null);
       router.refresh();
     } catch (e: unknown) {
@@ -62,20 +68,25 @@ export function MembershipActions({
     }
   }
 
-  const otherPlans = plans.filter((p) => p.id !== currentPlanId);
+  const canSelfServe = canRequest && recurring && !!currentPlanId;
+  const guestTitle = currentGuestCount > 0 ? `${currentGuestCount} guest${currentGuestCount === 1 ? "" : "s"} per visit` : "Add a guest";
+  const guestBody = currentGuestCount > 0 ? "Add another guest or go back to member-only." : "Bring a complimentary guest on every visit for $25/mo.";
 
   return (
     <>
       <Card>
-        <CardHeader title="Manage membership" subtitle="Requests go to the front desk — nothing changes until a team member confirms." />
+        <CardHeader title="Manage membership" subtitle="Plan and guest changes apply instantly (upgrades) or at your next renewal (downgrades). Freezes and cancellations are confirmed by the front desk." />
         {done && <div className="mt-3 rounded-apple-sm bg-apple-green/10 px-4 py-3 text-apple-sm text-apple-green">{done}</div>}
         {!canRequest && <p className="mt-3 text-apple-sm text-apple-text-tertiary">Membership changes are disabled while staff are viewing this account.</p>}
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ActionTile icon={<ArrowRightLeft className="h-5 w-5" />} title="Change plan" body="Move up or down between memberships." onClick={() => currentPlanId && setSelfServe({ focus: "plan", planId: currentPlanId, guestCount: currentGuestCount })} disabled={!canSelfServe} />
+          <ActionTile icon={<Users className="h-5 w-5" />} title={guestTitle} body={maxGuests > 0 ? guestBody : "Your plan doesn't include guest add-ons."} onClick={() => currentPlanId && setSelfServe({ focus: "guests", planId: currentPlanId, guestCount: Math.min(maxGuests, currentGuestCount > 0 ? currentGuestCount : 1) })} disabled={!canSelfServe || maxGuests === 0} />
           <ActionTile icon={<PauseCircle className="h-5 w-5" />} title={frozen ? "Membership frozen" : "Request a freeze"} body={frozen ? "Your membership is currently on hold." : "Going away? Pause billing and access for a while."} onClick={() => start("freeze")} disabled={!canRequest || frozen} />
-          <ActionTile icon={<ArrowRightLeft className="h-5 w-5" />} title="Change plan" body="Move up or down to a different plan." onClick={() => start("change-plan")} disabled={!canRequest || otherPlans.length === 0} />
           <ActionTile icon={<XCircle className="h-5 w-5" />} title={cancelPending ? "Cancellation pending" : "Request cancellation"} body={cancelPending ? "We've got your request and will be in touch." : "We'll confirm your final date and any notice period."} onClick={() => start("cancel")} disabled={!canRequest || cancelPending} danger />
         </div>
       </Card>
+
+      {selfServe && <ChangePlanModal open onClose={() => setSelfServe(null)} initial={{ planId: selfServe.planId, guestCount: selfServe.guestCount }} focus={selfServe.focus} />}
 
       <Modal
         open={open === "cancel"}
@@ -112,34 +123,6 @@ export function MembershipActions({
         </div>
       </Modal>
 
-      <Modal
-        open={open === "change-plan"}
-        onClose={() => setOpen(null)}
-        title="Change plan"
-        description="Pick the plan you'd like to move to. We'll confirm pricing and when the change takes effect."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setOpen(null)}>Cancel</Button>
-            <Button onClick={() => void submit()} loading={busy} disabled={!targetPlanId}>Send request</Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <Select label="New plan" value={targetPlanId} onChange={(e) => setTargetPlanId(e.target.value)}>
-            <option value="">Choose a plan…</option>
-            {otherPlans.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} — ${(p.priceCents / 100).toFixed(2)}/{p.billingCadence.toLowerCase().replace("ly", "")}
-              </option>
-            ))}
-          </Select>
-          {targetPlanId && otherPlans.find((p) => p.id === targetPlanId)?.description && (
-            <p className="text-apple-sm text-apple-text-secondary">{otherPlans.find((p) => p.id === targetPlanId)!.description}</p>
-          )}
-          <Textarea label="Anything we should know? (optional)" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-          {error && <p className="text-apple-sm text-apple-red">{error}</p>}
-        </div>
-      </Modal>
     </>
   );
 }
@@ -179,6 +162,40 @@ export function RenewBanner({ payToken, totalCents, dueDate, status }: { payToke
           {overdue ? "Pay now" : "Pay early / renew"}
         </Link>
       )}
+    </div>
+  );
+}
+
+export function PendingChangeBanner({ pending, canCancel }: { pending: PendingChangeView; canCancel: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  async function cancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/portal/membership/change", { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+      router.refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Couldn't cancel");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const date = new Date(pending.effectiveAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return (
+    <div className="flex flex-col gap-3 rounded-apple border border-apple-orange/30 bg-apple-orange/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <CalendarClock className="mt-0.5 h-5 w-5 text-apple-orange" />
+        <div>
+          <div className="text-apple-sm font-semibold text-apple-text">Scheduled change · {pending.displayName}</div>
+          <div className="text-apple-xs text-apple-text-secondary">Starts {date} at ${(pending.priceCents / 100).toFixed(2)} per period. Your current plan stays in place until then.</div>
+          {error && <div className="mt-1 text-apple-xs text-apple-red">{error}</div>}
+        </div>
+      </div>
+      {canCancel && <Button variant="secondary" size="sm" onClick={() => void cancel()} loading={busy}>Keep my current plan</Button>}
     </div>
   );
 }

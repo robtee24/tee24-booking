@@ -635,6 +635,13 @@ model MembershipSubscription {
   // Charged if the member cancels before commitmentEndsAt (e.g. the waived half of month one).
   earlyCancelFeeCents Int?
 
+  // Scheduled downgrade (self-service): applied by recurring billing when
+  // pendingChangeAt arrives, right before that period's invoice is issued.
+  pendingPlanId     String?
+  pendingGuestCount Int?
+  pendingPriceCents Int?
+  pendingChangeAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

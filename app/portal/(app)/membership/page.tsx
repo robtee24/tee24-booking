@@ -1,17 +1,17 @@
 import Link from "next/link";
-import { membershipDisplayName } from "@/lib/membership-pricing";
+import { maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
 import { Card, CardHeader, Money, StatusBadge } from "@/components/ui";
 import { getCurrentMember, getMemberSession } from "@/lib/member-session";
 import { getMembershipOverview } from "@/services/portal.service";
 import { PortalSubNav } from "@/components/portal/PortalSubNav";
-import { MembershipActions, RenewBanner } from "./MembershipClient";
+import { MembershipActions, PendingChangeBanner, RenewBanner } from "./MembershipClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function PortalMembershipPage() {
   const [member, session] = await Promise.all([getCurrentMember(), getMemberSession()]);
   if (!member) return null;
-  const { sub, openInvoice, lastPaid, history, plans } = await getMembershipOverview(member.id);
+  const { sub, openInvoice, lastPaid, history, pendingChange } = await getMembershipOverview(member.id);
   const canRequest = session?.role !== "IMPERSONATED";
 
   return (
@@ -22,6 +22,7 @@ export default async function PortalMembershipPage() {
       </div>
 
       {openInvoice && <RenewBanner payToken={openInvoice.payToken} totalCents={openInvoice.totalCents} dueDate={openInvoice.dueDate.toISOString()} status={openInvoice.status} />}
+      {pendingChange && <PendingChangeBanner pending={pendingChange} canCancel={canRequest} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -38,6 +39,8 @@ export default async function PortalMembershipPage() {
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-apple-sm">
                 <dt className="text-apple-text-secondary">Price</dt>
                 <dd className="text-right"><Money cents={sub.priceCents} /> / {sub.billingCadence.toLowerCase()}</dd>
+                <dt className="text-apple-text-secondary">Guests</dt>
+                <dd className="text-right">{sub.guestCount > 0 ? `${sub.guestCount} complimentary guest${sub.guestCount === 1 ? "" : "s"} every visit` : "Member only"}</dd>
                 <dt className="text-apple-text-secondary">Started</dt>
                 <dd className="text-right">{sub.startDate.toLocaleDateString()}</dd>
                 {sub.paidThroughDate && (
@@ -99,8 +102,10 @@ export default async function PortalMembershipPage() {
           canRequest={canRequest}
           cancelPending={!!sub.cancelRequestedAt && !sub.cancelledAt}
           currentPlanId={sub.plan.id}
-          plans={plans}
+          currentGuestCount={sub.guestCount}
+          maxGuests={maxGuestsFor(sub.plan)}
           frozen={sub.status === "FROZEN"}
+          recurring={sub.plan.productType === "RECURRING"}
         />
       )}
 
