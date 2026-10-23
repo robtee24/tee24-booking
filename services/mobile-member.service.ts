@@ -4,7 +4,6 @@
  * writes (home facility, profile, cancellation request).
  */
 import { getPrisma } from "@/lib/db";
-import { membershipDisplayName } from "@/lib/membership-pricing";
 import { getVisitAllowance } from "@/services/visit-allowance.service";
 import { getActiveDevice, MobileError } from "@/services/mobile-auth.service";
 import { getBookingAccess } from "@/services/mobile-booking-access.service";
@@ -101,7 +100,7 @@ export async function getMemberHome(memberId: string) {
     listMobileLocations(),
     prisma.membershipSubscription.findFirst({
       where: { memberId, status: { in: ["ACTIVE", "CANCEL_SCHEDULED", "FROZEN", "COMP", "PENDING"] } },
-      include: { plan: { select: { id: true, name: true, description: true, visitsPerPeriod: true, visitPeriod: true, billingCadence: true } } },
+      include: { plan: { select: { id: true, name: true, description: true, visitsPerPeriod: true, visitPeriod: true, billingCadence: true, productType: true } } },
       orderBy: [{ status: "asc" }, { startDate: "desc" }],
     }),
     getVisitAllowance(memberId),
@@ -144,7 +143,7 @@ export async function getMemberHome(memberId: string) {
           id: sub.id,
           status: sub.status,
           planId: sub.plan.id,
-          planName: membershipDisplayName(sub.plan.name, sub.guestCount),
+          planName: sub.plan.name,
           planDescription: sub.plan.description,
           priceCents: sub.priceCents,
           billingCadence: sub.billingCadence,
