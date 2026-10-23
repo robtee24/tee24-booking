@@ -16,6 +16,7 @@ type Sub = {
   cancelScheduledFor: string | null; cancellationReason: string | null; cancellationNotes: string | null; cancelledAt: string | null;
   freezeStartDate: string | null; freezeResumeDate: string | null; freezeReason: string | null; freezeFeeCents: number | null; autoRenew: boolean;
   guestCount: number; guestCents: number; promoDiscountId: string | null; commitmentMonths: number | null; commitmentEndsAt: string | null; earlyCancelFeeCents: number | null;
+  promo?: { id: string; code: string; name: string; label: string } | null;
   plan: Plan;
 };
 type Upload = { id: string; kind: string; label: string | null; mimeType: string; sizeBytes: number; status: string; createdAt: string; reviewedAt: string | null; reviewNotes: string | null; discountId: string | null };
@@ -87,6 +88,7 @@ export function MembershipsTab({ memberId }: { slug: string; memberId: string })
                   <StatusBadge status={s.status} size="sm" />
                   {!s.autoRenew && <Badge tone="muted" size="sm">No auto-renew</Badge>}
                   {s.guestCount > 0 && <Badge tone="info" size="sm"><Users className="mr-1 inline h-3 w-3" />{s.guestCount} guest{s.guestCount === 1 ? "" : "s"} per visit</Badge>}
+                  {s.promo && <span title={s.promo.name}><Badge tone="success" size="sm">{s.promo.label}</Badge></span>}
                   {earlyCancelFeeDue(s) > 0 && <Badge tone="warn" size="sm">Min. term through {fmtDate(s.commitmentEndsAt)}</Badge>}
                 </div>
                 <div className="text-apple-sm text-apple-text-secondary">
@@ -140,6 +142,7 @@ export function MembershipsTab({ memberId }: { slug: string; memberId: string })
               <li key={s.id} className="flex flex-col gap-1 px-4 py-3 text-apple-sm sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <span className="font-medium text-apple-text">{subName(s)}</span>
+                  {s.promo && <Badge tone="success" size="sm" className="ml-2">{s.promo.label}</Badge>}
                   <span className="ml-2 text-apple-xs text-apple-text-tertiary">{fmtDate(s.startDate)} → {fmtDate(s.cancelledAt ?? s.endDate)}</span>
                   {s.cancellationReason && <div className="text-apple-xs text-apple-text-tertiary">{s.cancellationReason}{s.cancellationNotes ? ` — ${s.cancellationNotes}` : ""}</div>}
                 </div>

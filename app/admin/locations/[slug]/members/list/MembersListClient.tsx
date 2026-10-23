@@ -12,7 +12,11 @@ type Row = {
   id: string; firstName: string; lastName: string; email: string; phone: string; status: string; photoUrl: string | null; joinDate: string | null; dob: string | null; gender: string | null;
   checkinCode: string | null; membershipType: string | null; kisiAccessEnabled: boolean;
   memberTags: Array<{ tag: { id: string; name: string; color: string | null } }>;
-  subscription: { id: string; status: string; planName: string; paidThroughDate: string | null; nextInvoiceDate: string | null } | null;
+  subscription: {
+    id: string; status: string; planName: string; paidThroughDate: string | null; nextInvoiceDate: string | null;
+    displayName: string; guestCount: number; priceCents: number;
+    promo: { id: string; code: string; name: string; label: string } | null;
+  } | null;
   lastVisitAt: string | null;
   billing: { nextInvoiceDue: string | null; nextInvoiceCents: number | null; overdueCents: number; overdueCount: number; hasCard: boolean };
 };
@@ -167,7 +171,19 @@ export default function MembersListClient({ slug, plans }: { slug: string; plans
       key: "membership", header: "Membership",
       cell: (m) => m.subscription ? (
         <div>
-          <div className="text-apple-text">{m.subscription.planName}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-apple-text">{m.subscription.planName}</span>
+            {m.subscription.guestCount > 0 && (
+              <span title={`${m.subscription.guestCount} complimentary guest${m.subscription.guestCount === 1 ? "" : "s"} on every visit`}>
+                <Badge tone="info" size="sm">+ {m.subscription.guestCount === 1 ? "Guest" : `${m.subscription.guestCount} Guests`}</Badge>
+              </span>
+            )}
+            {m.subscription.promo && (
+              <span title={m.subscription.promo.name}>
+                <Badge tone="success" size="sm">{m.subscription.promo.label}</Badge>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 text-apple-xs text-apple-text-tertiary">
             <StatusBadge status={m.subscription.status} size="sm" />
             {m.subscription.paidThroughDate && <span>thru {fmtDate(m.subscription.paidThroughDate)}</span>}

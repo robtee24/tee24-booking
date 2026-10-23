@@ -29,7 +29,7 @@ export async function exportMembersCsv(q: MemberQuery): Promise<{ csv: string; c
       count++;
       lines.push([
         m.id, m.firstName, m.lastName, m.email, m.phone, m.status,
-        m.subscription?.planName ?? m.membershipType ?? "", m.subscription?.status ?? "",
+        m.subscription ? [m.subscription.displayName, m.subscription.promo?.label].filter(Boolean).join(" · ") : (m.membershipType ?? ""), m.subscription?.status ?? "",
         m.subscription?.paidThroughDate ?? "", m.joinDate ?? "", m.dob ?? "", m.gender ?? "", m.checkinCode ?? "",
         m.lastVisitAt ? m.lastVisitAt.toISOString() : "", m.billing.nextInvoiceDue ?? "",
         m.billing.nextInvoiceCents != null ? (m.billing.nextInvoiceCents / 100).toFixed(2) : "",

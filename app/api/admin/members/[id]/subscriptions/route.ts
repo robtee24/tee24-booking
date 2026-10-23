@@ -6,7 +6,7 @@ import { emitMemberEvent } from "@/lib/events";
 import { subscribeMember } from "@/services/membership.service";
 import { updateMember } from "@/services/member.service";
 import { apiError, parseDate, readJson, requireMemberApi } from "../../_shared";
-import { guestCentsFor, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { guestCentsFor, maxGuestsFor, membershipDisplayName, promoTagLabel } from "@/lib/membership-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     }),
   ]);
   const visible = plans.filter((p) => !p.allowedLocations || p.allowedLocations.split(",").map((s) => s.trim()).includes(g.location.id));
-  return NextResponse.json({ subscriptions, plans: visible });
+  // Attach the signup promo / standing discount (e.g. 25% military/senior) so the UI can tag it.
+  const promoIds = [...new Set(subscriptions.map((s) => s.promoDiscountId).filter((x): x is string => !!x))];
+  const promos = promoIds.length ? await prisma.discount.findMany({ where: { id: { in: promoIds } }, select: { id: true, code: true, name: true, type: true, value: true } }) : [];
+  const promoById = new Map(promos.map((d) => [d.id, { id: d.id, code: d.code, name: d.name, label: promoTagLabel(d) }]));
+  return NextResponse.json({ subscriptions: subscriptions.map((s) => ({ ...s, promo: (s.promoDiscountId && promoById.get(s.promoDiscountId)) || null })), plans: visible });
 }
 
 /**

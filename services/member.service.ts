@@ -9,6 +9,7 @@ import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit, diff } from "@/lib/audit";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
+import { membershipDisplayName, promoTagLabel } from "@/lib/membership-pricing";
 
 export type MemberStatus = "PENDING" | "ACTIVE" | "VISITOR" | "FROZEN" | "CANCELLED" | "MERGED";
 
@@ -76,7 +77,15 @@ export type MemberListRow = {
   membershipType: string | null;
   kisiAccessEnabled: boolean;
   memberTags: Array<{ tag: { id: string; name: string; color: string | null } }>;
-  subscription: { id: string; status: string; planName: string; paidThroughDate: Date | null; nextInvoiceDate: Date | null } | null;
+  subscription: {
+    id: string; status: string; planName: string; paidThroughDate: Date | null; nextInvoiceDate: Date | null;
+    /** Plan name incl. "+ Guest" suffix (day passes stay plain). */
+    displayName: string;
+    guestCount: number;
+    priceCents: number;
+    /** Signup promotion / standing discount attached to this subscription (e.g. 25% military/senior). */
+    promo: { id: string; code: string; name: string; label: string } | null;
+  } | null;
   lastVisitAt: Date | null;
   billing: { nextInvoiceDue: Date | null; nextInvoiceCents: number | null; overdueCents: number; overdueCount: number; hasCard: boolean };
 };
@@ -234,7 +243,7 @@ export async function queryMembers(q: MemberQuery): Promise<{ items: MemberListR
     prisma.membershipSubscription.findMany({
       where: { memberId: { in: pageIds }, status: { in: ["ACTIVE", "FROZEN", "CANCEL_SCHEDULED", "FREEZE_SCHEDULED", "COMP", "PENDING"] } },
       orderBy: { startDate: "desc" },
-      select: { id: true, memberId: true, status: true, paidThroughDate: true, nextInvoiceDate: true, plan: { select: { name: true } } },
+      select: { id: true, memberId: true, status: true, paidThroughDate: true, nextInvoiceDate: true, guestCount: true, priceCents: true, promoDiscountId: true, plan: { select: { name: true, productType: true } } },
     }),
     prisma.visit.groupBy({ by: ["memberId"], where: { memberId: { in: pageIds } }, _max: { enteredAt: true } }),
     prisma.invoice.findMany({
@@ -246,6 +255,11 @@ export async function queryMembers(q: MemberQuery): Promise<{ items: MemberListR
 
   const subByMember = new Map<string, (typeof subs)[number]>();
   for (const s of subs) if (!subByMember.has(s.memberId)) subByMember.set(s.memberId, s);
+  const promoIds = [...new Set(subs.map((s) => s.promoDiscountId).filter((x): x is string => !!x))];
+  const promos = promoIds.length
+    ? await prisma.discount.findMany({ where: { id: { in: promoIds } }, select: { id: true, code: true, name: true, type: true, value: true } })
+    : [];
+  const promoById = new Map(promos.map((d) => [d.id, { id: d.id, code: d.code, name: d.name, label: promoTagLabel(d) }]));
   const lastVisit = new Map(visitAgg.filter((a) => a.memberId).map((a) => [a.memberId as string, a._max.enteredAt]));
   const cardSet = new Set(cards.map((c) => c.memberId));
   const billing = new Map<string, MemberListRow["billing"]>();
@@ -266,7 +280,15 @@ export async function queryMembers(q: MemberQuery): Promise<{ items: MemberListR
     const s = subByMember.get(id);
     return {
       ...r,
-      subscription: s ? { id: s.id, status: s.status, planName: s.plan.name, paidThroughDate: s.paidThroughDate, nextInvoiceDate: s.nextInvoiceDate } : null,
+      subscription: s
+        ? {
+            id: s.id, status: s.status, planName: s.plan.name, paidThroughDate: s.paidThroughDate, nextInvoiceDate: s.nextInvoiceDate,
+            displayName: membershipDisplayName(s.plan.name, s.guestCount, s.plan.productType),
+            guestCount: s.guestCount,
+            priceCents: s.priceCents,
+            promo: (s.promoDiscountId && promoById.get(s.promoDiscountId)) || null,
+          }
+        : null,
       lastVisitAt: lastVisit.get(id) ?? null,
       billing: billing.get(id)!,
     };

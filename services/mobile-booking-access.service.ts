@@ -7,6 +7,7 @@
  */
 import { getPrisma } from "@/lib/db";
 import { memberUrl } from "@/lib/public-url";
+import { membershipDisplayName } from "@/lib/membership-pricing";
 
 export const GUEST_PLAY_FEE_CENTS = Number(process.env.GUEST_PLAY_FEE_CENTS ?? 2500);
 export const UNAUTHORIZED_GUEST_FEE_CENTS = Number(process.env.UNAUTHORIZED_GUEST_FEE_CENTS ?? 5000);
@@ -66,7 +67,6 @@ export async function getBookingAccess(memberId: string, forDate: Date = new Dat
   // A standard Gilmore / Noonan / Tin Cup covers the member only — plan.maxGuests
   // is just the purchasable cap, never an entitlement.
   const includedGuests = (s: (typeof subs)[number] | undefined) => (s ? Math.max(0, s.guestCount ?? 0) : 0);
-  const displayName = (s: (typeof subs)[number]) => (s.plan.productType === "DAY_PASS" || s.guestCount < 1 ? s.plan.name : s.guestCount === 1 ? `${s.plan.name} + Guest` : `${s.plan.name} + ${s.guestCount} Guests`);
   const guests = { included: includedGuests(live), extraFeeCents: GUEST_PLAY_FEE_CENTS, unauthorizedFeeCents: UNAUTHORIZED_GUEST_FEE_CENTS, maxExtra: MAX_EXTRA_GUESTS };
 
   if (live) {
@@ -74,10 +74,10 @@ export async function getBookingAccess(memberId: string, forDate: Date = new Dat
     return {
       eligible: true,
       reason: "ACTIVE",
-      title: displayName(live),
+      title: membershipDisplayName(live.plan.name, live.guestCount, live.plan.productType),
       message: validThrough ? `Good through ${validThrough.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.` : guests.included > 0 ? `Your membership is active and includes ${guests.included} playing guest${guests.included === 1 ? "" : "s"} per visit.` : "Your membership is active. It covers you only — add a guest to your plan or pay the guest fee when booking.",
       validThrough: validThrough?.toISOString() ?? null,
-      planName: displayName(live),
+      planName: membershipDisplayName(live.plan.name, live.guestCount, live.plan.productType),
       guests,
       options: [],
     };

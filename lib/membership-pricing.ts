@@ -60,6 +60,13 @@ export function membershipDisplayName(planName: string, guestCount: number, prod
   return guestCount === 1 ? `${planName} + Guest` : `${planName} + ${guestCount} Guests`;
 }
 
+/** Short tag for a promo / discount attached to a subscription, e.g. "25% off", "$10 off", or the code. */
+export function promoTagLabel(d: { type: string; value: number; code?: string | null; name?: string | null }): string {
+  if (d.type === "PERCENT" && d.value > 0) return `${d.value}% off`;
+  if (d.type !== "PERCENT" && d.value > 0) return `$${(d.value / 100).toFixed(d.value % 100 === 0 ? 0 : 2)} off`;
+  return d.code || d.name || "Promo";
+}
+
 export function guestLineLabel(guestCount: number, productType: string): string {
   const who = guestCount === 1 ? "1 guest" : `${guestCount} guests`;
   return productType === "DAY_PASS" ? `${who} (today)` : `${who} on every visit`;
