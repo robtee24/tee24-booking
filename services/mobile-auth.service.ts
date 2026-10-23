@@ -33,8 +33,26 @@ const STATUS_RANK: Record<string, number> = { ACTIVE: 0, FROZEN: 1, PENDING: 2, 
 /** Pick the member record a phone number refers to (active first). */
 export async function findMemberByPhone(e164: string) {
   const digits = e164.replace(/\D/g, "").slice(-10);
+  if (digits.length !== 10) return null;
+  // Phones are stored however they were entered — "(336) 420-5540", "+13364205540",
+  // "3364205540" — so compare digits-only on both sides. Also honour secondary
+  // numbers folded in by member merges.
+  const ids = await getPrisma().$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Member"
+    WHERE "mergedIntoId" IS NULL
+      AND (
+        RIGHT(regexp_replace(COALESCE("phone", ''), '\\D', '', 'g'), 10) = ${digits}
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof("secondaryPhones") = 'array' THEN "secondaryPhones" ELSE '[]'::jsonb END
+          ) AS sp(num)
+          WHERE RIGHT(regexp_replace(sp.num, '\\D', '', 'g'), 10) = ${digits}
+        )
+      )
+    LIMIT 25`;
+  if (!ids.length) return null;
   const members = await getPrisma().member.findMany({
-    where: { phone: { contains: digits }, mergedIntoId: null },
+    where: { id: { in: ids.map((r) => r.id) } },
     select: { id: true, status: true, updatedAt: true, firstName: true, lastName: true, locationId: true, organizationId: true, location: { select: { slug: true, name: true } } },
   });
   if (!members.length) return null;
