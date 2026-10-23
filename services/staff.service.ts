@@ -1,8 +1,7 @@
 // services/staff.service.ts
 //
-// Staff roster: admin CRUD, permission matrix persistence, invites and the
-// front-desk PIN. Everything that writes goes through `audit()`.
-import crypto from "crypto";
+// Staff roster: admin CRUD, permission matrix persistence and invites.
+// Everything that writes goes through `audit()`.
 import type { AdminRole } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -85,47 +84,6 @@ function isPermission(p: string): p is Permission {
   return Object.prototype.hasOwnProperty.call(PERMISSIONS, p);
 }
 
-/* ───────────────────────────── Front-desk PIN ─────────────────────────────── */
-
-const PIN_RE = /^\d{4,6}$/;
-
-export function isValidPin(pin: string): boolean {
-  return PIN_RE.test(pin);
-}
-
-/** scrypt hash → "scrypt$<saltB64>$<hashB64>" */
-export function hashPin(pin: string): string {
-  if (!isValidPin(pin)) throw new Error("PIN must be 4–6 digits");
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(pin, salt, 32, { N: 16384, r: 8, p: 1 });
-  return `scrypt$${salt.toString("base64")}$${hash.toString("base64")}`;
-}
-
-export function verifyPinHash(pin: string, stored: string | null | undefined): boolean {
-  if (!stored || !PIN_RE.test(pin)) return false;
-  const [scheme, saltB64, hashB64] = stored.split("$");
-  if (scheme !== "scrypt" || !saltB64 || !hashB64) return false;
-  const expected = Buffer.from(hashB64, "base64");
-  const actual = crypto.scryptSync(pin, Buffer.from(saltB64, "base64"), expected.length, { N: 16384, r: 8, p: 1 });
-  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-}
-
-export async function setAdminPin(adminId: string, pin: string, actorId: string) {
-  if (!isValidPin(pin)) throw new StaffError("PIN must be 4–6 digits", 400);
-  await getPrisma().admin.update({ where: { id: adminId }, data: { frontDeskPinHash: hashPin(pin) } });
-  void audit({ actorId, action: "admin.update", entityType: "Admin", entityId: adminId, metadata: { event: "pin.set" } });
-}
-
-export async function clearAdminPin(adminId: string, actorId: string) {
-  await getPrisma().admin.update({ where: { id: adminId }, data: { frontDeskPinHash: null } });
-  void audit({ actorId, action: "admin.update", entityType: "Admin", entityId: adminId, metadata: { event: "pin.cleared" } });
-}
-
-export async function verifyAdminPin(adminId: string, pin: string): Promise<boolean> {
-  const row = await getPrisma().admin.findUnique({ where: { id: adminId }, select: { frontDeskPinHash: true } });
-  return verifyPinHash(pin, row?.frontDeskPinHash);
-}
-
 /* ───────────────────────────── Roster CRUD ────────────────────────────────── */
 
 export class StaffError extends Error {
@@ -147,23 +105,18 @@ const ADMIN_SELECT = {
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
-  frontDeskPinHash: true,
   locations: { include: { location: { select: { id: true, name: true, slug: true } } } },
   permissions: { select: { permission: true, locationId: true, grantedById: true, grantedAt: true } },
 } as const;
 
-export type StaffAdmin = Omit<
-  NonNullable<Awaited<ReturnType<typeof fetchAdminRaw>>>,
-  "frontDeskPinHash"
-> & { hasPin: boolean };
+export type StaffAdmin = NonNullable<Awaited<ReturnType<typeof fetchAdminRaw>>>;
 
 async function fetchAdminRaw(id: string) {
   return getPrisma().admin.findUnique({ where: { id }, select: ADMIN_SELECT });
 }
 
-function shape<T extends { frontDeskPinHash: string | null }>(a: T): Omit<T, "frontDeskPinHash"> & { hasPin: boolean } {
-  const { frontDeskPinHash, ...rest } = a;
-  return { ...rest, hasPin: !!frontDeskPinHash };
+function shape<T>(a: T): T {
+  return a;
 }
 
 export async function getStaffAdmin(id: string): Promise<StaffAdmin | null> {

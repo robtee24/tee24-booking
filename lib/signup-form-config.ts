@@ -1,3 +1,4 @@
+import { memberBaseUrl } from "@/lib/public-url";
 // lib/signup-form-config.ts
 //
 // Shared contract between the admin Signup Form builder (marketing module)
@@ -19,7 +20,7 @@
 //  themeOverrides           →  { brandColor?: string; logoUrl?: string; buttonLabel?: string; headline?: string; intro?: string }
 //
 // Embedding: when `embedAllowed`, the public form is embeddable at
-//   `${APP_BASE_URL}/signup/<slug>?embed=1` (renderer should hide chrome).
+//   `${MEMBER_BASE_URL}/signup/<slug>?embed=1` (renderer should hide chrome).
 //
 // Email, firstName and lastName can never be hidden (they are needed to create
 // a Member) — the parser clamps them to at least "required".
@@ -140,7 +141,7 @@ export function parseThemeOverrides(raw: unknown): SignupThemeOverrides {
 }
 
 export function publicSignupUrl(slug: string, opts?: { embed?: boolean }): string {
-  const base = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+  const base = memberBaseUrl();
   return `${base}/signup/${encodeURIComponent(slug)}${opts?.embed ? "?embed=1" : ""}`;
 }
 

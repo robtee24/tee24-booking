@@ -185,11 +185,6 @@ export function SignupFormBuilder({ initial, options }: { initial: SignupFormDra
         <Card>
           <CardHeader title="After signup" />
           <div className="mt-4 space-y-4">
-            <Select label="Account setup" value={d.authSetup} onChange={(e) => set("authSetup", e.target.value as SignupFormDraft["authSetup"])}>
-              <option value="MAGIC_LINK">Email a magic link (recommended)</option>
-              <option value="PASSWORD">Choose a password on the form</option>
-              <option value="NONE">No portal account</option>
-            </Select>
             <Field label="Auto-apply tags">
               <MultiSelectChips options={options.tags.map((t) => ({ id: t.id, label: t.name }))} value={d.autoTagIds} onChange={(v) => set("autoTagIds", v)} empty="No tags yet." />
             </Field>
@@ -277,7 +272,7 @@ export function SignupFormBuilder({ initial, options }: { initial: SignupFormDra
             <li>{SIGNUP_FIELD_KEYS.filter((k) => d.requiredFields[k] === "required").length} required · {SIGNUP_FIELD_KEYS.filter((k) => d.requiredFields[k] === "optional").length} optional fields</li>
             <li>{d.requiredDocumentIds.length} document{d.requiredDocumentIds.length === 1 ? "" : "s"} to sign</li>
             <li>{d.autoEnrollAutomationIds.length} automation{d.autoEnrollAutomationIds.length === 1 ? "" : "s"} on join</li>
-            <li>Account: {d.authSetup === "MAGIC_LINK" ? "magic link" : d.authSetup === "PASSWORD" ? "password" : "none"}</li>
+            <li>Sign-in: verified mobile number (no password)</li>
           </ul>
           <div className="mt-3 flex flex-wrap gap-1">
             <Badge tone={d.active ? "success" : "muted"} size="sm">{d.active ? "Active" : "Inactive"}</Badge>

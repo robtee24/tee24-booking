@@ -17,6 +17,7 @@ import { sendEmail as resendSend, type EmailAttachment } from "@/lib/sendEmail";
 import { sendQuoSms } from "@/lib/quo";
 import type { LedgerOption } from "@/lib/message-ledger";
 import { defaultReplyTo } from "@/lib/inbound-email";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export type MessageCategory = "TRANSACTIONAL" | "MARKETING" | "SYSTEM";
 
@@ -91,8 +92,9 @@ export function invalidateCommsSettingsCache() {
   settingsCache.clear();
 }
 
+/** Member-facing base URL (portal, pay links, signup). */
 export function appBaseUrl(): string {
-  return (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+  return memberBaseUrl();
 }
 
 // ---------- Quiet hours (marketing SMS) ----------

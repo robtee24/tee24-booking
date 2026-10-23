@@ -16,6 +16,7 @@ import { audit } from "@/lib/audit";
 import { sendEmail } from "@/lib/notify";
 import { sendQuoSms } from "@/lib/quo";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export type CreateDocumentInput = {
   organizationId?: string | null;
@@ -168,6 +169,8 @@ export type SignDocumentInput = {
   ipAddress?: string | null;
   userAgent?: string | null;
   signedOnBehalfBy?: string | null;
+  /** Parent / guardian co-signature, required when the member is under 18. */
+  guardian?: { name: string; signatureSvg: string } | null;
 };
 
 export async function signDocument(input: SignDocumentInput) {
@@ -211,17 +214,24 @@ export async function signDocument(input: SignDocumentInput) {
       ipAddress: input.ipAddress ?? undefined,
       userAgent: input.userAgent ?? undefined,
       signedOnBehalfBy: input.signedOnBehalfBy ?? undefined,
+      guardianName: input.guardian?.name ?? undefined,
+      guardianSignatureSvg: input.guardian?.signatureSvg ?? undefined,
     },
   });
+  if (input.guardian?.name) {
+    await prisma.member.update({ where: { id: assignment.memberId }, data: { guardianName: input.guardian.name } }).catch(() => {});
+  }
 
   void audit({
     organizationId: assignment.document.organizationId,
-    actorId: input.signedOnBehalfBy ?? assignment.memberId,
+    // actorId is an FK to Admin — members self-signing are recorded in metadata instead.
+    actorId: input.signedOnBehalfBy ?? null,
     actorRole: input.signedOnBehalfBy ? "ADMIN" : "MEMBER",
     action: "document.sign",
     entityType: "DocumentAssignment",
     entityId: assignment.id,
-    after: { hash, signedAt: signed.signedAt },
+    after: { hash, signedAt: signed.signedAt, guardianName: input.guardian?.name ?? null },
+    metadata: { memberId: assignment.memberId },
     ipAddress: input.ipAddress ?? null,
     userAgent: input.userAgent ?? null,
   });
@@ -259,8 +269,7 @@ export async function voidAssignment(assignmentId: string, actorId?: string) {
 // ---------------------------------------------------------------------------
 
 function buildSigningUrl(token: string): string {
-  const base = process.env.APP_BASE_URL || "http://localhost:3000";
-  return `${base}/sign/${encodeURIComponent(token)}`;
+  return `${memberBaseUrl()}/sign/${encodeURIComponent(token)}`;
 }
 
 function signingEmailHtml(opts: { memberName: string; docName: string; link: string }): string {

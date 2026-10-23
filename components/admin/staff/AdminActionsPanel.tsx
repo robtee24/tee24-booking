@@ -2,8 +2,8 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Send, ShieldCheck, Trash2 } from "lucide-react";
-import { Badge, Button, Card, CardHeader, Input, Modal, useToast } from "@/components/ui";
+import { Send, ShieldCheck, Trash2 } from "lucide-react";
+import { Badge, Button, Card, CardHeader, Modal, useToast } from "@/components/ui";
 import { adminRoutes } from "@/lib/admin/routes";
 import type { StaffAdminDTO } from "./AdminForm";
 
@@ -15,13 +15,11 @@ export function InviteBadge({ status, size = "md" }: { status: string; size?: "s
   );
 }
 
-/** Invite / PIN / delete actions for the admin detail page. */
+/** Invite / delete actions for the admin detail page. */
 export function AdminActionsPanel({ admin, canDelete }: { admin: StaffAdminDTO; canDelete: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [pinOpen, setPinOpen] = React.useState(false);
-  const [pin, setPin] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   async function call(path: string, init: RequestInit, label: string) {
@@ -47,30 +45,6 @@ export function AdminActionsPanel({ admin, canDelete }: { admin: StaffAdminDTO; 
         title: r.dryRun ? "Invite logged (dry run)" : "Invite sent",
         description: `SMS ${r.sms ? "sent" : "failed"}${admin.email ? ` · email ${r.email ? "sent" : "failed"}` : ""}`,
       });
-      router.refresh();
-    }
-  }
-
-  async function savePin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!/^\d{4,6}$/.test(pin)) return toast({ tone: "error", title: "PIN must be 4–6 digits" });
-    const r = await call(
-      `/api/admin/admins/${encodeURIComponent(admin.id)}/pin`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) },
-      "Set PIN",
-    ).catch(() => null);
-    if (r) {
-      toast({ tone: "success", title: "Front-desk PIN set" });
-      setPin("");
-      setPinOpen(false);
-      router.refresh();
-    }
-  }
-
-  async function clearPin() {
-    const r = await call(`/api/admin/admins/${encodeURIComponent(admin.id)}/pin`, { method: "DELETE" }, "Clear PIN").catch(() => null);
-    if (r) {
-      toast({ tone: "success", title: "PIN removed" });
       router.refresh();
     }
   }
@@ -107,21 +81,6 @@ export function AdminActionsPanel({ admin, canDelete }: { admin: StaffAdminDTO; 
         </div>
       </Card>
 
-      <Card>
-        <CardHeader title="Front-desk PIN" subtitle="4–6 digits used to re-verify on a shared front-desk computer." />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Badge tone={admin.hasPin ? "success" : "muted"}>{admin.hasPin ? "PIN set" : "No PIN"}</Badge>
-          <Button size="sm" variant="secondary" iconLeft={<KeyRound className="h-3.5 w-3.5" />} onClick={() => setPinOpen(true)}>
-            {admin.hasPin ? "Reset PIN" : "Set PIN"}
-          </Button>
-          {admin.hasPin && (
-            <Button size="sm" variant="ghost" loading={busy === "Clear PIN"} onClick={() => void clearPin()}>
-              Remove
-            </Button>
-          )}
-        </div>
-      </Card>
-
       {canDelete && (
         <Card>
           <CardHeader title="Danger zone" />
@@ -133,23 +92,6 @@ export function AdminActionsPanel({ admin, canDelete }: { admin: StaffAdminDTO; 
           </div>
         </Card>
       )}
-
-      <Modal
-        open={pinOpen}
-        onClose={() => setPinOpen(false)}
-        title={admin.hasPin ? "Reset front-desk PIN" : "Set front-desk PIN"}
-        description="Share it with the admin privately — it's stored hashed and can't be shown again."
-        footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="secondary" onClick={() => setPinOpen(false)}>Cancel</Button>
-            <Button form="set-pin" type="submit" loading={busy === "Set PIN"}>Save PIN</Button>
-          </div>
-        }
-      >
-        <form id="set-pin" onSubmit={savePin}>
-          <Input label="PIN" inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="4–6 digits" className="font-mono tracking-widest" autoFocus />
-        </form>
-      </Modal>
 
       <Modal
         open={confirmDelete}

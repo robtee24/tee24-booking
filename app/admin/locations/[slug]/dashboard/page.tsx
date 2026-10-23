@@ -257,7 +257,6 @@ export default async function LocationDashboard({ params }: { params: Promise<{ 
           <QuickAction href={adminRoutes.loc.scheduling.bookings(slug)} label="Bookings" />
           <QuickAction href={adminRoutes.loc.marketing.messaging(slug)} label="Send message" />
           <QuickAction href={adminRoutes.loc.billing.payments(slug)} label="Payments" />
-          <QuickAction href={adminRoutes.loc.frontDesk(slug)} label="Front desk" />
         </div>
       </Card>
     </div>

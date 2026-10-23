@@ -19,7 +19,6 @@ export type StaffAdminDTO = {
   invitedAt: string | null;
   lastLoginAt: string | null;
   createdAt: string;
-  hasPin: boolean;
   locations: { locationId: string; location: LocationLite }[];
   permissions: Grant[];
 };

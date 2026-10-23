@@ -10,7 +10,6 @@ export default async function MemberSettingsPage({ params }: { params: Promise<{
     { label: "Documents", href: adminRoutes.loc.members.documents(slug), desc: "Waivers and required forms." },
     { label: "Import members", href: adminRoutes.loc.members.import(slug), desc: "Upload a CSV from GymDesk or another system." },
     { label: "Merge duplicates", href: adminRoutes.loc.members.merge(slug), desc: "Find and combine duplicate member records." },
-    { label: "Front desk", href: adminRoutes.loc.frontDesk(slug), desc: "Kiosk check-in by code, name or QR." },
     { label: "Signup forms", href: adminRoutes.loc.marketing.signupForms(slug), desc: "Public checkout pages." },
     { label: "Communications", href: adminRoutes.loc.settings.comms(slug), desc: "Booking & system emails/SMS." },
   ];

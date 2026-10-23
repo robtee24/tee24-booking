@@ -4,12 +4,13 @@ import { assertCan, can } from "@/lib/permissions";
 import { emitMemberEvent } from "@/lib/events";
 import { assignDocument } from "@/services/document.service";
 import { apiError, parseDate, readJson, requireMemberApi } from "../../_shared";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
 function signingUrl(token: string | null): string | null {
   if (!token) return null;
-  const base = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const base = memberBaseUrl();
   return `${base}/sign/${encodeURIComponent(token)}`;
 }
 

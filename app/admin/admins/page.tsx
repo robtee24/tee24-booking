@@ -22,7 +22,7 @@ export default async function AdminsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Admins"
-        description="Staff accounts, roles, permissions, invites, and front-desk PINs."
+        description="Staff accounts, roles, permissions, and invites."
         meta={
           <>
             <Badge tone="muted">{admins.length} total</Badge>
@@ -80,7 +80,6 @@ export default async function AdminsPage() {
                       <td className="px-5 py-3.5">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <InviteBadge status={a.inviteStatus} size="sm" />
-                          {a.hasPin && <Badge size="sm" tone="muted">PIN</Badge>}
                         </div>
                       </td>
                       <td className="hidden whitespace-nowrap px-5 py-3.5 text-apple-xs text-apple-text-tertiary lg:table-cell">

@@ -5,11 +5,12 @@ import { audit } from "@/lib/audit";
 import { sendEmail, sendSMS } from "@/lib/notify";
 import { voidAssignment } from "@/services/document.service";
 import { apiError, readJson, requireMemberApi } from "../../../_shared";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
 function signingUrl(token: string): string {
-  const base = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const base = memberBaseUrl();
   return `${base}/sign/${encodeURIComponent(token)}`;
 }
 

@@ -6,11 +6,12 @@ import { assertCan } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { sendEmail, sendSMS } from "@/lib/notify";
 import { apiError, readJson } from "../_shared";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
-function baseUrl(req: NextRequest) {
-  return process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+function baseUrl(_req: NextRequest) {
+  return memberBaseUrl();
 }
 
 /** GET /api/admin/members/invite?locationSlug= — active signup forms (slugs) usable in invites */
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/admin/members/invite
  * { locationSlug, channel: "EMAIL" | "SMS", to, name?, formSlug, message? }
- * Permission member.edit. Sends `${APP_BASE_URL}/signup/<formSlug>?ref=invite`.
+ * Permission member.edit. Sends `${MEMBER_BASE_URL}/signup/<formSlug>?ref=invite`.
  */
 export async function POST(req: NextRequest) {
   const body = await readJson(req);

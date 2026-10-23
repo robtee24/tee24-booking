@@ -2,6 +2,7 @@
 import { SignJWT } from "jose";
 import { getPrisma } from "@/lib/db";
 import { sendEmail, sendSMS } from "@/lib/notify";
+import { memberBaseUrl } from "@/lib/public-url";
 
 function getSecret() {
   const s = process.env.MEMBER_JWT_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
@@ -17,12 +18,7 @@ export async function buildMagicLink(memberId: string, req?: Request): Promise<s
     .setIssuedAt()
     .setExpirationTime("15m")
     .sign(getSecret());
-  let baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
-  if (!baseUrl && req) {
-    const u = new URL(req.url);
-    baseUrl = `${u.protocol}//${u.host}`;
-  }
-  return `${baseUrl ?? "http://localhost:3000"}/api/portal/auth/magic/callback?token=${encodeURIComponent(token)}`;
+  return `${memberBaseUrl()}/api/portal/auth/magic/callback?token=${encodeURIComponent(token)}`;
 }
 
 export async function sendAccessLink(memberId: string, req?: Request, opts: { channel?: "EMAIL" | "SMS" } = {}) {

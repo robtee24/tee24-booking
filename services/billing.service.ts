@@ -25,7 +25,6 @@ import { adminNotify } from "@/lib/admin-notify";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { emitMemberEvent } from "@/lib/events";
 import { sendEmail } from "@/lib/notify";
-import { ENV } from "@/lib/env";
 import { adminRoutes } from "@/lib/admin/routes";
 import {
   getSquareCreds,
@@ -38,6 +37,7 @@ import {
   squareFailureReason,
 } from "@/lib/square";
 import type { Invoice, Location, Prisma } from "@prisma/client";
+import { memberBaseUrl } from "@/lib/public-url";
 
 // ---------------------------------------------------------------------------
 // Money helpers
@@ -82,7 +82,7 @@ export function invoiceRemainingCents(inv: Pick<Invoice, "totalCents" | "refunde
 }
 
 export function publicPayUrl(payToken: string): string {
-  return `${ENV.APP_BASE_URL.replace(/\/$/, "")}/pay/${encodeURIComponent(payToken)}`;
+  return `${memberBaseUrl()}/pay/${encodeURIComponent(payToken)}`;
 }
 
 /** Existing rows pre-date the `payToken` column; mint one lazily. */
@@ -955,7 +955,8 @@ export async function vaultCard(input: {
     customerId,
     sourceId: input.sourceId,
     verificationToken: input.verificationToken,
-    idempotencyKey: `card_${input.memberId}_${crypto.randomUUID()}`,
+    // Square caps idempotency_key at 45 chars — a bare UUID (36) is enough.
+    idempotencyKey: crypto.randomUUID(),
     cardholderName: member ? `${member.firstName} ${member.lastName}` : null,
     referenceId: input.memberId,
   });

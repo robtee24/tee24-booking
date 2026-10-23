@@ -53,9 +53,9 @@ export const SYSTEM_TEMPLATES: SystemTemplateDef[] = [
     email: {
       defaultOn: true,
       subject: "Welcome to {location_name}, {first_name}!",
-      body: `Hi {first_name},<br><br>Welcome to {location_name}! Your account is ready.<br><br>Member portal: <a href="${portal}">${portal}</a><br>Front-desk check-in code: <strong>{checkin_code}</strong><br><br>Your referral code is <strong>{referral_code}</strong> — share it with friends.<br><br>See you on the sim!`,
+      body: `Hi {first_name},<br><br>Welcome to {location_name}! Your account is ready.<br><br>Member portal: <a href="${portal}">${portal}</a><br><br>Your referral code is <strong>{referral_code}</strong> — share it with friends.<br><br>See you on the sim!`,
     },
-    sms: { defaultOn: true, body: `Welcome to {location_name}, {first_name}! Your check-in code is {checkin_code}. Manage your account: ${portal}` },
+    sms: { defaultOn: true, body: `Welcome to {location_name}, {first_name}! Manage your account: ${portal}` },
   },
   {
     eventKey: "member.signup",

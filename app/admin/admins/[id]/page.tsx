@@ -40,7 +40,6 @@ export default async function AdminDetailPage({ params }: { params: Promise<{ id
     invitedAt: admin.invitedAt?.toISOString() ?? null,
     lastLoginAt: admin.lastLoginAt?.toISOString() ?? null,
     createdAt: admin.createdAt.toISOString(),
-    hasPin: admin.hasPin,
     locations: admin.locations.map((l) => ({ locationId: l.locationId, location: l.location })),
     permissions: admin.permissions.map((p) => ({ permission: p.permission, locationId: p.locationId })),
   };

@@ -20,7 +20,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
-import { generateDueInvoices } from "@/services/recurring-billing.service";
+import { expireLapsedOneOffSubscriptions, generateDueInvoices } from "@/services/recurring-billing.service";
 import { retryFailedPayments, sendUpcomingPaymentReminders } from "@/services/dunning.service";
 import { computeUsageTierSnapshots } from "@/services/usage-tier.service";
 import { scoreAllMembers } from "@/services/churn-risk.service";
@@ -109,8 +109,9 @@ async function run(req: NextRequest) {
       }
       case "generate-invoices": {
         if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
+        const lapsed = await expireLapsedOneOffSubscriptions();
         const r = await generateDueInvoices();
-        return NextResponse.json({ ok: true, ...r });
+        return NextResponse.json({ ok: true, ...r, lapsedOneOff: lapsed.expired });
       }
       case "retry-failed-payments": {
         if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });

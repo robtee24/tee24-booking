@@ -58,7 +58,6 @@ export const adminRoutes = {
     root: (slug: string) => `/admin/locations/${enc(slug)}`,
     dashboard: (slug: string) => `/admin/locations/${enc(slug)}/dashboard`,
     troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
-    frontDesk: (slug: string) => `/admin/locations/${enc(slug)}/front-desk`,
     checkIns: (slug: string) => `/admin/locations/${enc(slug)}/check-ins`,
     checkInAnalytics: (slug: string) => `/admin/locations/${enc(slug)}/check-ins/analytics`,
 
@@ -172,13 +171,6 @@ export const LOCATION_NAV: NavSection[] = [
     label: "Dashboard",
     icon: "dashboard",
     href: adminRoutes.loc.dashboard,
-    items: [],
-  },
-  {
-    key: "front-desk",
-    label: "Front Desk",
-    icon: "check-square",
-    href: adminRoutes.loc.frontDesk,
     items: [],
   },
   {
@@ -369,7 +361,6 @@ export const SEGMENT_LABELS: Record<string, string> = {
   health: "Integration Health",
   migration: "Migration",
   "churn-model": "Churn Model",
-  "front-desk": "Front Desk",
   "check-ins": "Check Ins",
   analytics: "Analytics",
   "door-access": "Door Access",

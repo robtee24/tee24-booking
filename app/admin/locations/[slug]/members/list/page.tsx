@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Card, CardHeader, PageHeader, Button } from "@/components/ui";
 import { AreaChart, BarChart, DonutChart } from "@/components/ui/charts";
-import { Plus, ScanLine, Upload } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import Link from "next/link";
 import { getPrisma } from "@/lib/db";
 import { adminRoutes } from "@/lib/admin/routes";
@@ -54,9 +54,6 @@ export default async function MembersListPage({ params }: { params: Promise<{ sl
         description="Members, visitors, frozen, and cancelled accounts"
         actions={
           <>
-            <Link href={adminRoutes.loc.frontDesk(slug)}>
-              <Button variant="secondary" iconLeft={<ScanLine className="h-4 w-4" />}>Front desk</Button>
-            </Link>
             <Link href={adminRoutes.loc.members.import(slug)}>
               <Button variant="secondary" iconLeft={<Upload className="h-4 w-4" />}>Import</Button>
             </Link>

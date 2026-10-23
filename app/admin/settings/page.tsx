@@ -128,7 +128,7 @@ export default async function OrgSettingsPage() {
   if (!me) return null;
   const row = await getPrisma().admin.findUnique({
     where: { id: me.id },
-    select: { id: true, name: true, email: true, phone: true, role: true, twoFactorEnabled: true, frontDeskPinHash: true, lastLoginAt: true },
+    select: { id: true, name: true, email: true, phone: true, role: true, twoFactorEnabled: true, lastLoginAt: true },
   });
   const meDto: MeDTO | null = row
     ? {
@@ -138,7 +138,6 @@ export default async function OrgSettingsPage() {
         phone: row.phone,
         role: row.role,
         twoFactorEnabled: row.twoFactorEnabled,
-        hasPin: !!row.frontDeskPinHash,
         lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
       }
     : null;

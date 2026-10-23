@@ -81,7 +81,7 @@ export function AttendanceTab({ memberId }: { slug: string; memberId: string }) 
         <Stat label="All time" value={data.totals.allTime} />
       </div>
       {data.total === 0 ? (
-        <EmptyState icon={<Footprints className="h-5 w-5" />} title="No visits yet" description="Door unlocks, front-desk check-ins and bay-app check-ins land here." action={<Button onClick={() => setModal({ kind: "add" })}>Add manual visit</Button>} />
+        <EmptyState icon={<Footprints className="h-5 w-5" />} title="No visits yet" description="Door unlocks and bay-app check-ins land here." action={<Button onClick={() => setModal({ kind: "add" })}>Add manual visit</Button>} />
       ) : (
         <>
           <DataTable columns={columns} rows={data.items} rowKey={(v) => v.id} density="compact" />

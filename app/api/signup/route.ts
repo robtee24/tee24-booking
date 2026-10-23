@@ -9,11 +9,29 @@ import { createInvoice, ensurePayToken, publicPayUrl, runCharge, vaultCard } fro
 import { computeDiscountCents, describeDiscount, redeemDiscountForMember, validateDiscount } from "@/services/discount.service";
 import { recordReferral } from "@/services/referral.service";
 import { requiredSignupInputKeys } from "@/lib/signup-form-config";
+import { SIGNUP_PHONE_AUDIENCE, verifyPhoneVerificationToken } from "@/lib/phone-verification";
+import { parseImageDataUrl, saveMemberPhoto, PhotoError } from "@/services/member-photo.service";
+import { signDocument } from "@/services/document.service";
+import { isRecurringCadence } from "@/services/recurring-billing.service";
+
+const GENDERS = new Set(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"]);
+
+function ageOn(dob: Date, on: Date): number {
+  let age = on.getFullYear() - dob.getFullYear();
+  const m = on.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && on.getDate() < dob.getDate())) age--;
+  return age;
+}
 
 export const dynamic = "force-dynamic";
 
 /**
- * Public signup endpoint.
+ * Public signup endpoint (3-step form: plan → details → payment).
+ *
+ * Requires a `phoneToken` from /api/signup/phone/verify that matches `phone` —
+ * the verified mobile number is the member's login. Waivers configured on the
+ * form are signed inline (`signatures[]`, plus a parent/guardian co-signature
+ * when the member is under 18) and the profile photo (`photoDataUrl`) is stored.
  *
  * Always: creates Member (PENDING) + MembershipSubscription (PENDING) + Visitor
  * (funnel) + the first Invoice (signup fee + first period, discount, tax).
@@ -53,8 +71,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      formSlug, planId, firstName, lastName, email, phone,
-      dob, addressLine1, city, state, zip,
+      formSlug, planId, firstName, lastName, email, phone, phoneToken,
+      dob, gender, addressLine1, addressLine2, city, state, zip,
+      photoDataUrl, signatures, guardian, emergencyContact,
       smsConsent, emailConsent, utm, referralCode,
       discountCode, sourceId, verificationToken, customFields,
     } = body;
@@ -62,6 +81,22 @@ export async function POST(req: NextRequest) {
     if (!formSlug || !planId || !firstName || !lastName || !email || !phone) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
+
+    // The mobile number must have been verified by SMS in this session.
+    const verifiedPhone = await verifyPhoneVerificationToken(phoneToken, String(phone), SIGNUP_PHONE_AUDIENCE);
+    if (!verifiedPhone) return NextResponse.json({ error: "Please verify your mobile number before continuing." }, { status: 400 });
+
+    if (gender !== undefined && gender !== null && gender !== "" && !GENDERS.has(String(gender))) {
+      return NextResponse.json({ error: "Invalid sex value" }, { status: 400 });
+    }
+    const dobDate = dob ? new Date(dob) : null;
+    if (dobDate && Number.isNaN(dobDate.getTime())) return NextResponse.json({ error: "Invalid date of birth" }, { status: 400 });
+    const isMinor = dobDate ? ageOn(dobDate, new Date()) < 18 : false;
+    const guardianInput = guardian && typeof guardian === "object" && typeof guardian.name === "string" && typeof guardian.signatureSvg === "string" && guardian.name.trim() && guardian.signatureSvg
+      ? { name: String(guardian.name).trim().slice(0, 120), signatureSvg: String(guardian.signatureSvg) }
+      : null;
+    if (isMinor && !guardianInput) return NextResponse.json({ error: "A parent or guardian must sign for members under 18." }, { status: 400 });
+    if (photoDataUrl && typeof photoDataUrl !== "string") return NextResponse.json({ error: "Invalid photo" }, { status: 400 });
 
     const prisma = getPrisma();
     const form = await prisma.signupForm.findUnique({
@@ -75,9 +110,20 @@ export async function POST(req: NextRequest) {
 
     // Required-field overrides configured on the form
     const requiredFields = requiredSignupInputKeys(form.requiredFields, { photoRequired: form.photoRequired });
-    const provided: Record<string, unknown> = { dob, addressLine1, city, state, zip };
+    const ec = emergencyContact && typeof emergencyContact === "object"
+      ? { name: String(emergencyContact.name ?? "").trim().slice(0, 120), phone: String(emergencyContact.phone ?? "").trim().slice(0, 40), relationship: String(emergencyContact.relationship ?? "").trim().slice(0, 60) }
+      : null;
+    const provided: Record<string, unknown> = { dob, gender, addressLine1, city, state, zip, photo: photoDataUrl, emergencyContact: ec?.name && ec?.phone ? ec : null };
+    const labels: Record<string, string> = { dob: "Date of birth", gender: "Sex", addressLine1: "Address", city: "City", state: "State", zip: "ZIP", photo: "Profile photo", emergencyContact: "Emergency contact" };
     for (const key of requiredFields) {
-      if (key in provided && !provided[key]) return NextResponse.json({ error: `${key} is required` }, { status: 400 });
+      if (key in provided && !provided[key]) return NextResponse.json({ error: `${labels[key] ?? key} is required` }, { status: 400 });
+    }
+    if (photoDataUrl) {
+      try {
+        parseImageDataUrl(photoDataUrl); // validate before we create anything
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof PhotoError ? e.message : "Invalid photo" }, { status: 400 });
+      }
     }
 
     const plan = await prisma.membershipPlan.findUnique({ where: { id: planId } });
@@ -85,10 +131,27 @@ export async function POST(req: NextRequest) {
     const allowed = (form.allowedPlanIds as string[] | null) ?? null;
     if (allowed && allowed.length && !allowed.includes(plan.id)) return NextResponse.json({ error: "Plan not available on this form" }, { status: 400 });
 
+    // Waivers configured on the form must be signed inline.
+    const requiredDocIds = (form.requiredDocumentIds as string[] | null) ?? [];
+    const requiredDocs = requiredDocIds.length ? await prisma.document.findMany({ where: { id: { in: requiredDocIds }, active: true } }) : [];
+    const sigByDoc = new Map<string, string>();
+    if (Array.isArray(signatures)) {
+      for (const sg of signatures) {
+        if (sg && typeof sg.documentId === "string" && typeof sg.signatureSvg === "string" && sg.signatureSvg.startsWith("data:image/")) sigByDoc.set(sg.documentId, sg.signatureSvg);
+      }
+    }
+    const unsigned = requiredDocs.find((d) => !sigByDoc.has(d.id));
+    if (unsigned) return NextResponse.json({ error: `Please sign the ${unsigned.name} to continue.` }, { status: 400 });
+
     const normalizedEmail = String(email).trim().toLowerCase();
     const existing = await prisma.member.findUnique({ where: { locationId_email: { locationId: location.id, email: normalizedEmail } }, select: { id: true } });
     if (existing) {
-      return NextResponse.json({ error: "An account with this email already exists. Sign in to the member portal or contact the front desk." }, { status: 409 });
+      return NextResponse.json({ error: "An account with this email already exists. Sign in to the member portal with your mobile number instead." }, { status: 409 });
+    }
+    const phoneDigits = verifiedPhone.replace(/\D/g, "").slice(-10);
+    const existingPhone = await prisma.member.findFirst({ where: { locationId: location.id, phone: { contains: phoneDigits }, status: { not: "CANCELLED" } }, select: { id: true } });
+    if (existingPhone) {
+      return NextResponse.json({ error: "This mobile number already belongs to a member here. Sign in to the member portal instead." }, { status: 409 });
     }
 
     // Location pricing override
@@ -119,8 +182,8 @@ export async function POST(req: NextRequest) {
       firstName,
       lastName,
       email: normalizedEmail,
-      phone,
-      dob: dob ? new Date(dob) : null,
+      phone: verifiedPhone,
+      dob: dobDate,
       status: "PENDING",
       source: utm?.source ?? "signup_form",
       optInEmailMarketing: !!emailConsent,
@@ -132,14 +195,41 @@ export async function POST(req: NextRequest) {
     await prisma.member.update({
       where: { id: member.id },
       data: {
+        gender: gender ? String(gender) : null,
         addressLine1: addressLine1 || null,
+        addressLine2: addressLine2 || null,
         city: city || null,
         state: state || null,
         zip: zip || null,
         referredById: referrer?.id ?? null,
         smsConsentSource: smsConsent ? "signup_form" : undefined,
+        smsConsentAt: smsConsent ? new Date() : undefined,
+        guardianName: guardianInput?.name ?? undefined,
       },
     });
+
+    if (ec?.name) {
+      await prisma.emergencyContact.create({ data: { memberId: member.id, name: ec.name, phone: ec.phone || null, relationship: ec.relationship || null, isEmergency: true, isPrimary: true } }).catch((e) => console.warn("[signup] emergency contact failed", e));
+    }
+
+    // Profile photo
+    if (photoDataUrl) {
+      try {
+        await saveMemberPhoto(member.id, photoDataUrl);
+      } catch (e) {
+        console.warn("[signup] photo save failed", e);
+      }
+    }
+
+    // Waivers: assign + sign in one go (signatures were collected on the form)
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+    const ua = req.headers.get("user-agent");
+    for (const d of requiredDocs) {
+      const assignment = await prisma.documentAssignment.create({
+        data: { documentId: d.id, memberId: member.id, versionAtAssign: d.version, signingToken: crypto.randomUUID(), status: "SENT" },
+      });
+      await signDocument({ signingToken: assignment.signingToken!, signatureSvg: sigByDoc.get(d.id)!, ipAddress: ip, userAgent: ua, guardian: guardianInput });
+    }
 
     // Custom field values configured on the form
     const customFieldIds = (form.customFieldIds as string[] | null) ?? [];
@@ -173,14 +263,22 @@ export async function POST(req: NextRequest) {
         priceCents,
         signupFeeCents,
         billingCadence: plan.billingCadence,
-        autoRenew: true,
+        autoRenew: isRecurringCadence(plan.billingCadence) && plan.productType === "RECURRING",
       },
     });
+    // One-off plans (passes, prepaid blocks) are good for plan.durationDays, not a billing period.
+    const oneOffPaidThrough = !isRecurringCadence(plan.billingCadence) || plan.productType !== "RECURRING"
+      ? new Date(startDate.getTime() + Math.max(1, plan.durationDays ?? 30) * 86_400_000)
+      : null;
+    const fixOneOffDates = async () => {
+      if (!oneOffPaidThrough) return;
+      await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { paidThroughDate: oneOffPaidThrough, endDate: oneOffPaidThrough, nextInvoiceDate: null, autoRenew: false } });
+    };
 
     // First invoice: first period + signup fee (− discount, + tax, + surcharge when paying by card)
     const squareReady = await isSquareConfigured(location.id);
     const payingByCard = squareReady && Boolean(sourceId);
-    const lines = [{ description: `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: priceCents }];
+    const lines = [{ description: oneOffPaidThrough ? plan.name : `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: priceCents }];
     if (signupFeeCents > 0) lines.push({ description: "Signup fee", unitCents: signupFeeCents });
     const invoice = await createInvoice({
       organizationId: location.organizationId,
@@ -217,7 +315,7 @@ export async function POST(req: NextRequest) {
         utmCampaign: utm?.campaign ?? null,
         utmTerm: utm?.term ?? null,
         utmContent: utm?.content ?? null,
-        firstName, lastName, email: normalizedEmail, phone,
+        firstName, lastName, email: normalizedEmail, phone: verifiedPhone,
         convertedToMemberId: member.id,
       },
       update: { stage: "CONVERTED" },
@@ -228,23 +326,6 @@ export async function POST(req: NextRequest) {
     if (autoTagIds && autoTagIds.length > 0) {
       await Promise.all(autoTagIds.map((tagId) =>
         prisma.memberTag.create({ data: { memberId: member.id, tagId } }).catch(() => {})
-      ));
-    }
-
-    // Required docs from form config — assign each
-    const requiredDocIds = (form.requiredDocumentIds as string[] | null) ?? null;
-    if (requiredDocIds && requiredDocIds.length > 0) {
-      const docs = await prisma.document.findMany({ where: { id: { in: requiredDocIds }, active: true } });
-      await Promise.all(docs.map((d) =>
-        prisma.documentAssignment.create({
-          data: {
-            documentId: d.id,
-            memberId: member.id,
-            versionAtAssign: d.version,
-            signingToken: crypto.randomUUID(),
-            status: "SENT",
-          },
-        })
       ));
     }
 
@@ -284,6 +365,7 @@ export async function POST(req: NextRequest) {
           const { onInvoicePaid } = await import("@/services/billing.service");
           await onInvoicePaid(invoice.id, { paidCents: 0, method: "COMP", receipt: false });
         }
+        await fixOneOffDates();
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : "Payment failed";
         const desired = await computeDesiredAccessState(member.id);
@@ -293,6 +375,14 @@ export async function POST(req: NextRequest) {
           { status: 402 },
         );
       }
+      return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl });
+    }
+
+    // Nothing to pay (free pass / 100% discount): activate right away.
+    if (invoice.totalCents <= 0) {
+      const { onInvoicePaid } = await import("@/services/billing.service");
+      await onInvoicePaid(invoice.id, { paidCents: 0, method: "COMP", receipt: false });
+      await fixOneOffDates();
       return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl });
     }
 

@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
 import { getSquarePublicConfig, publicConfigFromCreds } from "@/lib/square";
 import { SignupClient } from "./SignupClient";
-import { requiredSignupInputKeys } from "@/lib/signup-form-config";
+import { parseSignupFieldConfig, requiredSignupInputKeys } from "@/lib/signup-form-config";
+import { sanitizeDocHtml } from "@/services/portal.service";
 
 export const dynamic = "force-dynamic";
 
@@ -26,16 +27,20 @@ export default async function PublicSignupPage({
 
   // Resolve allowed plans (+ location price overrides)
   const allowedPlanIds = (form.allowedPlanIds as string[] | null) ?? null;
-  const planWhere: Record<string, unknown> = { archived: false, productType: { not: "DAY_PASS" } };
+  const planWhere: Record<string, unknown> = { archived: false };
   if (allowedPlanIds && allowedPlanIds.length > 0) planWhere.id = { in: allowedPlanIds };
 
-  const [plans, overrides, customFieldDefs] = await Promise.all([
-    prisma.membershipPlan.findMany({ where: planWhere, orderBy: { name: "asc" } }),
+  const requiredDocIds = (form.requiredDocumentIds as string[] | null) ?? [];
+  const [plans, overrides, customFieldDefs, documents] = await Promise.all([
+    prisma.membershipPlan.findMany({ where: planWhere, orderBy: [{ productType: "asc" }, { priceCents: "asc" }] }),
     form.location ? prisma.membershipPricingOverride.findMany({ where: { locationId: form.location.id } }) : Promise.resolve([]),
     (() => {
       const ids = (form.customFieldIds as string[] | null) ?? [];
       return ids.length ? prisma.customFieldDefinition.findMany({ where: { id: { in: ids } }, orderBy: { sortOrder: "asc" } }) : Promise.resolve([]);
     })(),
+    requiredDocIds.length
+      ? prisma.document.findMany({ where: { id: { in: requiredDocIds }, active: true }, select: { id: true, name: true, description: true, bodyHtml: true, version: true } })
+      : Promise.resolve([]),
   ]);
   const overrideByPlan = new Map(overrides.map((o) => [o.planId, o]));
 
@@ -61,9 +66,9 @@ export default async function PublicSignupPage({
         defaultPlanId: form.defaultPlanId,
         allowDiscountCode: form.allowDiscountCode,
         photoRequired: form.photoRequired,
-        authSetup: form.authSetup,
         collectTax: form.collectTax,
         requiredFields: requiredSignupInputKeys(form.requiredFields, { photoRequired: form.photoRequired }),
+        emergencyContactMode: parseSignupFieldConfig(form.requiredFields, { photoRequired: form.photoRequired }).emergencyContact,
         location: form.location
           ? {
               id: form.location.id,
@@ -87,8 +92,10 @@ export default async function PublicSignupPage({
           billingCadence: p.billingCadence,
           productType: p.productType,
           category: p.category,
+          durationDays: p.durationDays,
         };
       })}
+      documents={documents.map((d) => ({ id: d.id, name: d.name, description: d.description, bodyHtml: sanitizeDocHtml(d.bodyHtml ?? ""), version: d.version }))}
       customFields={customFieldDefs.map((d) => ({ id: d.id, name: d.name, type: d.type, required: d.required, options: (d.options as string[] | null) ?? null }))}
       utm={utm}
       referralCode={referralCode}

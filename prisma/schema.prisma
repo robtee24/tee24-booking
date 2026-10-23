@@ -414,6 +414,7 @@ model Member {
   visits                  Visit[]
   documentAssignments     DocumentAssignment[]
   signatureEvents         SignatureEvent[]
+  photo                   MemberPhoto?
   membershipSubscriptions MembershipSubscription[]
   customFieldValues       CustomFieldValue[]
   automationEnrollments   AutomationEnrollment[]
@@ -879,6 +880,23 @@ model DocumentAssignment {
  * Served via /api/documents/[assignmentId]/pdf. Imported GymDesk waivers set
  * `source` to "gymdesk:<docReadId>".
  */
+/**
+ * Member profile photo captured at signup (or uploaded by staff). Served via
+ * /api/members/[id]/photo; Member.photoUrl points at that route.
+ */
+model MemberPhoto {
+  id        String   @id @default(cuid())
+  memberId  String   @unique
+  mimeType  String   @default("image/jpeg")
+  sizeBytes Int
+  sha256    String
+  data      Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
 model DocumentFile {
   id           String   @id @default(cuid())
   assignmentId String   @unique
@@ -893,17 +911,20 @@ model DocumentFile {
 }
 
 model SignatureEvent {
-  id               String   @id @default(cuid())
-  assignmentId     String
-  memberId         String
+  id                   String   @id @default(cuid())
+  assignmentId         String
+  memberId             String
   // KIND: SENT | VIEWED | SIGNED | DECLINED | VOIDED | RESENT
-  kind             String
-  signatureSvg     String?
-  initialsSvg      String?
-  ipAddress        String?
-  userAgent        String?
-  signedOnBehalfBy String?
-  createdAt        DateTime @default(now())
+  kind                 String
+  signatureSvg         String?
+  initialsSvg          String?
+  ipAddress            String?
+  userAgent            String?
+  signedOnBehalfBy     String?
+  // Parent / guardian co-signature when the member was under 18 at signing
+  guardianName         String?
+  guardianSignatureSvg String?
+  createdAt            DateTime @default(now())
 
   assignment DocumentAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   member     Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)

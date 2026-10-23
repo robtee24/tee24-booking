@@ -112,6 +112,35 @@ export type GenerateResult = {
   skipped: Array<{ subscriptionId: string; reason: string }>;
 };
 
+/**
+ * One-off plans (day passes, punch cards, prepaid blocks) never renew, so once
+ * their paid-through date passes the subscription lapses and door access is
+ * recomputed. Runs with the invoice generator.
+ */
+export async function expireLapsedOneOffSubscriptions(now = new Date()): Promise<{ expired: string[] }> {
+  const prisma = getPrisma();
+  const subs = await prisma.membershipSubscription.findMany({
+    where: {
+      status: "ACTIVE",
+      OR: [{ autoRenew: false }, { billingCadence: "ONE_OFF" }, { plan: { productType: { in: ["DAY_PASS", "ONE_OFF", "PUNCH_CARD"] } } }],
+      paidThroughDate: { lt: now },
+    },
+    select: { id: true, memberId: true, paidThroughDate: true, plan: { select: { productType: true, billingCadence: true } } },
+    take: 500,
+  });
+  const expired: string[] = [];
+  const { applyAccessState, computeDesiredAccessState } = await import("@/lib/access-sync");
+  for (const sub of subs) {
+    if (isRecurringCadence(sub.plan.billingCadence) && sub.plan.productType === "RECURRING") continue; // real memberships are handled by invoicing
+    await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { status: "CANCELLED", cancelledAt: now, endDate: sub.paidThroughDate ?? now, autoRenew: false } });
+    expired.push(sub.id);
+    void audit({ action: "membership.cancel-immediate", entityType: "MembershipSubscription", entityId: sub.id, metadata: { reason: "one-off plan lapsed", paidThroughDate: sub.paidThroughDate } });
+    const desired = await computeDesiredAccessState(sub.memberId);
+    void applyAccessState(sub.memberId, desired);
+  }
+  return { expired };
+}
+
 /** Generate + attempt to collect every invoice that is due as of `now`. */
 export async function generateDueInvoices(now = new Date(), opts?: { subscriptionId?: string; actorId?: string }): Promise<GenerateResult> {
   const prisma = getPrisma();

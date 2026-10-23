@@ -1,5 +1,5 @@
 // /api/admin/auth/me — the signed-in admin's own account.
-//   GET            → { admin: { id, name, email, phone, role, twoFactorEnabled, hasPin, inviteStatus, lastLoginAt } }
+//   GET            → { admin: { id, name, email, phone, role, twoFactorEnabled, inviteStatus, lastLoginAt } }
 //   PATCH { name?, email? }  → update own profile (role/phone are managed by ROOT/FULL via /api/admin/admins/[id]).
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdminApi } from "@/lib/api-auth";
@@ -17,15 +17,13 @@ const SELECT = {
   phone: true,
   role: true,
   twoFactorEnabled: true,
-  frontDeskPinHash: true,
   inviteStatus: true,
   lastLoginAt: true,
   createdAt: true,
 } as const;
 
-function shape(a: { frontDeskPinHash: string | null } & Record<string, unknown>) {
-  const { frontDeskPinHash, ...rest } = a;
-  return { ...rest, hasPin: !!frontDeskPinHash };
+function shape<T>(a: T): T {
+  return a;
 }
 
 export async function GET() {

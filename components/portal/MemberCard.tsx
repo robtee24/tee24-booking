@@ -60,12 +60,6 @@ export function MemberCard({ card, qrSvg }: { card: CardDTO; qrSvg: string }) {
 
           <div className="relative mt-6 flex items-end justify-between gap-4">
             <div className="space-y-2">
-              {card.checkinCode && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/60">Front-desk code</div>
-                  <div className="font-mono text-apple-2xl font-semibold tracking-[0.2em]">{card.checkinCode}</div>
-                </div>
-              )}
               {card.validThrough && (
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.18em] text-white/60">Valid through</div>
@@ -81,7 +75,7 @@ export function MemberCard({ card, qrSvg }: { card: CardDTO; qrSvg: string }) {
 
       <Card className="mx-auto max-w-md print:hidden">
         <p className="text-apple-sm text-apple-text-secondary">
-          Show this at the front desk or scan it at the kiosk to check in. Staff can also look you up by your front-desk code{card.checkinCode ? ` (${card.checkinCode})` : ""}.
+          Your digital member card. Door access works through the Kisi app on your phone — this card is for identification and staff lookups.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button variant="secondary" iconLeft={<Printer className="h-4 w-4" />} onClick={() => window.print()}>

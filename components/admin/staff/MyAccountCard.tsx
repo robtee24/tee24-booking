@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
+import { ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge, Button, Card, CardHeader, Input, Modal, Select, useToast } from "@/components/ui";
 
 export type MeDTO = {
@@ -12,7 +12,6 @@ export type MeDTO = {
   phone: string;
   role: "ROOT" | "FULL" | "SCOPED";
   twoFactorEnabled: boolean;
-  hasPin: boolean;
   lastLoginAt: string | null;
 };
 
@@ -81,7 +80,6 @@ export function MyAccountCard({ me }: { me: MeDTO }) {
 
         <div className="space-y-4">
           <TwoFactorSection enabled={me.twoFactorEnabled} />
-          <PinSection hasPin={me.hasPin} />
           <div>
             <Select
               label="Dashboard tasks window"
@@ -206,91 +204,6 @@ function TwoFactorSection({ enabled }: { enabled: boolean }) {
             </div>
           )}
           <Input label="6-digit code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="text-center font-mono text-xl tracking-widest" autoFocus required />
-        </form>
-      </Modal>
-    </div>
-  );
-}
-
-/* ─────────────────────────── PIN ─────────────────────────────────────────── */
-
-function PinSection({ hasPin }: { hasPin: boolean }) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [open, setOpen] = React.useState(false);
-  const [pin, setPin] = React.useState("");
-  const [confirmPin, setConfirmPin] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!/^\d{4,6}$/.test(pin)) return toast({ tone: "error", title: "PIN must be 4–6 digits" });
-    if (pin !== confirmPin) return toast({ tone: "error", title: "PINs don't match" });
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/auth/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-      toast({ tone: "success", title: "Front-desk PIN saved" });
-      setOpen(false);
-      setPin("");
-      setConfirmPin("");
-      router.refresh();
-    } catch (err: unknown) {
-      toast({ tone: "error", title: "Couldn't save PIN", description: err instanceof Error ? err.message : undefined });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/auth/pin", { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast({ tone: "success", title: "PIN removed" });
-      router.refresh();
-    } catch (err: unknown) {
-      toast({ tone: "error", title: "Couldn't remove PIN", description: err instanceof Error ? err.message : undefined });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="rounded-apple-sm border border-apple-border p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-apple-sm font-medium text-apple-text">
-            Front-desk PIN
-            {hasPin ? <Badge tone="success" size="sm">Set</Badge> : <Badge tone="muted" size="sm">None</Badge>}
-          </div>
-          <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">4–6 digits to re-verify yourself on a shared front-desk computer.</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="secondary" iconLeft={<KeyRound className="h-3.5 w-3.5" />} onClick={() => setOpen(true)}>
-            {hasPin ? "Change" : "Set PIN"}
-          </Button>
-          {hasPin && (
-            <Button size="sm" variant="ghost" loading={busy && !open} onClick={() => void remove()}>Remove</Button>
-          )}
-        </div>
-      </div>
-
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title={hasPin ? "Change front-desk PIN" : "Set front-desk PIN"}
-        footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="pin-form" type="submit" loading={busy}>Save PIN</Button>
-          </div>
-        }
-      >
-        <form id="pin-form" onSubmit={save} className="space-y-3">
-          <Input label="New PIN" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} className="font-mono tracking-widest" autoFocus />
-          <Input label="Confirm PIN" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={confirmPin} onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))} className="font-mono tracking-widest" />
         </form>
       </Modal>
     </div>

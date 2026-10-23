@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/notify";
+import { memberBaseUrl } from "@/lib/public-url";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
       .setExpirationTime("15m")
       .sign(getSecret());
 
-    const baseUrl = process.env.APP_BASE_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    const baseUrl = memberBaseUrl();
     const link = `${baseUrl}/api/portal/auth/magic/callback?token=${encodeURIComponent(token)}`;
 
     await sendEmail({
