@@ -533,7 +533,7 @@ function MembersWhoCheckedIn({
   onSelect: (m: Member) => void;
 }) {
   const [list, setList] = React.useState<ByMember | null>(null);
-  const [open, setOpen] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
   React.useEffect(() => {
     let alive = true;
     setList(null);

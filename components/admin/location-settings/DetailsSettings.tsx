@@ -44,6 +44,9 @@ type Draft = {
   timezone: string;
   logoUrl: string;
   disabled: boolean;
+  latitude: string;
+  longitude: string;
+  unlockRadiusMeters: string;
 };
 
 function fromData(d: LocationSettings): Draft {
@@ -60,6 +63,9 @@ function fromData(d: LocationSettings): Draft {
     timezone: d.timezone ?? "America/New_York",
     logoUrl: d.logoUrl ?? "",
     disabled: Boolean(d.disabled),
+    latitude: d.latitude != null ? String(d.latitude) : "",
+    longitude: d.longitude != null ? String(d.longitude) : "",
+    unlockRadiusMeters: String(d.unlockRadiusMeters ?? 150),
   };
 }
 
@@ -90,6 +96,13 @@ export function DetailsSettings({
   async function onSave() {
     if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) return toast({ tone: "error", title: "Email address is invalid" });
     if (d.logoUrl && !/^https?:\/\//i.test(d.logoUrl.trim())) return toast({ tone: "error", title: "Logo URL must start with http:// or https://" });
+    const lat = d.latitude.trim() ? Number(d.latitude) : null;
+    const lng = d.longitude.trim() ? Number(d.longitude) : null;
+    if ((lat == null) !== (lng == null)) return toast({ tone: "error", title: "Enter both latitude and longitude, or neither" });
+    if (lat != null && (!Number.isFinite(lat) || Math.abs(lat) > 90)) return toast({ tone: "error", title: "Latitude must be between -90 and 90" });
+    if (lng != null && (!Number.isFinite(lng) || Math.abs(lng) > 180)) return toast({ tone: "error", title: "Longitude must be between -180 and 180" });
+    const radius = Number(d.unlockRadiusMeters);
+    if (!Number.isFinite(radius) || radius < 25 || radius > 5000) return toast({ tone: "error", title: "Unlock radius must be between 25 and 5000 meters" });
     try {
       const patch: Partial<LocationSettings> = {
         businessName: d.businessName.trim() || null,
@@ -103,6 +116,9 @@ export function DetailsSettings({
         country: d.country.trim() || null,
         timezone: d.timezone.trim(),
         logoUrl: d.logoUrl.trim() || null,
+        latitude: lat,
+        longitude: lng,
+        unlockRadiusMeters: Math.round(radius),
       };
       if (canDisable) patch.disabled = d.disabled;
       await save(patch);
@@ -150,6 +166,19 @@ export function DetailsSettings({
             }
           />
           <Field label="Status" value={data.disabled ? <Badge tone="danger" size="sm">Disabled</Badge> : <Badge tone="success" size="sm">Live</Badge>} />
+          <Field
+            label="App unlock geofence"
+            value={
+              data.latitude != null && data.longitude != null ? (
+                <span>
+                  <span className="font-mono text-apple-xs">{data.latitude}, {data.longitude}</span>
+                  <span className="text-apple-text-secondary"> · within {data.unlockRadiusMeters ?? 150} m</span>
+                </span>
+              ) : (
+                <Badge tone="warn" size="sm">Not set — app unlocks disabled</Badge>
+              )
+            }
+          />
         </div>
       ) : (
         <div className="space-y-5">
@@ -211,6 +240,16 @@ export function DetailsSettings({
                 )}
               </div>
             </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-apple-xs font-semibold uppercase tracking-wider text-apple-text-tertiary">Member app · door unlock geofence</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Input label="Latitude" value={d.latitude} onChange={(e) => set("latitude", e.target.value)} placeholder="36.5298" className="font-mono" inputMode="decimal" />
+              <Input label="Longitude" value={d.longitude} onChange={(e) => set("longitude", e.target.value)} placeholder="-87.3595" className="font-mono" inputMode="decimal" />
+              <Input label="Unlock radius (m)" type="number" min="25" max="5000" value={d.unlockRadiusMeters} onChange={(e) => set("unlockRadiusMeters", e.target.value)} hint="Members must be within this distance to unlock. 150 m is a good default." />
+            </div>
+            <p className="mt-2 text-apple-xs text-apple-text-tertiary">Right-click the front door in Google Maps and copy the coordinates. Leave blank to disable unlocking from the app at this location.</p>
           </div>
 
           <Toggle

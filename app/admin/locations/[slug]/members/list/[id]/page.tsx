@@ -6,6 +6,8 @@ import { getPrisma } from "@/lib/db";
 import { adminRoutes } from "@/lib/admin/routes";
 import { Card, CardHeader, StatusBadge, Money, Badge } from "@/components/ui";
 import { TagsEditor, KisiAccessCard, CheckinCodeCard } from "@/components/admin/members/OverviewWidgets";
+import { MobileDeviceCard } from "@/components/admin/members/MobileDeviceCard";
+import { memberDeviceSummary } from "@/services/mobile-auth.service";
 import { ageFromDob, fmtDate, fmtDateTime, genderLabel, relTime } from "@/components/admin/members/format";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +18,13 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
   if (!member || member.location.slug !== slug) notFound();
 
   const prisma = getPrisma();
-  const [recentInvoices, recentVisits, overdue, lastVisit, creditAgg] = await Promise.all([
+  const [recentInvoices, recentVisits, overdue, lastVisit, creditAgg, deviceSummary] = await Promise.all([
     prisma.invoice.findMany({ where: { memberId: id }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.visit.findMany({ where: { memberId: id }, orderBy: { enteredAt: "desc" }, take: 5, include: { bay: { select: { number: true } } } }),
     prisma.invoice.findMany({ where: { memberId: id, status: { in: ["SCHEDULED", "PAST_DUE", "FAILED"] }, dueDate: { lt: new Date() } }, select: { totalCents: true, refundedCents: true } }),
     prisma.visit.findFirst({ where: { memberId: id }, orderBy: { enteredAt: "desc" }, select: { enteredAt: true } }),
     prisma.memberCredit.aggregate({ where: { memberId: id }, _sum: { amountCents: true } }),
+    memberDeviceSummary(id),
   ]);
   const overdueCents = overdue.reduce((s, i) => s + (i.totalCents - i.refundedCents), 0);
   const creditBalanceCents = creditAgg._sum.amountCents ?? 0;
@@ -131,6 +134,31 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
             <CardHeader title="Check-in code" subtitle="Front desk kiosk" />
             <div className="mt-3">
               <CheckinCodeCard memberId={id} code={member.checkinCode} />
+            </div>
+          </Card>
+          <Card className="md:col-span-2">
+            <CardHeader title="Member app" subtitle="One phone per member" />
+            <div className="mt-3">
+              <MobileDeviceCard
+                memberId={id}
+                firstName={member.firstName}
+                device={
+                  deviceSummary.active
+                    ? {
+                        id: deviceSummary.active.id,
+                        platform: deviceSummary.active.platform,
+                        name: deviceSummary.active.name,
+                        model: deviceSummary.active.model,
+                        osVersion: deviceSummary.active.osVersion,
+                        appVersion: deviceSummary.active.appVersion,
+                        boundAt: deviceSummary.active.boundAt.toISOString(),
+                        lastSeenAt: deviceSummary.active.lastSeenAt?.toISOString() ?? null,
+                      }
+                    : null
+                }
+                pendingRequests={deviceSummary.pending.length}
+                liveSessions={deviceSummary.liveSessions}
+              />
             </div>
           </Card>
         </div>

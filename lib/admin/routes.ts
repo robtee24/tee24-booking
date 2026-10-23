@@ -44,6 +44,7 @@ export const adminRoutes = {
   checkInAnalytics: () => "/admin/check-ins/analytics",
   doorAccess: () => "/admin/door-access",
   inbox: () => "/admin/inbox",
+  mobileApp: () => "/admin/mobile-app",
   tasks: () => "/admin/tasks",
   notifications: () => "/admin/notifications",
   settings: () => "/admin/settings",
@@ -67,6 +68,7 @@ export const adminRoutes = {
       bays: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/bays`,
       notifications: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/notifications`,
       maintenance: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/maintenance`,
+      events: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/events`,
     },
 
     members: {
@@ -146,7 +148,7 @@ export const adminRoutes = {
 export type NavIcon =
   | "dashboard" | "calendar" | "users" | "card" | "megaphone" | "settings"
   | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench"
-  | "door-open" | "log-in" | "inbox";
+  | "door-open" | "log-in" | "inbox" | "smartphone";
 
 export type NavLeaf = {
   label: string;
@@ -190,6 +192,7 @@ export const LOCATION_NAV: NavSection[] = [
       { label: "Bays", href: adminRoutes.loc.scheduling.bays },
       { label: "Notifications", href: adminRoutes.loc.scheduling.notifications },
       { label: "Maintenance", href: adminRoutes.loc.scheduling.maintenance },
+      { label: "Events", href: adminRoutes.loc.scheduling.events },
     ],
   },
   {
@@ -285,6 +288,7 @@ export const ORG_NAV: OrgNavItem[] = [
   { label: "Check Ins", href: adminRoutes.checkIns(), icon: "log-in" },
   { label: "Door Access", href: adminRoutes.doorAccess(), icon: "door-open" },
   { label: "Inbox", href: adminRoutes.inbox(), icon: "inbox" },
+  { label: "Mobile App", href: adminRoutes.mobileApp(), icon: "smartphone" },
   { label: "Admins", href: adminRoutes.admins(), icon: "shield" },
   { label: "Tasks", href: adminRoutes.tasks(), icon: "check-square" },
   { label: "Notifications", href: adminRoutes.notifications(), icon: "bell" },

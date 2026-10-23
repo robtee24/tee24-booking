@@ -14,7 +14,7 @@ export type AuditAction =
   | "member.status-change" | "member.tag-add" | "member.tag-remove"
   | "member.impersonate-start" | "member.impersonate-end"
   // Membership
-  | "membership.create" | "membership.cancel-schedule" | "membership.cancel-immediate"
+  | "membership.create" | "membership.edit" | "membership.cancel-schedule" | "membership.cancel-immediate"
   | "membership.cancel-undo" | "membership.reactivate"
   | "membership.freeze" | "membership.freeze-immediate"
   | "membership.unfreeze" | "membership.extend"
@@ -40,7 +40,12 @@ export type AuditAction =
   | "admin.permission-grant" | "admin.permission-revoke"
   | "admin.login" | "admin.logout"
   // Settings
-  | "settings.update";
+  | "settings.update"
+  // Mobile app
+  | "device.bind" | "device.unlock" | "device.transfer-request" | "device.transfer-approve" | "device.transfer-deny"
+  | "door.mobile-unlock" | "door.mobile-unlock-denied"
+  // Events
+  | "event.create" | "event.update" | "event.delete";
 
 export type AuditEntry = {
   organizationId?: string | null;

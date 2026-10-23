@@ -293,6 +293,9 @@ export type LocationDetailsPatch = Partial<{
   bookingNote: string | null;
   passAccessUrl: string | null;
   disabled: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  unlockRadiusMeters: number;
 }>;
 
 export const LOCATION_DETAILS_SELECT = {
@@ -313,6 +316,9 @@ export const LOCATION_DETAILS_SELECT = {
   logoUrl: true,
   bookingNote: true,
   passAccessUrl: true,
+  latitude: true,
+  longitude: true,
+  unlockRadiusMeters: true,
 } as const;
 
 function cleanNullable(v: unknown, max = 200): string | null {
@@ -368,6 +374,20 @@ export function sanitizeLocationDetails(input: Record<string, unknown>): Locatio
     out.bookingNote = input.bookingNote === null ? null : String(input.bookingNote).slice(0, 4000);
   }
   if (input.disabled !== undefined) out.disabled = Boolean(input.disabled);
+  if (input.latitude !== undefined || input.longitude !== undefined) {
+    const lat = input.latitude === null || input.latitude === "" ? null : Number(input.latitude);
+    const lng = input.longitude === null || input.longitude === "" ? null : Number(input.longitude);
+    if ((lat == null) !== (lng == null)) throw new Error("Enter both latitude and longitude, or clear both");
+    if (lat != null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) throw new Error("Latitude must be between -90 and 90");
+    if (lng != null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) throw new Error("Longitude must be between -180 and 180");
+    out.latitude = lat;
+    out.longitude = lng;
+  }
+  if (input.unlockRadiusMeters !== undefined) {
+    const r = Math.round(Number(input.unlockRadiusMeters));
+    if (!Number.isFinite(r) || r < 25 || r > 5000) throw new Error("Unlock radius must be between 25 and 5000 meters");
+    out.unlockRadiusMeters = r;
+  }
   return out;
 }
 

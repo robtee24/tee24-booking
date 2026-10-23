@@ -15,6 +15,7 @@ import {
   DoorOpen,
   LogIn,
   Inbox,
+  Smartphone,
 } from "lucide-react";
 import type { NavIcon as NavIconName } from "@/lib/admin/routes";
 
@@ -35,6 +36,7 @@ const ICONS = {
   "door-open": DoorOpen,
   "log-in": LogIn,
   inbox: Inbox,
+  smartphone: Smartphone,
 } as const;
 
 export function NavIcon({ name, className = "h-4 w-4" }: { name: NavIconName; className?: string }) {

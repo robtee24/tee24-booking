@@ -94,6 +94,34 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
     return { visitId: null, deduped: false };
   }
 
+  // Member-app unlocks go through our API key, so Kisi reports *our* integration
+  // user as the actor. The app already wrote a MOBILE_APP visit for the member a
+  // moment earlier — attach this event to it instead of creating an unmatched row.
+  if (!member) {
+    const appVisit = await prisma.visit.findFirst({
+      where: {
+        locationId,
+        source: "MOBILE_APP",
+        kisiEventId: null,
+        AND: [
+          {
+            OR: [
+              { enteredAt: { gte: addMinutes(input.unlockedAt, -3), lte: addMinutes(input.unlockedAt, 3) } },
+              { dedupedFromAt: { gte: addMinutes(input.unlockedAt, -3), lte: addMinutes(input.unlockedAt, 3) } },
+            ],
+          },
+          ...(door ? [{ OR: [{ doorId: door.id }, { doorId: null }] }] : []),
+        ],
+      },
+      orderBy: { enteredAt: "desc" },
+    });
+    if (appVisit) {
+      await prisma.visit.update({ where: { id: appVisit.id }, data: { kisiEventId: input.kisiEventId, ...(door && !appVisit.doorId ? { doorId: door.id } : {}) } }).catch(() => {});
+      if (door) await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
+      return { visitId: appVisit.id, deduped: true };
+    }
+  }
+
   if (door) {
     await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
   }

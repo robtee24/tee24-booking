@@ -28,6 +28,7 @@ export class OtpService {
       admin_login: `Your Tee24 admin login code is ${code}. Expires in ${minutes} min.`,
       customer_booking: `Tee24 booking verification code: ${code}. Expires in ${minutes} min.`,
       customer_signup: `Welcome to Tee24! Your code is ${code}. Expires in ${minutes} min.`,
+      mobile_login: `Your Tee24 app sign-in code is ${code}. Expires in ${minutes} min. Never share this code.`,
       password_reset: `Your Tee24 password reset code is ${code}. Expires in ${minutes} min.`,
     };
 

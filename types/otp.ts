@@ -4,6 +4,7 @@ export type OtpPurpose =
   | "admin_login"
   | "customer_booking"
   | "customer_signup"
+  | "mobile_login"
   | "password_reset";
 
 export type VerifyOtpResult =

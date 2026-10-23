@@ -63,8 +63,16 @@ export async function POST(req: NextRequest) {
 
   if (!rest.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
+  const visitsPerPeriod = rest.visitsPerPeriod == null || rest.visitsPerPeriod === "" ? null : Number(rest.visitsPerPeriod);
+  if (visitsPerPeriod != null && (!Number.isInteger(visitsPerPeriod) || visitsPerPeriod < 1 || visitsPerPeriod > 365)) {
+    return NextResponse.json({ error: "visitsPerPeriod must be a whole number between 1 and 365" }, { status: 400 });
+  }
+  const visitPeriod = rest.visitPeriod === "ROLLING_WEEK" ? "ROLLING_WEEK" : "ROLLING_MONTH";
+
   const plan = await getPrisma().membershipPlan.create({
     data: {
+      visitsPerPeriod,
+      visitPeriod,
       organizationId,
       name: rest.name,
       description: rest.description ?? null,

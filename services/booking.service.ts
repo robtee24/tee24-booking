@@ -26,6 +26,8 @@ export type CreateBookingInput = {
   partyKind?: "SINGLE" | "GROUP";
   handedness?: "RH" | "LH";
   source: "PUBLIC" | "ADMIN";
+  /** Member who made the booking (member app / portal). */
+  memberId?: string | null;
 };
 
 export async function createBooking(input: CreateBookingInput) {
@@ -43,6 +45,7 @@ export async function createBooking(input: CreateBookingInput) {
     partyKind = "GROUP",
     handedness,
     source,
+    memberId,
   } = input;
 
   // 1. Parse local times
@@ -183,6 +186,7 @@ export async function createBooking(input: CreateBookingInput) {
       email: email?.toLowerCase().trim() ?? "",
       phone: phone?.trim() ?? "",
       managementToken: token,
+      memberId: memberId ?? null,
     },
     select: {
       id: true,

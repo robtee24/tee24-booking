@@ -20,6 +20,9 @@ export type LocationSettings = {
   country?: string | null;
   timezone?: string | null;
   logoUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  unlockRadiusMeters?: number | null;
   bookingNote?: string | null;
   passAccessUrl?: string | null;
   open24Hours?: boolean | null;

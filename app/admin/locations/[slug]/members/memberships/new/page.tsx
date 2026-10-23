@@ -19,6 +19,8 @@ export default function NewMembershipPage() {
     billingCadence: "MONTHLY",
     durationDays: "",
     familyBundle: false,
+    visitsPerPeriod: "",
+    visitPeriod: "ROLLING_MONTH",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +48,8 @@ export default function NewMembershipPage() {
           billingCadence: form.billingCadence,
           durationDays: form.durationDays ? Number(form.durationDays) : null,
           familyBundle: form.familyBundle,
+          visitsPerPeriod: form.visitsPerPeriod ? Number(form.visitsPerPeriod) : null,
+          visitPeriod: form.visitPeriod,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -108,6 +112,26 @@ export default function NewMembershipPage() {
                 <input type="checkbox" checked={form.familyBundle} onChange={(e) => set("familyBundle", e.target.checked)} className="h-4 w-4 rounded accent-apple-blue" />
                 Family bundle
               </label>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Visit allowance" subtitle="Enforced when members unlock the door from the app. Leave blank for unlimited. Multiple visits on the same day count once." />
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Visits per period"
+                type="number"
+                min="1"
+                max="365"
+                value={form.visitsPerPeriod}
+                onChange={(e) => set("visitsPerPeriod", e.target.value)}
+                placeholder="Unlimited"
+                hint="e.g. 3 for a Noonan-style plan"
+              />
+              <Select label="Period" value={form.visitPeriod} onChange={(e) => set("visitPeriod", e.target.value)} hint="Rolling from the member's signup day, not the calendar month.">
+                <option value="ROLLING_MONTH">Rolling month (from signup day)</option>
+                <option value="ROLLING_WEEK">Rolling week</option>
+              </Select>
             </div>
           </Card>
 
