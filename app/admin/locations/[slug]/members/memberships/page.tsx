@@ -17,8 +17,8 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
   const [plans, planMix, statusOverTime, mrrCents, totalActive, totalCancelled] = await Promise.all([
     prisma.membershipPlan.findMany({
       where: { OR: [{ organizationId: location.organizationId }, { organizationId: null }] },
-      orderBy: [{ archived: "asc" }, { name: "asc" }],
-      include: { _count: { select: { subscriptions: true } } },
+      orderBy: [{ archived: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+      include: { _count: { select: { subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN", "CANCEL_SCHEDULED", "FREEZE_SCHEDULED"] } } } } } },
     }) as unknown as Promise<PlanRow[]>,
     subscriptionsByPlan({ locationId: location.id }),
     subscriptionStatusOverTime({ locationId: location.id, months: 12 }),
@@ -126,7 +126,7 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
       )}
 
       <Card padded={false}>
-        <PlansTable plans={plans} newHref={`/admin/locations/${slug}/members/memberships/new`} />
+        <PlansTable plans={plans} newHref={`/admin/locations/${slug}/members/memberships/new`} editHref={(id) => `/admin/locations/${slug}/members/memberships/${id}`} />
       </Card>
     </div>
   );

@@ -16,6 +16,7 @@
  * a membership — no new schema needed.
  */
 import { getPrisma } from "@/lib/db";
+import { guestLineLabel, membershipDisplayName } from "@/lib/membership-pricing";
 import { audit } from "@/lib/audit";
 import { isSquareConfigured } from "@/lib/square";
 import {
@@ -239,14 +240,20 @@ export async function issueInvoiceForSubscription(
       locationId: sub.locationId,
       memberId: sub.memberId,
       subscriptionId: sub.id,
-      description: `${sub.plan.name} — ${periodLabel(dayStart, sub.billingCadence)}`,
+      description: `${membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType)} — ${periodLabel(dayStart, sub.billingCadence)}`,
       dueDate: dayStart,
       scheduledFor: dayStart,
       discountCents,
       taxRateBps: sub.location.taxRateBps,
       surchargeBps: sub.location.cardSurchargeBps,
       applySurcharge: Boolean(defaultCard) && sub.location.cardSurchargeBps > 0,
-      lines: [{ description: sub.plan.name, unitCents: sub.priceCents }],
+      lines:
+        sub.guestCount > 0 && sub.guestCents > 0 && sub.guestCents < sub.priceCents
+          ? [
+              { description: sub.plan.name, unitCents: sub.priceCents - sub.guestCents },
+              { description: `Guest add-on — ${guestLineLabel(sub.guestCount, sub.plan.productType)}`, unitCents: sub.guestCents },
+            ]
+          : [{ description: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType), unitCents: sub.priceCents }],
     },
     opts.actorId,
   );

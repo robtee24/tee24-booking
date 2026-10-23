@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { membershipDisplayName } from "@/lib/membership-pricing";
 import { Card, CardHeader, Money, StatusBadge } from "@/components/ui";
 import { getCurrentMember, getMemberSession } from "@/lib/member-session";
 import { getMembershipOverview } from "@/services/portal.service";
@@ -29,7 +30,7 @@ export default async function PortalMembershipPage() {
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-apple-lg font-semibold text-apple-text">{sub.plan.name}</div>
+                  <div className="text-apple-lg font-semibold text-apple-text">{membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType)}</div>
                   {sub.plan.description && <div className="text-apple-sm text-apple-text-secondary">{sub.plan.description}</div>}
                 </div>
                 <StatusBadge status={sub.status} size="sm" />
@@ -109,7 +110,7 @@ export default async function PortalMembershipPage() {
           <ul className="mt-3 divide-y divide-apple-divider text-apple-sm">
             {history.map((h) => (
               <li key={h.id} className="flex items-center justify-between py-2">
-                <span className="text-apple-text">{h.plan.name}</span>
+                <span className="text-apple-text">{membershipDisplayName(h.plan.name, h.guestCount, h.plan.productType)}</span>
                 <span className="text-apple-text-tertiary">
                   {h.startDate.toLocaleDateString()}{h.endDate ? ` – ${h.endDate.toLocaleDateString()}` : ""} · <StatusBadge status={h.status} size="sm" />
                 </span>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parsePlanBody, PlanInputError } from "@/lib/admin/plan-input";
 import { getPrisma } from "@/lib/db";
 import { requireAdminApi, requireLocationAdminApi } from "@/lib/api-auth";
 import { getActorContext } from "@/lib/actor";
@@ -63,26 +64,24 @@ export async function POST(req: NextRequest) {
 
   if (!rest.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
-  const visitsPerPeriod = rest.visitsPerPeriod == null || rest.visitsPerPeriod === "" ? null : Number(rest.visitsPerPeriod);
-  if (visitsPerPeriod != null && (!Number.isInteger(visitsPerPeriod) || visitsPerPeriod < 1 || visitsPerPeriod > 365)) {
-    return NextResponse.json({ error: "visitsPerPeriod must be a whole number between 1 and 365" }, { status: 400 });
+  let parsed;
+  try {
+    parsed = parsePlanBody(rest);
+  } catch (e) {
+    if (e instanceof PlanInputError) return NextResponse.json({ error: e.message }, { status: 400 });
+    throw e;
   }
-  const visitPeriod = rest.visitPeriod === "ROLLING_WEEK" ? "ROLLING_WEEK" : "ROLLING_MONTH";
+  const { dayPassGuestPricing, ...planFields } = parsed;
 
   const plan = await getPrisma().membershipPlan.create({
     data: {
-      visitsPerPeriod,
-      visitPeriod,
       organizationId,
-      name: rest.name,
-      description: rest.description ?? null,
-      productType: rest.productType ?? "RECURRING",
-      category: rest.category ?? "MEMBER",
-      priceCents: rest.priceCents ?? 0,
-      signupFeeCents: rest.signupFeeCents ?? 0,
-      billingCadence: rest.billingCadence ?? "MONTHLY",
-      durationDays: rest.durationDays ?? null,
-      familyBundle: rest.familyBundle ?? false,
+      productType: "RECURRING",
+      category: "MEMBER",
+      billingCadence: "MONTHLY",
+      ...planFields,
+      name: parsed.name!,
+      dayPassGuestPricing: dayPassGuestPricing ?? undefined,
       cancellationPolicy: rest.cancellationPolicy ?? null,
       freezePolicy: rest.freezePolicy ?? null,
       kisiDoorGroups: rest.kisiDoorGroups ?? null,

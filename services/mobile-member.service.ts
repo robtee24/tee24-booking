@@ -4,6 +4,7 @@
  * writes (home facility, profile, cancellation request).
  */
 import { getPrisma } from "@/lib/db";
+import { membershipDisplayName } from "@/lib/membership-pricing";
 import { getVisitAllowance } from "@/services/visit-allowance.service";
 import { getActiveDevice, MobileError } from "@/services/mobile-auth.service";
 import { getBookingAccess } from "@/services/mobile-booking-access.service";
@@ -143,7 +144,7 @@ export async function getMemberHome(memberId: string) {
           id: sub.id,
           status: sub.status,
           planId: sub.plan.id,
-          planName: sub.plan.name,
+          planName: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType),
           planDescription: sub.plan.description,
           priceCents: sub.priceCents,
           billingCadence: sub.billingCadence,

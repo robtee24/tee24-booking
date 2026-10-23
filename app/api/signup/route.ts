@@ -13,6 +13,8 @@ import { SIGNUP_PHONE_AUDIENCE, verifyPhoneVerificationToken } from "@/lib/phone
 import { parseImageDataUrl, saveMemberPhoto, PhotoError } from "@/services/member-photo.service";
 import { signDocument } from "@/services/document.service";
 import { isRecurringCadence } from "@/services/recurring-billing.service";
+import { addPeriods, guestCentsFor, guestLineLabel, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { parseUploadDataUrl, saveMemberUpload, UploadError } from "@/services/member-upload.service";
 
 const GENDERS = new Set(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"]);
 
@@ -45,25 +47,38 @@ export const dynamic = "force-dynamic";
  * When Square is NOT configured the member/subscription stay PENDING (today's
  * behaviour) and the invoice is SCHEDULED for the front desk to collect.
  *
- * GET /api/signup?formSlug=&planId=&code=  → discount code preview for the form.
+ * GET /api/signup?formSlug=&planId=&guestCount=&code=     → discount code preview
+ * GET /api/signup?formSlug=&planId=&guestCount=&promoId=  → signup promotion preview
+ * The discount is computed on the plan price including any guest add-on.
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const formSlug = sp.get("formSlug") ?? "";
   const code = sp.get("code") ?? "";
+  const promoId = sp.get("promoId") ?? "";
   const planId = sp.get("planId");
+  const guestCount = Math.max(0, Math.floor(Number(sp.get("guestCount") ?? 0)) || 0);
   const prisma = getPrisma();
-  const form = await prisma.signupForm.findUnique({ where: { slug: formSlug }, include: { location: { select: { organizationId: true } } } });
+  const form = await prisma.signupForm.findUnique({ where: { slug: formSlug }, include: { location: { select: { id: true, organizationId: true } } } });
   if (!form || !form.active) return NextResponse.json({ ok: false, reason: "Form not found" }, { status: 404 });
-  if (!form.allowDiscountCode) return NextResponse.json({ ok: false, reason: "Discount codes aren't accepted on this form" });
-  const r = await validateDiscount(code, { planId, signupFormId: form.id, organizationId: form.location?.organizationId ?? null });
+  let lookupCode = code;
+  if (promoId) {
+    const promo = await prisma.discount.findUnique({ where: { id: promoId }, select: { code: true, showOnSignup: true, active: true } });
+    if (!promo || !promo.active || !promo.showOnSignup) return NextResponse.json({ ok: false, reason: "That promotion isn't available" });
+    lookupCode = promo.code;
+  } else if (!form.allowDiscountCode) {
+    return NextResponse.json({ ok: false, reason: "Discount codes aren't accepted on this form" });
+  }
+  const r = await validateDiscount(lookupCode, { planId, signupFormId: form.id, organizationId: form.location?.organizationId ?? null });
   if (!r.ok) return NextResponse.json({ ok: false, reason: r.reason });
   const plan = planId ? await prisma.membershipPlan.findUnique({ where: { id: planId } }) : null;
+  const override = plan && form.location ? await prisma.membershipPricingOverride.findUnique({ where: { planId_locationId: { planId: plan.id, locationId: form.location.id } } }) : null;
+  const subtotal = plan ? (override?.priceCents ?? plan.priceCents) + guestCentsFor(plan, guestCount) : null;
   return NextResponse.json({
     ok: true,
     code: r.discount.code,
     description: describeDiscount(r.discount),
-    amountCents: plan ? computeDiscountCents(r.discount, plan.priceCents) : null,
+    amountCents: subtotal != null ? computeDiscountCents(r.discount, subtotal) : null,
   });
 }
 
@@ -76,6 +91,7 @@ export async function POST(req: NextRequest) {
       photoDataUrl, signatures, guardian, emergencyContact,
       smsConsent, emailConsent, utm, referralCode,
       discountCode, sourceId, verificationToken, customFields,
+      guestCount: guestCountRaw, promoDiscountId, promoIdDataUrl, promoAcknowledged,
     } = body;
 
     if (!formSlug || !planId || !firstName || !lastName || !email || !phone) {
@@ -156,12 +172,36 @@ export async function POST(req: NextRequest) {
 
     // Location pricing override
     const override = await prisma.membershipPricingOverride.findUnique({ where: { planId_locationId: { planId: plan.id, locationId: location.id } } });
-    const priceCents = override?.priceCents ?? plan.priceCents;
+    const basePriceCents = override?.priceCents ?? plan.priceCents;
     const signupFeeCents = override?.signupFeeCents ?? plan.signupFeeCents;
 
-    // Discount: explicit code (if allowed) or the form's auto-apply discount
+    // Guests: "+ Guest" add-on on memberships, tiered guest pricing on day passes
+    const guestCount = Math.max(0, Math.floor(Number(guestCountRaw ?? 0)) || 0);
+    if (guestCount > maxGuestsFor(plan)) return NextResponse.json({ error: `${plan.name} allows up to ${maxGuestsFor(plan)} guest${maxGuestsFor(plan) === 1 ? "" : "s"}` }, { status: 400 });
+    const guestCents = guestCentsFor(plan, guestCount);
+    const priceCents = basePriceCents + guestCents;
+    const displayName = membershipDisplayName(plan.name, guestCount, plan.productType);
+
+    // Discount: a signup promotion, an explicit code (if allowed), or the form's auto-apply discount — one at most.
     let discount: Awaited<ReturnType<typeof validateDiscount>> | null = null;
-    if (discountCode && form.allowDiscountCode) {
+    let promo: Awaited<ReturnType<typeof prisma.discount.findUnique>> = null;
+    if (promoDiscountId) {
+      promo = await prisma.discount.findUnique({ where: { id: String(promoDiscountId) } });
+      if (!promo || !promo.active || !promo.showOnSignup) return NextResponse.json({ error: "That promotion isn't available" }, { status: 400 });
+      discount = await validateDiscount(promo.code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
+      if (!discount.ok) return NextResponse.json({ error: discount.reason }, { status: 400 });
+      if (promo.requiresIdUpload) {
+        if (typeof promoIdDataUrl !== "string" || !promoIdDataUrl) return NextResponse.json({ error: `${promo.idUploadLabel ?? "An ID upload"} is required for this promotion.` }, { status: 400 });
+        try {
+          parseUploadDataUrl(promoIdDataUrl);
+        } catch (e) {
+          return NextResponse.json({ error: e instanceof UploadError ? e.message : "Invalid ID upload" }, { status: 400 });
+        }
+      }
+      if (promo.commitmentMonths && promo.commitmentAcknowledgement && promoAcknowledged !== true) {
+        return NextResponse.json({ error: "Please confirm you understand the promotion terms." }, { status: 400 });
+      }
+    } else if (discountCode && form.allowDiscountCode) {
       discount = await validateDiscount(String(discountCode), { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
       if (!discount.ok) return NextResponse.json({ error: discount.reason }, { status: 400 });
     } else if (form.autoApplyDiscountId) {
@@ -170,6 +210,8 @@ export async function POST(req: NextRequest) {
       if (discount && !discount.ok) discount = null;
     }
     const discountCents = discount?.ok ? computeDiscountCents(discount.discount, priceCents) : 0;
+    const isRecurringPlan = isRecurringCadence(plan.billingCadence) && plan.productType === "RECURRING";
+    const commitmentMonths = isRecurringPlan && promo?.commitmentMonths ? promo.commitmentMonths : null;
 
     // Optional referrer lookup
     const referrer = referralCode
@@ -188,7 +230,7 @@ export async function POST(req: NextRequest) {
       source: utm?.source ?? "signup_form",
       optInEmailMarketing: !!emailConsent,
       optInSmsMarketing: !!smsConsent,
-      membershipType: plan.name,
+      membershipType: displayName,
     });
 
     // Set address & referrer link
@@ -219,6 +261,11 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.warn("[signup] photo save failed", e);
       }
+    }
+
+    // Promotion ID (military / first responder / student / senior …) for staff review
+    if (promo?.requiresIdUpload && typeof promoIdDataUrl === "string" && promoIdDataUrl) {
+      await saveMemberUpload({ memberId: member.id, kind: "PROMO_ID", label: promo.idUploadLabel ?? promo.signupTitle ?? promo.name, discountId: promo.id, dataUrl: promoIdDataUrl });
     }
 
     // Waivers: assign + sign in one go (signatures were collected on the form)
@@ -263,7 +310,13 @@ export async function POST(req: NextRequest) {
         priceCents,
         signupFeeCents,
         billingCadence: plan.billingCadence,
-        autoRenew: isRecurringCadence(plan.billingCadence) && plan.productType === "RECURRING",
+        autoRenew: isRecurringPlan,
+        guestCount,
+        guestCents,
+        promoDiscountId: promo?.id ?? null,
+        commitmentMonths,
+        commitmentEndsAt: commitmentMonths ? addPeriods(startDate, plan.billingCadence, commitmentMonths) : null,
+        earlyCancelFeeCents: commitmentMonths && promo?.earlyCancelPolicy !== "NONE" ? discountCents : null,
       },
     });
     // One-off plans (passes, prepaid blocks) are good for plan.durationDays, not a billing period.
@@ -278,14 +331,15 @@ export async function POST(req: NextRequest) {
     // First invoice: first period + signup fee (− discount, + tax, + surcharge when paying by card)
     const squareReady = await isSquareConfigured(location.id);
     const payingByCard = squareReady && Boolean(sourceId);
-    const lines = [{ description: oneOffPaidThrough ? plan.name : `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: priceCents }];
+    const lines = [{ description: oneOffPaidThrough ? plan.name : `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: basePriceCents }];
+    if (guestCents > 0) lines.push({ description: `Guest add-on — ${guestLineLabel(guestCount, plan.productType)}`, unitCents: guestCents });
     if (signupFeeCents > 0) lines.push({ description: "Signup fee", unitCents: signupFeeCents });
     const invoice = await createInvoice({
       organizationId: location.organizationId,
       locationId: location.id,
       memberId: member.id,
       subscriptionId: sub.id,
-      description: `${plan.name} — signup`,
+      description: `${displayName} — signup`,
       dueDate: startDate,
       scheduledFor: startDate,
       discountCents,
@@ -341,7 +395,7 @@ export async function POST(req: NextRequest) {
       entityType: "MembershipSubscription",
       entityId: sub.id,
       after: { memberId: member.id, planId: plan.id, status: "PENDING", invoiceId: invoice.id },
-      metadata: { signupFormId: form.id, utm, referralCode, discountCode: discount?.ok ? discount.discount.code : null, payingByCard },
+      metadata: { signupFormId: form.id, utm, referralCode, discountCode: discount?.ok ? discount.discount.code : null, promoDiscountId: promo?.id ?? null, guestCount, commitmentMonths, payingByCard },
     });
 
     await emitMemberEvent("member.signup", {
@@ -349,7 +403,7 @@ export async function POST(req: NextRequest) {
       locationId: location.id,
       organizationId: location.organizationId,
       refs: { subscriptionId: sub.id, invoiceId: invoice.id },
-      vars: { planName: plan.name, amount: (invoice.totalCents / 100).toFixed(2), firstName, signupFormId: form.id },
+      vars: { planName: displayName, amount: (invoice.totalCents / 100).toFixed(2), firstName, signupFormId: form.id },
     });
 
     const payToken = await ensurePayToken(invoice.id);
@@ -360,7 +414,7 @@ export async function POST(req: NextRequest) {
     if (payingByCard) {
       try {
         const pm = await vaultCard({ memberId: member.id, sourceId: String(sourceId), verificationToken: verificationToken ?? null, setDefault: true, source: "signup" });
-        if (invoice.totalCents > 0) await runCharge({ invoiceId: invoice.id, paymentMethodId: pm.id, note: `Signup — ${plan.name}` });
+        if (invoice.totalCents > 0) await runCharge({ invoiceId: invoice.id, paymentMethodId: pm.id, note: `Signup — ${displayName}` });
         else {
           const { onInvoicePaid } = await import("@/services/billing.service");
           await onInvoicePaid(invoice.id, { paidCents: 0, method: "COMP", receipt: false });
