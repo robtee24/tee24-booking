@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { membershipDisplayName } from "@/lib/membership-pricing";
 import { Card, CardHeader, StatusBadge, Money } from "@/components/ui";
 import { getCurrentMember } from "@/lib/member-session";
 import { getPrisma } from "@/lib/db";
@@ -30,7 +29,7 @@ export default async function PortalProfile() {
           {sub ? (
             <>
               <div className="mt-3 flex items-center justify-between">
-                <span className="font-medium text-apple-text">{membershipDisplayName(sub.plan.name, sub.guestCount)}</span>
+                <span className="font-medium text-apple-text">{sub.plan.name}</span>
                 <StatusBadge status={sub.status} size="sm" />
               </div>
               <div className="mt-1 text-apple-sm text-apple-text-secondary"><Money cents={sub.priceCents} /> / {sub.billingCadence.toLowerCase()}</div>

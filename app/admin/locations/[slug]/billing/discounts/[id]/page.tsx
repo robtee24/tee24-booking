@@ -40,15 +40,6 @@ export default async function DiscountDetailPage({ params }: { params: Promise<{
     active: discount.active,
     planIds: discount.planRestrictions.map((p) => p.planId),
     signupFormIds: Array.isArray(discount.signupFormIds) ? (discount.signupFormIds as string[]) : [],
-    showOnSignup: discount.showOnSignup,
-    signupTitle: discount.signupTitle ?? "",
-    signupDescription: discount.signupDescription ?? "",
-    requiresIdUpload: discount.requiresIdUpload,
-    idUploadLabel: discount.idUploadLabel ?? "",
-    commitmentMonths: discount.commitmentMonths != null ? String(discount.commitmentMonths) : "",
-    commitmentAcknowledgement: discount.commitmentAcknowledgement ?? "",
-    chargeDiscountBackOnEarlyCancel: discount.earlyCancelPolicy !== "NONE",
-    sortOrder: String(discount.sortOrder ?? 0),
   };
 
   return (

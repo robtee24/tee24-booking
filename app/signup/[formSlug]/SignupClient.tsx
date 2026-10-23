@@ -6,8 +6,7 @@ import { Button, Card, CardHeader, Input, Money, Select } from "@/components/ui"
 import { CardForm } from "@/components/payments/CardForm";
 import { SignaturePad, type SignaturePadHandle } from "@/components/portal/SignaturePad";
 import type { SquarePublicConfig } from "@/lib/square";
-import { BadgePercent, Camera, Check, ChevronRight, FileCheck, RefreshCw, ShieldCheck, Upload, Users } from "lucide-react";
-import { guestCentsFor, guestIncrementCents, maxGuestsFor, membershipDisplayName, type SignupPromo } from "@/lib/membership-pricing";
+import { Camera, Check, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
 
 type Plan = {
   id: string;
@@ -19,10 +18,6 @@ type Plan = {
   productType: string;
   category: string;
   durationDays: number | null;
-  guestAddonCents: number | null;
-  maxGuests: number;
-  dayPassGuestPricing: unknown;
-  visitsPerPeriod: number | null;
 };
 
 type CustomField = { id: string; name: string; type: string; required: boolean; options: string[] | null };
@@ -43,7 +38,6 @@ type FormProps = {
     location: { id: string; name: string; slug: string; organizationId: string | null; taxRateBps: number; cardSurchargeBps: number; currency: string } | null;
   };
   plans: Plan[];
-  promos: SignupPromo[];
   customFields: CustomField[];
   documents: SignupDocument[];
   utm: { source: string | null; medium: string | null; campaign: string | null; term: string | null; content: string | null };
@@ -128,32 +122,9 @@ async function fileToPhotoDataUrl(file: File, max = 640): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 
-/** Read an ID photo / PDF as a data URL (images are downscaled, PDFs sent as-is). */
-async function fileToUploadDataUrl(file: File): Promise<string> {
-  if (file.type === "application/pdf") {
-    if (file.size > 6 * 1024 * 1024) throw new Error("PDF must be under 6 MB");
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error("Could not read that file"));
-      r.readAsDataURL(file);
-    });
-  }
-  return fileToPhotoDataUrl(file, 1600);
-}
-
-export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square }: FormProps) {
+export function SignupClient({ form, plans, customFields, documents, utm, referralCode: refFromUrl, square }: FormProps) {
   const [step, setStep] = useState<Step>(1);
   const [selectedPlanId, setSelectedPlanId] = useState(form.defaultPlanId ?? plans[0]?.id ?? "");
-  const [guestCount, setGuestCount] = useState(0);
-  // Signup promotion (mutually exclusive with a discount code)
-  const [promoId, setPromoId] = useState<string | null>(null);
-  const [promoPreview, setPromoPreview] = useState<{ ok: boolean; text: string; amountCents: number } | null>(null);
-  const [promoIdFile, setPromoIdFile] = useState<{ name: string; dataUrl: string } | null>(null);
-  const [promoIdBusy, setPromoIdBusy] = useState(false);
-  const [promoIdError, setPromoIdError] = useState<string | null>(null);
-  const [promoAck, setPromoAck] = useState(false);
-  const promoIdInputRef = React.useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState({
     firstName: "",
     lastName: "",
@@ -219,60 +190,6 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
 
   const plan = useMemo(() => plans.find((p) => p.id === selectedPlanId), [plans, selectedPlanId]);
   const currency = form.location?.currency ?? "USD";
-  const maxGuests = plan ? maxGuestsFor(plan) : 0;
-  const isDayPass = plan?.productType === "DAY_PASS";
-  const displayName = plan ? membershipDisplayName(plan.name, isDayPass ? 0 : guestCount) : "";
-  const eligiblePromos = useMemo(() => (plan ? promos.filter((pr) => pr.planIds.length === 0 || pr.planIds.includes(plan.id)) : []), [promos, plan]);
-  const promo = eligiblePromos.find((pr) => pr.id === promoId) ?? null;
-  const promoNeedsId = !!promo?.requiresIdUpload;
-  const promoNeedsAck = !!(promo?.commitmentMonths && promo.commitmentAcknowledgement);
-  const promoOk = !promo || ((!promoNeedsId || !!promoIdFile) && (!promoNeedsAck || promoAck));
-
-  // Server-authoritative preview of the selected promotion for this plan + guest count
-  React.useEffect(() => {
-    if (!promo || !plan) { setPromoPreview(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&promoId=${encodeURIComponent(promo.id)}`);
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) setPromoPreview({ ok: true, text: json.description, amountCents: json.amountCents ?? 0 });
-        else setPromoPreview({ ok: false, text: json.reason ?? "This promotion isn't available", amountCents: 0 });
-      } catch {
-        if (!cancelled) setPromoPreview({ ok: false, text: "Could not load promotion", amountCents: 0 });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [promo, plan, guestCount, form.slug]);
-
-  function choosePlan(id: string) {
-    const next = plans.find((p) => p.id === id);
-    setSelectedPlanId(id);
-    setDiscountPreview(null);
-    setGuestCount((g) => Math.min(g, next ? maxGuestsFor(next) : 0));
-    const stillEligible = promoId && promos.some((pr) => pr.id === promoId && (pr.planIds.length === 0 || (next && pr.planIds.includes(next.id))));
-    if (!stillEligible) { setPromoId(null); setPromoAck(false); }
-  }
-  function choosePromo(id: string | null) {
-    setPromoId((cur) => (cur === id ? null : id));
-    setPromoAck(false);
-    setPromoIdError(null);
-    if (id) { setDiscount(""); setDiscountPreview(null); }
-  }
-  async function onPromoIdPicked(file: File | null) {
-    if (!file) return;
-    setPromoIdBusy(true);
-    setPromoIdError(null);
-    try {
-      setPromoIdFile({ name: file.name, dataUrl: await fileToUploadDataUrl(file) });
-    } catch (e) {
-      setPromoIdError(e instanceof Error ? e.message : "Could not read that file");
-    } finally {
-      setPromoIdBusy(false);
-      if (promoIdInputRef.current) promoIdInputRef.current.value = "";
-    }
-  }
   const isRequired = (key: string) => form.requiredFields.includes(key);
   const age = ageFromDob(profile.dob);
   const isMinor = age !== null && age < 18;
@@ -292,17 +209,14 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
 
   // Price preview (server is authoritative)
   const totals = useMemo(() => {
-    const base = plan?.priceCents ?? 0;
-    const guests = plan ? guestCentsFor(plan, guestCount) : 0;
-    const price = base + guests;
+    const price = plan?.priceCents ?? 0;
     const fee = plan?.signupFeeCents ?? 0;
-    const discAmount = promo ? (promoPreview?.ok ? promoPreview.amountCents : 0) : discountPreview?.ok ? discountPreview.amountCents : 0;
-    const disc = Math.min(price, discAmount);
+    const disc = Math.min(price, discountPreview?.ok ? discountPreview.amountCents : 0);
     const taxable = price + fee - disc;
     const tax = form.collectTax && form.location ? Math.round((taxable * form.location.taxRateBps) / 10_000) : 0;
     const surcharge = square.configured && form.location ? Math.round(((taxable + tax) * form.location.cardSurchargeBps) / 10_000) : 0;
-    return { base, guests, price, fee, disc, tax, surcharge, total: taxable + tax + surcharge };
-  }, [plan, guestCount, promo, promoPreview, discountPreview, form.collectTax, form.location, square.configured]);
+    return { price, fee, disc, tax, surcharge, total: taxable + tax + surcharge };
+  }, [plan, discountPreview, form.collectTax, form.location, square.configured]);
 
   const phoneVerified = phoneState.status === "verified";
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email.trim());
@@ -383,9 +297,9 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     if (!discount.trim() || !plan) return;
     setCheckingCode(true);
     try {
-      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(discount.trim())}`);
+      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&code=${encodeURIComponent(discount.trim())}`);
       const json = await res.json();
-      if (json.ok) { setDiscountPreview({ ok: true, text: `${json.code}: ${json.description}`, amountCents: json.amountCents ?? 0 }); setPromoId(null); setPromoAck(false); }
+      if (json.ok) setDiscountPreview({ ok: true, text: `${json.code}: ${json.description}`, amountCents: json.amountCents ?? 0 });
       else setDiscountPreview({ ok: false, text: json.reason ?? "Invalid code", amountCents: 0 });
     } catch {
       setDiscountPreview({ ok: false, text: "Could not check code", amountCents: 0 });
@@ -437,11 +351,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
           guardian: sigs.guardian,
           customFields: custom,
           emergencyContact: ec.name.trim() ? ec : null,
-          discountCode: !promo && discountPreview?.ok ? discount.trim() : null,
-          guestCount: maxGuests > 0 ? guestCount : 0,
-          promoDiscountId: promo?.id ?? null,
-          promoIdDataUrl: promo?.requiresIdUpload ? promoIdFile?.dataUrl ?? null : null,
-          promoAcknowledged: promo ? promoAck : false,
+          discountCode: discountPreview?.ok ? discount.trim() : null,
           smsConsent,
           emailConsent,
           utm,
@@ -565,7 +475,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => choosePlan(p.id)}
+                        onClick={() => { setSelectedPlanId(p.id); setDiscountPreview(null); }}
                         aria-pressed={selected}
                         className={[
                           "rounded-apple border p-4 text-left transition-colors",
@@ -595,113 +505,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </div>
             ))}
 
-            {plan && maxGuests > 0 && (
-              <div className="mt-6 border-t border-apple-divider pt-5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-apple-blue/10 text-apple-blue"><Users className="h-4 w-4" /></span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-apple-text">
-                      {isDayPass
-                        ? "How many guests will be coming with you?"
-                        : <>Would you like to add a complimentary guest on every visit for <Money cents={plan.guestAddonCents ?? 0} currency={currency} />/{plan.billingCadence === "YEARLY" ? "yr" : "mo"}?</>}
-                    </h3>
-                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">
-                      {isDayPass
-                        ? <>Guest pricing: {Array.from({ length: maxGuests }, (_, i) => i + 1).map((n, i) => <span key={n}>{i > 0 && ", "}guest {n} <Money cents={guestIncrementCents(plan, n)} currency={currency} /></span>)}.</>
-                        : <>Bring up to {maxGuests} guest{maxGuests === 1 ? "" : "s"} on every visit — each one is an extra <Money cents={plan.guestAddonCents ?? 0} currency={currency} /> per {plan.billingCadence === "YEARLY" ? "year" : "month"}. Your membership becomes “{membershipDisplayName(plan.name, Math.max(1, guestCount))}”.</>}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Guests">
-                      {Array.from({ length: maxGuests + 1 }, (_, n) => {
-                        const selected = guestCount === n;
-                        const cents = guestCentsFor(plan, n);
-                        return (
-                          <button
-                            key={n}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => setGuestCount(n)}
-                            className={[
-                              "rounded-apple border px-3 py-2 text-left text-apple-sm transition-colors",
-                              selected ? "border-apple-blue bg-apple-blue/5 ring-2 ring-apple-blue/30" : "border-apple-border bg-white hover:border-apple-blue/30",
-                            ].join(" ")}
-                          >
-                            <div className="font-medium text-apple-text">{n === 0 ? (isDayPass ? "Just me" : "No guest") : n === 1 ? "1 guest" : `${n} guests`}</div>
-                            <div className="text-apple-xs text-apple-text-tertiary">{n === 0 ? "—" : <>+<Money cents={cents} currency={currency} />{isDayPass ? " today" : plan.billingCadence === "YEARLY" ? "/yr" : "/mo"}</>}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {plan && eligiblePromos.length > 0 && (
-              <div className="mt-6 border-t border-apple-divider pt-5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-apple-green/10 text-apple-green"><BadgePercent className="h-4 w-4" /></span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-apple-text">Current promotions</h3>
-                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">Pick one if it applies to you. Promotions can’t be combined with a discount code.</p>
-                    <div className="mt-3 space-y-2">
-                      {eligiblePromos.map((pr) => {
-                        const selected = promoId === pr.id;
-                        return (
-                          <div key={pr.id} className={["rounded-apple border transition-colors", selected ? "border-apple-green bg-apple-green/5 ring-2 ring-apple-green/20" : "border-apple-border bg-white hover:border-apple-green/40"].join(" ")}>
-                            <button type="button" onClick={() => choosePromo(pr.id)} aria-pressed={selected} className="flex w-full items-start justify-between gap-3 p-4 text-left">
-                              <div className="min-w-0">
-                                <div className="font-medium text-apple-text">{pr.title}</div>
-                                {pr.description && <div className="mt-1 text-apple-xs text-apple-text-secondary">{pr.description}</div>}
-                                <div className="mt-1 text-apple-xs text-apple-text-tertiary">
-                                  {pr.type === "PERCENT" ? `${pr.value}% off` : <><Money cents={pr.value} currency={currency} /> off</>}
-                                  {" · "}
-                                  {pr.scope === "ONE_TIME" ? "first payment" : pr.scope === "FOREVER" || !pr.recurringMonths ? "every payment" : `first ${pr.recurringMonths} payments`}
-                                  {pr.commitmentMonths ? ` · ${pr.commitmentMonths}-month minimum` : ""}
-                                  {pr.requiresIdUpload ? " · ID required" : ""}
-                                </div>
-                              </div>
-                              <span className={["mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-apple-green bg-apple-green text-white" : "border-apple-border"].join(" ")}>
-                                {selected && <Check className="h-3 w-3" />}
-                              </span>
-                            </button>
-                            {selected && (pr.requiresIdUpload || (pr.commitmentMonths && pr.commitmentAcknowledgement)) && (
-                              <div className="space-y-3 border-t border-apple-divider px-4 py-3">
-                                {pr.requiresIdUpload && (
-                                  <div>
-                                    <div className="text-apple-sm font-medium text-apple-text">{pr.idUploadLabel ?? "Upload your qualifying ID"} <span className="text-apple-red">*</span></div>
-                                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">A clear photo or PDF of your military, veteran, first-responder, student or government ID. Our staff verifies it before your first visit.</p>
-                                    <input ref={promoIdInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => onPromoIdPicked(e.target.files?.[0] ?? null)} />
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                                      <Button variant="secondary" size="sm" onClick={() => promoIdInputRef.current?.click()} loading={promoIdBusy}>
-                                        <Upload className="h-4 w-4" /> {promoIdFile ? "Replace file" : "Upload ID"}
-                                      </Button>
-                                      {promoIdFile && (
-                                        <span className="inline-flex items-center gap-1 text-apple-xs text-apple-green"><FileCheck className="h-4 w-4" /> {promoIdFile.name}</span>
-                                      )}
-                                    </div>
-                                    {promoIdError && <p className="mt-1 text-apple-xs text-apple-red">{promoIdError}</p>}
-                                  </div>
-                                )}
-                                {pr.commitmentMonths && pr.commitmentAcknowledgement ? (
-                                  <label className="flex items-start gap-2 text-apple-sm text-apple-text">
-                                    <input type="checkbox" className="mt-0.5 h-4 w-4 rounded accent-apple-blue" checked={promoAck} onChange={(e) => setPromoAck(e.target.checked)} />
-                                    <span>{pr.commitmentAcknowledgement} <span className="text-apple-red">*</span></span>
-                                  </label>
-                                ) : null}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {promo && promoPreview && !promoPreview.ok && <p className="mt-2 text-apple-xs text-apple-red">{promoPreview.text}</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {form.allowDiscountCode && !promo && (
+            {form.allowDiscountCode && (
               <div className="mt-6 border-t border-apple-divider pt-4">
                 <div className="flex items-end gap-2">
                   <Input label="Discount code (optional)" value={discount} autoCapitalize="characters" onChange={(e) => { setDiscount(e.target.value.toUpperCase()); setDiscountPreview(null); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void checkCode(); } }} />
@@ -713,10 +517,9 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
 
             {plan && (
               <dl className="mt-6 space-y-1.5 rounded-apple bg-apple-fill-secondary p-4 text-apple-sm">
-                <Row label={plan.name} value={<Money cents={totals.base} currency={currency} />} />
-                {totals.guests > 0 && <Row label={guestCount === 1 ? "1 guest" : `${guestCount} guests`} value={<Money cents={totals.guests} currency={currency} />} />}
+                <Row label={plan.name} value={<Money cents={totals.price} currency={currency} />} />
                 {totals.fee > 0 && <Row label="Signup fee" value={<Money cents={totals.fee} currency={currency} />} />}
-                {totals.disc > 0 && <Row label={promo ? promo.title : "Discount"} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
+                {totals.disc > 0 && <Row label="Discount" value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
                 {totals.tax > 0 && <Row label="Tax" value={<Money cents={totals.tax} currency={currency} />} />}
                 {totals.surcharge > 0 && <Row label="Card surcharge" value={<Money cents={totals.surcharge} currency={currency} />} />}
                 <div className="my-1 border-t border-apple-divider" />
@@ -724,9 +527,8 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </dl>
             )}
 
-            <div className="mt-6 flex items-center justify-end gap-3">
-              {plan && !promoOk && <p className="text-apple-xs text-apple-text-tertiary">{promoNeedsId && !promoIdFile ? "Upload your ID to continue." : "Check the box to confirm the promotion terms."}</p>}
-              <Button disabled={!plan || !promoOk} onClick={() => setStep(2)}>Continue</Button>
+            <div className="mt-6 flex justify-end">
+              <Button disabled={!plan} onClick={() => setStep(2)}>Continue</Button>
             </div>
           </Card>
         )}
@@ -958,14 +760,11 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
             <Card>
               <CardHeader title="Review" />
               <dl className="mt-4 space-y-1.5 text-apple-sm">
-                <Row label="Plan" value={displayName} />
+                <Row label="Plan" value={plan.name} />
                 <Row label="Billed" value={cadenceLabel(plan).replace(/^\/ /, "")} />
-                <Row label="Price" value={<Money cents={totals.base} currency={currency} />} />
-                {totals.guests > 0 && <Row label={isDayPass ? `${guestCount} guest${guestCount === 1 ? "" : "s"} today` : `${guestCount} guest${guestCount === 1 ? "" : "s"} on every visit`} value={<Money cents={totals.guests} currency={currency} />} />}
+                <Row label="Price" value={<Money cents={totals.price} currency={currency} />} />
                 {totals.fee > 0 && <Row label="Signup fee" value={<Money cents={totals.fee} currency={currency} />} />}
-                {totals.disc > 0 && <Row label={promo ? promo.title : "Discount"} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
-                {promo?.commitmentMonths ? <Row label="Minimum term" value={`${promo.commitmentMonths} months`} /> : null}
-                {promo?.requiresIdUpload && promoIdFile && <Row label="ID uploaded" value={<span className="text-apple-xs">{promoIdFile.name} · pending review</span>} />}
+                {totals.disc > 0 && <Row label="Discount" value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
                 {totals.tax > 0 && <Row label="Tax" value={<Money cents={totals.tax} currency={currency} />} />}
                 {totals.surcharge > 0 && <Row label="Card surcharge" value={<Money cents={totals.surcharge} currency={currency} />} />}
                 <div className="my-2 border-t border-apple-divider" />
@@ -1014,7 +813,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                   >
                     {plan.productType === "RECURRING" && (
                       <p className="text-apple-xs text-apple-text-tertiary">
-                        Your card is saved securely with Square and charged <Money cents={promo && promo.scope !== "ONE_TIME" ? totals.price - totals.disc : totals.price} currency={currency} /> every {plan.billingCadence.toLowerCase().replace("ly", "")} until you cancel.{promo?.commitmentMonths ? ` ${promo.commitmentMonths}-month minimum applies.` : ""}
+                        Your card is saved securely with Square and charged <Money cents={totals.price} currency={currency} /> every {plan.billingCadence.toLowerCase().replace("ly", "")} until you cancel.
                       </p>
                     )}
                   </CardForm>

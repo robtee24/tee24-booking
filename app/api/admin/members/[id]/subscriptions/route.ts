@@ -6,7 +6,6 @@ import { emitMemberEvent } from "@/lib/events";
 import { subscribeMember } from "@/services/membership.service";
 import { updateMember } from "@/services/member.service";
 import { apiError, parseDate, readJson, requireMemberApi } from "../../_shared";
-import { guestCentsFor, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +20,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     prisma.membershipPlan.findMany({
       where: { archived: false, OR: [{ organizationId: g.location.organizationId }, { organizationId: null }] },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, priceCents: true, signupFeeCents: true, billingCadence: true, productType: true, category: true, durationDays: true, allowedLocations: true, guestAddonCents: true, maxGuests: true, dayPassGuestPricing: true },
+      select: { id: true, name: true, priceCents: true, signupFeeCents: true, billingCadence: true, productType: true, category: true, durationDays: true, allowedLocations: true },
     }),
   ]);
   const visible = plans.filter((p) => !p.allowedLocations || p.allowedLocations.split(",").map((s) => s.trim()).includes(g.location.id));
@@ -30,7 +29,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
 /**
  * POST /api/admin/members/[id]/subscriptions
- * { planId, startDate?, priceOverrideCents?, comp?, activate?, guestCount? }
+ * { planId, startDate?, priceOverrideCents?, comp?, activate? }
  * Permission membership.subscribe (membership.comp for comp).
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -47,20 +46,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     let sub = await subscribeMember({ memberId: id, planId: String(body.planId), locationId: g.member.locationId, startDate, comp }, g.admin.id);
 
     const patch: Prisma.MembershipSubscriptionUpdateInput = {};
-    // Guests ("+ Guest" add-on): price = plan + guests unless an explicit override is given.
-    const guestCount = body.guestCount === undefined || body.guestCount === null || body.guestCount === "" ? 0 : Number(body.guestCount);
-    if (!Number.isInteger(guestCount) || guestCount < 0 || guestCount > maxGuestsFor(sub.plan)) return NextResponse.json({ error: `${sub.plan.name} allows up to ${maxGuestsFor(sub.plan)} guests` }, { status: 400 });
-    const guestCents = guestCentsFor(sub.plan, guestCount);
-    if (guestCount > 0) {
-      patch.guestCount = guestCount;
-      patch.guestCents = guestCents;
-      patch.priceCents = comp ? 0 : sub.priceCents + guestCents;
-    }
     if (body.priceOverrideCents != null && body.priceOverrideCents !== "") {
       const cents = Math.max(0, Math.round(Number(body.priceOverrideCents)));
       if (Number.isFinite(cents)) patch.priceCents = cents;
     }
-    const displayName = membershipDisplayName(sub.plan.name, guestCount);
     // Admin-created subscriptions are active immediately unless the caller asks for PENDING.
     if (!comp && body.activate !== false) {
       patch.status = "ACTIVE";
@@ -83,9 +72,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
 
     if ((sub.status === "ACTIVE" || sub.status === "COMP") && g.member.status !== "ACTIVE") {
-      await updateMember(id, { status: "ACTIVE", membershipType: displayName }, g.admin.id);
+      await updateMember(id, { status: "ACTIVE", membershipType: sub.plan.name }, g.admin.id);
     } else {
-      await getPrisma().member.update({ where: { id }, data: { membershipType: displayName, membershipStartDate: startDate } });
+      await getPrisma().member.update({ where: { id }, data: { membershipType: sub.plan.name, membershipStartDate: startDate } });
     }
 
     void emitMemberEvent("membership.activated", {
@@ -94,7 +83,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       organizationId: g.member.organizationId,
       actorAdminId: g.admin.id,
       refs: { subscriptionId: sub.id },
-      vars: { planName: displayName, priceCents: sub.priceCents, comp: comp ? "yes" : "no" },
+      vars: { planName: sub.plan.name, priceCents: sub.priceCents, comp: comp ? "yes" : "no" },
     });
 
     return NextResponse.json({ ok: true, subscription: sub });

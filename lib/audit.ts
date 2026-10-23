@@ -13,7 +13,6 @@ export type AuditAction =
   | "member.create" | "member.update" | "member.delete"
   | "member.status-change" | "member.tag-add" | "member.tag-remove"
   | "member.impersonate-start" | "member.impersonate-end"
-  | "member.upload-review"
   // Membership
   | "membership.create" | "membership.edit" | "membership.cancel-schedule" | "membership.cancel-immediate"
   | "membership.cancel-undo" | "membership.reactivate"

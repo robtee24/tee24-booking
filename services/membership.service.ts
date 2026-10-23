@@ -18,7 +18,6 @@ import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { adminNotify } from "@/lib/admin-notify";
 import { getSquareCreds, squareCancelSubscription } from "@/lib/square";
 import type { MembershipSubscription, MembershipPlan } from "@prisma/client";
-import { earlyCancelFeeDue, guestCentsFor, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
 
 export type CreatePlanInput = {
   organizationId?: string | null;
@@ -138,25 +137,8 @@ export type CancelInput = {
   refundUnusedCents?: number;
   extendDays?: number;
   extendChargeCents?: number;
-  /** Skip the promotional early-cancellation fee even if the member is inside the minimum term. */
-  waiveEarlyCancelFee?: boolean;
 };
 
-export type EarlyCancelFeeResult = {
-  feeCents: number;
-  invoiceId: string;
-  invoiceNumber: number;
-  charged: boolean;
-  failureReason: string | null;
-};
-
-/**
- * Cancel a subscription (immediately or at period end). When the member is
- * still inside a promotional minimum term (e.g. "first month half off, 2-month
- * minimum") the discounted amount is invoiced as an early-cancellation fee and
- * charged to the card on file; the result is returned as `earlyCancelFee`.
- * Pass `waiveEarlyCancelFee` to skip it.
- */
 export async function cancelSubscription(input: CancelInput, actorId?: string) {
   const prisma = getPrisma();
   const sub = await prisma.membershipSubscription.findUnique({
@@ -164,7 +146,6 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
     include: { member: true, plan: true },
   });
   if (!sub) throw new Error("Subscription not found");
-  const earlyFeeCents = input.waiveEarlyCancelFee ? 0 : earlyCancelFeeDue(sub);
 
   let paidThrough = sub.paidThroughDate ?? sub.startDate;
   if (input.extendDays && input.extendDays > 0) {
@@ -222,42 +203,7 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
     void applyAccessState(sub.memberId, desired);
   }
 
-  let earlyCancelFee: EarlyCancelFeeResult | null = null;
-  if (earlyFeeCents > 0) {
-    const { createInvoice, chargeInvoiceWithDefaultCard } = await import("./billing.service");
-    const label = `Early cancellation — ${membershipDisplayName(sub.plan.name, sub.guestCount)} (${sub.commitmentMonths}-month minimum)`;
-    const inv = await createInvoice(
-      {
-        organizationId: sub.member.organizationId,
-        locationId: sub.locationId,
-        memberId: sub.memberId,
-        subscriptionId: sub.id,
-        description: label,
-        dueDate: new Date(),
-        lines: [{ description: label, unitCents: earlyFeeCents }],
-      },
-      actorId,
-    );
-    let charged = false;
-    let failureReason: string | null = null;
-    try {
-      await chargeInvoiceWithDefaultCard(inv.id, actorId);
-      charged = true;
-    } catch (e) {
-      failureReason = e instanceof Error ? e.message : String(e);
-    }
-    earlyCancelFee = { feeCents: earlyFeeCents, invoiceId: inv.id, invoiceNumber: inv.number, charged, failureReason };
-    void audit({
-      organizationId: sub.member.organizationId,
-      actorId,
-      action: "billing.invoice-edit",
-      entityType: "Invoice",
-      entityId: inv.id,
-      metadata: { earlyCancellationFee: true, subscriptionId: sub.id, feeCents: earlyFeeCents, charged, failureReason },
-    });
-  }
-
-  return Object.assign(updated, { earlyCancelFee });
+  return updated;
 }
 
 export async function undoCancellation(subscriptionId: string, actorId?: string) {
@@ -443,10 +389,6 @@ export async function changePlan(opts: {
   subscriptionId: string;
   newPlanId: string;
   proration: "RETROACTIVE" | "PROSPECTIVE" | "NONE";
-  /** Guests on the new plan; defaults to the current count (capped by the new plan). */
-  guestCount?: number;
-  /** Explicit per-period price (incl. guests) — otherwise plan price + guest add-on. */
-  priceOverrideCents?: number;
   actorId?: string;
 }) {
   const prisma = getPrisma();
@@ -459,15 +401,11 @@ export async function changePlan(opts: {
   const newPlan = await prisma.membershipPlan.findUnique({ where: { id: opts.newPlanId } });
   if (!newPlan) throw new Error("New plan not found");
 
-  const guestCount = Math.max(0, Math.min(Math.floor(opts.guestCount ?? sub.guestCount), maxGuestsFor(newPlan)));
-  const guestCents = guestCentsFor(newPlan, guestCount);
-  const newPriceCents = opts.priceOverrideCents != null ? Math.max(0, Math.round(opts.priceOverrideCents)) : newPlan.priceCents + guestCents;
-
   let prorationCents = 0;
   if (opts.proration !== "NONE" && sub.paidThroughDate) {
     const r = computeProrationCents({
       currentPriceCents: sub.priceCents,
-      newPriceCents,
+      newPriceCents: newPlan.priceCents,
       periodStart: sub.startDate,
       periodEnd: sub.paidThroughDate,
       changeDate: new Date(),
@@ -479,13 +417,10 @@ export async function changePlan(opts: {
     where: { id: opts.subscriptionId },
     data: {
       planId: newPlan.id,
-      priceCents: newPriceCents,
+      priceCents: newPlan.priceCents,
       billingCadence: newPlan.billingCadence,
-      guestCount,
-      guestCents,
     },
   });
-  await prisma.member.update({ where: { id: sub.memberId }, data: { membershipType: membershipDisplayName(newPlan.name, guestCount) } }).catch(() => undefined);
 
   void audit({
     organizationId: sub.member.organizationId,
@@ -493,8 +428,8 @@ export async function changePlan(opts: {
     action: "membership.plan-change",
     entityType: "MembershipSubscription",
     entityId: opts.subscriptionId,
-    before: { planId: sub.planId, priceCents: sub.priceCents, guestCount: sub.guestCount },
-    after: { planId: newPlan.id, priceCents: newPriceCents, guestCount },
+    before: { planId: sub.planId, priceCents: sub.priceCents },
+    after: { planId: newPlan.id, priceCents: newPlan.priceCents },
     metadata: { proration: opts.proration, prorationCents },
   });
 
@@ -502,65 +437,6 @@ export async function changePlan(opts: {
   void applyAccessState(sub.memberId, desired);
 
   return { subscription: updated, prorationCents };
-}
-
-// ---------------------------------------------------------------------------
-// Edit (guests / price / auto-renew / commitment)
-// ---------------------------------------------------------------------------
-
-export type EditSubscriptionInput = {
-  subscriptionId: string;
-  guestCount?: number;
-  /** Per-period price including guests. Omit to recompute as plan price + guest add-on when guests change. */
-  priceCents?: number | null;
-  autoRenew?: boolean;
-  /** Clear the promotional minimum term (waives any future early-cancellation fee). */
-  clearCommitment?: boolean;
-};
-
-export async function editSubscription(input: EditSubscriptionInput, actorId?: string) {
-  const prisma = getPrisma();
-  const sub = await prisma.membershipSubscription.findUnique({ where: { id: input.subscriptionId }, include: { plan: true, member: true } });
-  if (!sub) throw new Error("Subscription not found");
-
-  const data: Parameters<typeof prisma.membershipSubscription.update>[0]["data"] = {};
-  let guestCount = sub.guestCount;
-  if (input.guestCount !== undefined) {
-    const max = maxGuestsFor(sub.plan);
-    guestCount = Math.max(0, Math.floor(input.guestCount));
-    if (guestCount > max) throw new Error(`${sub.plan.name} allows up to ${max} guest${max === 1 ? "" : "s"}`);
-    const guestCents = guestCentsFor(sub.plan, guestCount);
-    data.guestCount = guestCount;
-    data.guestCents = guestCents;
-    // Keep the member's base price (which may be legacy / discounted) and swap the guest portion.
-    if (input.priceCents == null) data.priceCents = Math.max(0, sub.priceCents - sub.guestCents + guestCents);
-  }
-  if (input.priceCents != null) {
-    if (!Number.isFinite(input.priceCents) || input.priceCents < 0) throw new Error("Price must be zero or more");
-    data.priceCents = Math.round(input.priceCents);
-  }
-  if (input.autoRenew !== undefined) data.autoRenew = !!input.autoRenew;
-  if (input.clearCommitment) {
-    data.commitmentMonths = null;
-    data.commitmentEndsAt = null;
-    data.earlyCancelFeeCents = null;
-  }
-  if (Object.keys(data).length === 0) return sub;
-
-  const updated = await prisma.membershipSubscription.update({ where: { id: input.subscriptionId }, data });
-  if (input.guestCount !== undefined) {
-    await prisma.member.update({ where: { id: sub.memberId }, data: { membershipType: membershipDisplayName(sub.plan.name, guestCount) } }).catch(() => undefined);
-  }
-  void audit({
-    organizationId: sub.member.organizationId,
-    actorId,
-    action: "membership.edit",
-    entityType: "MembershipSubscription",
-    entityId: sub.id,
-    before: { priceCents: sub.priceCents, guestCount: sub.guestCount, guestCents: sub.guestCents, autoRenew: sub.autoRenew, commitmentEndsAt: sub.commitmentEndsAt },
-    after: { priceCents: updated.priceCents, guestCount: updated.guestCount, guestCents: updated.guestCents, autoRenew: updated.autoRenew, commitmentEndsAt: updated.commitmentEndsAt },
-  });
-  return updated;
 }
 
 // ---------------------------------------------------------------------------

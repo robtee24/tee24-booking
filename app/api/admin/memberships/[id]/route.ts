@@ -1,28 +1,14 @@
-// PATCH /api/admin/memberships/:id — edit a membership plan.
-//
-// Price / cadence changes affect NEW subscriptions and plan-change pricing
-// only: existing subscriptions keep their snapshotted `priceCents`, so
-// current members are never re-priced by editing a plan here.
+// PATCH /api/admin/memberships/:id — edit plan fields that don't affect billing
+// (visit allowance enforced by the member app's door unlock, description).
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { requireAdminApi } from "@/lib/api-auth";
 import { getActorContext } from "@/lib/actor";
 import { assertCan } from "@/lib/permissions";
 import { audit, diff } from "@/lib/audit";
 import { apiError } from "@/app/api/admin/members/_shared";
-import { parsePlanBody, PlanInputError } from "@/lib/admin/plan-input";
 
 export const dynamic = "force-dynamic";
-
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdminApi();
-  if (!guard.ok) return guard.response;
-  const { id } = await ctx.params;
-  const plan = await getPrisma().membershipPlan.findUnique({ where: { id }, include: { _count: { select: { subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN", "CANCEL_SCHEDULED", "FREEZE_SCHEDULED", "PENDING"] } } } } } } });
-  if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-  return NextResponse.json({ plan });
-}
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const guard = await requireAdminApi();
@@ -34,21 +20,22 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   } catch (e) {
     return apiError(e);
   }
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await req.json().catch(() => ({}))) as { visitsPerPeriod?: number | string | null; visitPeriod?: string; description?: string | null };
   const prisma = getPrisma();
   const before = await prisma.membershipPlan.findUnique({ where: { id } });
   if (!before) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
 
-  let patch;
-  try {
-    patch = parsePlanBody(body);
-  } catch (e) {
-    if (e instanceof PlanInputError) return NextResponse.json({ error: e.message }, { status: 400 });
-    throw e;
+  const data: { visitsPerPeriod?: number | null; visitPeriod?: string; description?: string | null } = {};
+  if ("visitsPerPeriod" in body) {
+    const n = body.visitsPerPeriod == null || body.visitsPerPeriod === "" ? null : Number(body.visitsPerPeriod);
+    if (n != null && (!Number.isInteger(n) || n < 1 || n > 365)) return NextResponse.json({ error: "visitsPerPeriod must be a whole number between 1 and 365" }, { status: 400 });
+    data.visitsPerPeriod = n;
   }
-  const { dayPassGuestPricing, ...rest } = patch;
-  const data: Prisma.MembershipPlanUpdateInput = { ...rest };
-  if (dayPassGuestPricing !== undefined) data.dayPassGuestPricing = dayPassGuestPricing === null ? Prisma.JsonNull : dayPassGuestPricing;
+  if ("visitPeriod" in body) {
+    if (body.visitPeriod !== "ROLLING_MONTH" && body.visitPeriod !== "ROLLING_WEEK") return NextResponse.json({ error: "visitPeriod must be ROLLING_MONTH or ROLLING_WEEK" }, { status: 400 });
+    data.visitPeriod = body.visitPeriod;
+  }
+  if ("description" in body) data.description = typeof body.description === "string" ? body.description.trim().slice(0, 2000) || null : null;
 
   const plan = await prisma.membershipPlan.update({ where: { id }, data });
   const d = diff(before as Record<string, unknown>, plan as Record<string, unknown>);

@@ -15,7 +15,6 @@
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { Prisma, type Discount } from "@prisma/client";
-import type { SignupPromo } from "@/lib/membership-pricing";
 
 export type DiscountScope = "ONE_TIME" | "RECURRING" | "FOREVER";
 export type DiscountType = "PERCENT" | "FIXED";
@@ -56,41 +55,7 @@ export type DiscountInput = {
   active?: boolean;
   signupFormIds?: string[] | null;
   planIds?: string[] | null;
-  // Signup promotion (shown as a selectable offer on the signup form)
-  showOnSignup?: boolean;
-  signupTitle?: string | null;
-  signupDescription?: string | null;
-  requiresIdUpload?: boolean;
-  idUploadLabel?: string | null;
-  commitmentMonths?: number | null;
-  commitmentAcknowledgement?: string | null;
-  earlyCancelPolicy?: "CHARGE_DISCOUNT_BACK" | "NONE" | null;
-  sortOrder?: number;
 };
-
-const PROMO_KEYS = ["showOnSignup", "signupTitle", "signupDescription", "requiresIdUpload", "idUploadLabel", "commitmentMonths", "commitmentAcknowledgement", "earlyCancelPolicy", "sortOrder"] as const;
-
-type PromoData = Pick<Prisma.DiscountUncheckedCreateInput, "showOnSignup" | "signupTitle" | "signupDescription" | "requiresIdUpload" | "idUploadLabel" | "commitmentMonths" | "commitmentAcknowledgement" | "earlyCancelPolicy" | "sortOrder">;
-
-function promoData(input: Partial<DiscountInput>): PromoData {
-  const d: PromoData = {};
-  if (input.showOnSignup !== undefined) d.showOnSignup = !!input.showOnSignup;
-  if (input.signupTitle !== undefined) d.signupTitle = input.signupTitle?.trim().slice(0, 120) || null;
-  if (input.signupDescription !== undefined) d.signupDescription = input.signupDescription?.trim().slice(0, 600) || null;
-  if (input.requiresIdUpload !== undefined) d.requiresIdUpload = !!input.requiresIdUpload;
-  if (input.idUploadLabel !== undefined) d.idUploadLabel = input.idUploadLabel?.trim().slice(0, 200) || null;
-  if (input.commitmentMonths !== undefined) {
-    if (input.commitmentMonths != null && (!Number.isInteger(input.commitmentMonths) || input.commitmentMonths < 1 || input.commitmentMonths > 36)) throw new Error("commitmentMonths must be between 1 and 36");
-    d.commitmentMonths = input.commitmentMonths ?? null;
-  }
-  if (input.commitmentAcknowledgement !== undefined) d.commitmentAcknowledgement = input.commitmentAcknowledgement?.trim().slice(0, 600) || null;
-  if (input.earlyCancelPolicy !== undefined) {
-    if (input.earlyCancelPolicy != null && !["CHARGE_DISCOUNT_BACK", "NONE"].includes(input.earlyCancelPolicy)) throw new Error("earlyCancelPolicy must be CHARGE_DISCOUNT_BACK or NONE");
-    d.earlyCancelPolicy = input.earlyCancelPolicy ?? null;
-  }
-  if (input.sortOrder !== undefined) d.sortOrder = Math.round(Number(input.sortOrder) || 0);
-  return d;
-}
 
 function validateInput(input: Partial<DiscountInput>) {
   if (input.type && !["PERCENT", "FIXED"].includes(input.type)) throw new Error("type must be PERCENT or FIXED");
@@ -124,7 +89,6 @@ export async function createDiscount(input: DiscountInput, actorId?: string) {
       active: input.active ?? true,
       signupFormIds: input.signupFormIds && input.signupFormIds.length ? input.signupFormIds : Prisma.JsonNull,
       planRestrictions: input.planIds && input.planIds.length ? { create: input.planIds.map((planId) => ({ planId })) } : undefined,
-      ...promoData(input),
     },
     include: { planRestrictions: true },
   });
@@ -164,7 +128,6 @@ export async function updateDiscount(id: string, patch: Partial<DiscountInput>, 
       create: (patch.planIds ?? []).map((planId) => ({ planId })),
     };
   }
-  if (PROMO_KEYS.some((k) => patch[k] !== undefined)) Object.assign(data, promoData(patch));
   const after = await prisma.discount.update({ where: { id }, data, include: { planRestrictions: true } });
   void audit({ organizationId: before.organizationId, actorId, action: "settings.update", entityType: "Discount", entityId: id, before, after });
   return after;
@@ -183,47 +146,6 @@ export async function listDiscounts(organizationId: string | null | undefined) {
       planRestrictions: { include: { plan: { select: { id: true, name: true } } } },
     },
   });
-}
-
-/**
- * Promotions to offer on a public signup form: active, in window, flagged
- * `showOnSignup`, and not restricted to other forms. Plan restrictions are
- * returned so the form can show/hide each promo per selected plan.
- */
-export async function listSignupPromos(ctx: { organizationId?: string | null; signupFormId: string; now?: Date }): Promise<SignupPromo[]> {
-  const now = ctx.now ?? new Date();
-  const rows = await getPrisma().discount.findMany({
-    where: {
-      active: true,
-      showOnSignup: true,
-      OR: [{ organizationId: ctx.organizationId ?? null }, { organizationId: null }],
-      AND: [{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
-    },
-    include: { planRestrictions: { select: { planId: true } } },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
-  return rows
-    .filter((d) => {
-      const formIds = (d.signupFormIds as string[] | null) ?? null;
-      if (formIds && formIds.length && !formIds.includes(ctx.signupFormId)) return false;
-      if (d.maxRedemptions != null && d.totalRedemptions >= d.maxRedemptions) return false;
-      return true;
-    })
-    .map((d) => ({
-      id: d.id,
-      code: d.code,
-      title: d.signupTitle?.trim() || d.name,
-      description: d.signupDescription ?? null,
-      type: d.type,
-      value: d.value,
-      scope: d.scope,
-      recurringMonths: d.recurringMonths,
-      requiresIdUpload: d.requiresIdUpload,
-      idUploadLabel: d.idUploadLabel,
-      commitmentMonths: d.commitmentMonths,
-      commitmentAcknowledgement: d.commitmentAcknowledgement,
-      planIds: d.planRestrictions.map((r) => r.planId),
-    }));
 }
 
 // ---------------------------------------------------------------------------

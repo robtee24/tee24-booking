@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { getPrisma } from "@/lib/db";
 import { getSquarePublicConfig, publicConfigFromCreds } from "@/lib/square";
 import { SignupClient } from "./SignupClient";
-import { listSignupPromos } from "@/services/discount.service";
 import { parseSignupFieldConfig, requiredSignupInputKeys } from "@/lib/signup-form-config";
 import { sanitizeDocHtml } from "@/services/portal.service";
 
@@ -32,8 +31,8 @@ export default async function PublicSignupPage({
   if (allowedPlanIds && allowedPlanIds.length > 0) planWhere.id = { in: allowedPlanIds };
 
   const requiredDocIds = (form.requiredDocumentIds as string[] | null) ?? [];
-  const [plans, overrides, customFieldDefs, documents, promos] = await Promise.all([
-    prisma.membershipPlan.findMany({ where: planWhere, orderBy: [{ sortOrder: "asc" }, { productType: "asc" }, { priceCents: "asc" }] }),
+  const [plans, overrides, customFieldDefs, documents] = await Promise.all([
+    prisma.membershipPlan.findMany({ where: planWhere, orderBy: [{ productType: "asc" }, { priceCents: "asc" }] }),
     form.location ? prisma.membershipPricingOverride.findMany({ where: { locationId: form.location.id } }) : Promise.resolve([]),
     (() => {
       const ids = (form.customFieldIds as string[] | null) ?? [];
@@ -42,7 +41,6 @@ export default async function PublicSignupPage({
     requiredDocIds.length
       ? prisma.document.findMany({ where: { id: { in: requiredDocIds }, active: true }, select: { id: true, name: true, description: true, bodyHtml: true, version: true } })
       : Promise.resolve([]),
-    listSignupPromos({ organizationId: form.location?.organizationId ?? null, signupFormId: form.id }),
   ]);
   const overrideByPlan = new Map(overrides.map((o) => [o.planId, o]));
 
@@ -95,13 +93,8 @@ export default async function PublicSignupPage({
           productType: p.productType,
           category: p.category,
           durationDays: p.durationDays,
-          guestAddonCents: p.guestAddonCents,
-          maxGuests: p.maxGuests,
-          dayPassGuestPricing: p.dayPassGuestPricing,
-          visitsPerPeriod: p.visitsPerPeriod,
         };
       })}
-      promos={promos}
       documents={documents.map((d) => ({ id: d.id, name: d.name, description: d.description, bodyHtml: sanitizeDocHtml(d.bodyHtml ?? ""), version: d.version }))}
       customFields={customFieldDefs.map((d) => ({ id: d.id, name: d.name, type: d.type, required: d.required, options: (d.options as string[] | null) ?? null }))}
       utm={utm}

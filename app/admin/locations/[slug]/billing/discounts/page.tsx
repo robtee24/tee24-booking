@@ -34,7 +34,6 @@ export default async function DiscountsPage({ params }: { params: Promise<{ slug
       code: d.code,
       name: d.name,
       description: describeDiscount(d),
-      showOnSignup: d.showOnSignup,
       planNames: d.planRestrictions.map((p) => p.plan.name),
       signupFormCount: Array.isArray(d.signupFormIds) ? (d.signupFormIds as string[]).length : 0,
       startsAt: d.startsAt?.toISOString() ?? null,

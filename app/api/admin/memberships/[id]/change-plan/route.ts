@@ -4,14 +4,13 @@ import { assertCan } from "@/lib/permissions";
 import { emitMemberEvent } from "@/lib/events";
 import { changePlan } from "@/services/membership.service";
 import { createInvoice } from "@/services/billing.service";
-import { membershipDisplayName } from "@/lib/membership-pricing";
 import { apiError, readJson } from "@/app/api/admin/members/_shared";
 import { requireSubscriptionApi } from "../_guard";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/admin/memberships/[id]/change-plan { newPlanId, proration?: "RETROACTIVE"|"PROSPECTIVE"|"NONE", invoiceProration?: boolean, guestCount?, priceOverrideCents? }
+ * POST /api/admin/memberships/[id]/change-plan { newPlanId, proration?: "RETROACTIVE"|"PROSPECTIVE"|"NONE", invoiceProration?: boolean }
  * Permission membership.subscribe
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -23,13 +22,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     assertCan(g.actor, "membership.subscribe", { locationId: g.sub.locationId });
     if (!body.newPlanId) return NextResponse.json({ error: "newPlanId required" }, { status: 400 });
     const proration = ["RETROACTIVE", "PROSPECTIVE", "NONE"].includes(body.proration) ? body.proration : "PROSPECTIVE";
-    const guestCount = body.guestCount === undefined || body.guestCount === null || body.guestCount === "" ? undefined : Number(body.guestCount);
-    if (guestCount !== undefined && (!Number.isInteger(guestCount) || guestCount < 0)) return NextResponse.json({ error: "guestCount must be a whole number" }, { status: 400 });
-    const priceOverrideCents = body.priceOverrideCents === undefined || body.priceOverrideCents === null || body.priceOverrideCents === "" ? undefined : Math.round(Number(body.priceOverrideCents));
-    const { subscription, prorationCents } = await changePlan({ subscriptionId: id, newPlanId: String(body.newPlanId), proration, guestCount, priceOverrideCents, actorId: g.admin.id });
+    const { subscription, prorationCents } = await changePlan({ subscriptionId: id, newPlanId: String(body.newPlanId), proration, actorId: g.admin.id });
 
-    const newPlanRow = await getPrisma().membershipPlan.findUnique({ where: { id: subscription.planId }, select: { name: true } });
-    const newPlan = newPlanRow ? { name: membershipDisplayName(newPlanRow.name, subscription.guestCount) } : null;
+    const newPlan = await getPrisma().membershipPlan.findUnique({ where: { id: subscription.planId }, select: { name: true } });
+    await getPrisma().member.update({ where: { id: g.sub.memberId }, data: { membershipType: newPlan?.name ?? null } }).catch(() => undefined);
 
     let invoice: { id: string; number: number } | null = null;
     if (body.invoiceProration !== false && prorationCents > 0) {

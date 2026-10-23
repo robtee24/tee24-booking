@@ -38,10 +38,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
 
     const result = await cancelSubscription(
-      { subscriptionId: id, immediate, reason, notes: body.notes ?? undefined, refundUnusedCents: body.refundUnusedCents, extendDays, waiveEarlyCancelFee: body.waiveEarlyCancelFee === true },
+      { subscriptionId: id, immediate, reason, notes: body.notes ?? undefined, refundUnusedCents: body.refundUnusedCents, extendDays },
       g.admin.id,
     );
-    const { earlyCancelFee, ...subscription } = result;
 
     // Optional cancellation fee → one-off invoice
     const feeCents = body.cancelFeeCents != null ? Math.round(Number(body.cancelFeeCents)) : toCents(body.cancelFee);
@@ -71,11 +70,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       locationId: g.sub.locationId,
       organizationId: g.sub.organizationId,
       actorAdminId: g.admin.id,
-      refs: { subscriptionId: id, invoiceId: feeInvoice?.id ?? earlyCancelFee?.invoiceId },
-      vars: { planName: g.sub.planName, reason, cancelDate: result.cancelScheduledFor?.toISOString() ?? result.endDate?.toISOString() ?? null, feeCents: feeCents + (earlyCancelFee?.feeCents ?? 0) },
+      refs: { subscriptionId: id, invoiceId: feeInvoice?.id },
+      vars: { planName: g.sub.planName, reason, cancelDate: result.cancelScheduledFor?.toISOString() ?? result.endDate?.toISOString() ?? null, feeCents },
     });
 
-    return NextResponse.json({ ok: true, subscription, feeInvoice, earlyCancelFee });
+    return NextResponse.json({ ok: true, subscription: result, feeInvoice });
   } catch (e) {
     return apiError(e);
   }
