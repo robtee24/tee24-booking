@@ -1,4 +1,5 @@
 import type { UpdatePhase } from '../shared/types';
+import { Logo } from '../shared/Logo';
 
 type Phase = UpdatePhase | { phase: 'done'; version: string } | { phase: 'boot' };
 
@@ -32,7 +33,7 @@ export function Splash({ phase }: { phase: Phase }) {
   return (
     <div className="splash">
       <div>
-        <div className="brand-mark">T24</div>
+        <Logo height={140} className="splash-logo" />
         <h1>{title}</h1>
         <p>{sub}</p>
         <div className={`progress ${percent === null ? 'indeterminate' : ''}`}>

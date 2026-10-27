@@ -3,6 +3,7 @@ import { kiosk, isErr } from '../shared/bridge';
 import type { AdminLocation, AdminSession } from '../shared/types';
 import { AdminLogin } from '../shared/AdminLogin';
 import { labelLM } from '../shared/TroubleshootFlow';
+import { Logo } from '../shared/Logo';
 
 type Session = Omit<AdminSession, 'token'>;
 
@@ -15,7 +16,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
   return (
     <div className="page">
       <div className="page-header">
-        <span className="brand-mark">T24</span>
+        <Logo height={64} />
         <div>
           <h1>Set up this bay computer</h1>
           <div className="muted">Takes about a minute. You’ll need your admin phone.</div>

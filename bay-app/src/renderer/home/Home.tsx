@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { kiosk, isErr, useServerNow, formatCountdown } from '../shared/bridge';
 import type { KioskState } from '../shared/types';
-import { PlayIcon, WrenchIcon, GearIcon, HelpIcon, CalendarIcon, UploadIcon } from '../shared/Icons';
+import { PlayIcon, WrenchIcon, GearIcon, HelpIcon, CalendarIcon } from '../shared/Icons';
+import { Logo } from '../shared/Logo';
 
 export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; onSetupHelp: () => void; onSettings: () => void }) {
   const [launching, setLaunching] = useState(false);
@@ -31,7 +32,7 @@ export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; on
     <div className="home">
       <div className="home-top">
         <div className="brand">
-          <span className="brand-mark">T24</span>
+          <Logo height={64} />
           <div>
             <div>{s.locationName ?? 'Tee24'}</div>
             <div className="tiny" style={{ fontWeight: 500 }}>{bayLabel}</div>
@@ -48,9 +49,6 @@ export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; on
           </button>
           <button className="btn btn-ghost" onClick={() => kiosk.openOverlay('help')}>
             <HelpIcon size={20} /> Help
-          </button>
-          <button className="btn btn-ghost" onClick={() => kiosk.openOverlay('export')} title="Send GSPro shot data to the Tee24 app or your email">
-            <UploadIcon size={20} /> Export
           </button>
           <button className="gear" onClick={onSettings} title="Settings (admins)" aria-label="Settings">
             <GearIcon size={24} />
