@@ -69,6 +69,7 @@ export const adminRoutes = {
       notifications: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/notifications`,
       maintenance: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/maintenance`,
       events: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/events`,
+      settings: (slug: string) => `/admin/locations/${enc(slug)}/scheduling/settings`,
     },
 
     members: {
@@ -191,6 +192,7 @@ export const LOCATION_NAV: NavSection[] = [
     items: [
       { label: "Bookings", href: adminRoutes.loc.scheduling.bookings },
       { label: "Bays", href: adminRoutes.loc.scheduling.bays },
+      { label: "Booking settings", href: adminRoutes.loc.scheduling.settings },
       { label: "Notifications", href: adminRoutes.loc.scheduling.notifications },
       { label: "Maintenance", href: adminRoutes.loc.scheduling.maintenance },
       { label: "Events", href: adminRoutes.loc.scheduling.events },
@@ -354,7 +356,7 @@ export const SEGMENT_LABELS: Record<string, string> = {
   referrals: "Referrals",
   "signup-forms": "Signup Forms",
   settings: "Settings",
-  hours: "Hours & Booking Rules",
+  hours: "Hours",
   "bay-app": "Bay Kiosk",
   kisi: "Kisi Doors",
   comms: "Communications",

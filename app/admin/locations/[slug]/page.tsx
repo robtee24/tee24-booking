@@ -4,13 +4,13 @@
 import Link from "next/link";
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronRight, Clock, MonitorSmartphone } from "lucide-react";
+import { CalendarDays, ChevronRight, Clock, MonitorSmartphone } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Input, Textarea, Select } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { adminRoutes } from "@/lib/admin/routes";
 import { SettingsSection, Field } from "@/components/admin/location-settings/SettingsSection";
-import { useLocationSettings, clampInt, type LocationSettings } from "@/components/admin/location-settings/useLocationSettings";
+import { useLocationSettings, type LocationSettings } from "@/components/admin/location-settings/useLocationSettings";
 import { SettingsPageState } from "@/components/admin/location-settings/SettingsPageState";
 import { DetailsSettings } from "@/components/admin/location-settings/DetailsSettings";
 
@@ -34,7 +34,7 @@ export default function LocationDetailsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Location details"
-        description={data ? `Identity, contact, and booking settings for ${data.name}.` : "Identity, contact, and booking settings."}
+        description={data ? `Identity and contact for ${data.name}.` : "Identity and contact for this location."}
         meta={data?.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleString()}` : undefined}
       />
 
@@ -45,9 +45,14 @@ export default function LocationDetailsPage() {
             <DetailsSettings data={data} saving={saving} save={save} canDisable={role === "ROOT" || role === "FULL"} />
             <BookingNoteSection data={data} saving={saving} save={save} />
             <PassUrlSection data={data} saving={saving} save={save} />
-            <BookingRulesSection data={data} saving={saving} save={save} />
 
             <div className="grid gap-3 sm:grid-cols-2">
+              <QuickLink
+                href={adminRoutes.loc.scheduling.settings(data.slug)}
+                icon={<CalendarDays className="h-5 w-5" />}
+                title="Booking settings"
+                description="Duration, active reservations, and back-to-back limits"
+              />
               <QuickLink
                 href={adminRoutes.loc.settings.hours(data.slug)}
                 icon={<Clock className="h-5 w-5" />}
@@ -223,89 +228,6 @@ function PassUrlSection({ data, saving, save }: SectionProps) {
   );
 }
 
-/* ───────────────────────────── Booking rules ───────────────────────────── */
-
-const DURATIONS = Array.from({ length: 24 }, (_, i) => (i + 1) * 30);
-
-function BookingRulesSection({ data, saving, save }: SectionProps) {
-  const { toast } = useToast();
-  const [editing, setEditing] = React.useState(false);
-  const fromData = React.useCallback(
-    () => ({
-      minBookingMinutes: clampInt(data.minBookingMinutes, 30, 720, 60),
-      maxBookingMinutes: clampInt(data.maxBookingMinutes, 30, 720, 120),
-      maxActiveBookingsPerGuest: clampInt(data.maxActiveBookingsPerGuest, 0, 20, 2),
-      activeBookingIdentifyBy: (data.activeBookingIdentifyBy ?? "either") as "phone" | "email" | "either",
-      activeBookingWindowHours: clampInt(data.activeBookingWindowHours, 1, 720, 24),
-      maxConsecutiveBookingsPerGuest: clampInt(data.maxConsecutiveBookingsPerGuest, 1, 10, 2),
-    }),
-    [data]
-  );
-  const [d, setD] = React.useState(fromData);
-  React.useEffect(() => {
-    if (!editing) setD(fromData());
-  }, [fromData, editing]);
-
-  async function onSave() {
-    if (d.minBookingMinutes > d.maxBookingMinutes) {
-      return toast({ tone: "error", title: "Minimum duration must be ≤ maximum duration" });
-    }
-    try {
-      await save({ ...d });
-      setEditing(false);
-      toast({ tone: "success", title: "Booking rules saved" });
-    } catch (e: unknown) {
-      toast({ tone: "error", title: "Couldn't save rules", description: e instanceof Error ? e.message : undefined });
-    }
-  }
-
-  const idLabel = { either: "Either email or phone", email: "Email", phone: "Phone" } as const;
-
-  return (
-    <SettingsSection
-      title="Booking rules"
-      description="Limits that apply to public bookings at this location."
-      editing={editing}
-      onEdit={() => setEditing(true)}
-      onCancel={() => setEditing(false)}
-      onSave={onSave}
-      saving={saving}
-    >
-      {!editing ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Field label="Min duration" value={fmtMinutes(clampInt(data.minBookingMinutes, 30, 720, 60))} />
-          <Field label="Max duration" value={fmtMinutes(clampInt(data.maxBookingMinutes, 30, 720, 120))} />
-          <Field label="Max active bookings / guest" value={String(clampInt(data.maxActiveBookingsPerGuest, 0, 20, 2))} />
-          <Field label="Identify guest by" value={idLabel[(data.activeBookingIdentifyBy ?? "either") as keyof typeof idLabel]} />
-          <Field label="Active window" value={`${clampInt(data.activeBookingWindowHours, 1, 720, 24)} hours`} />
-          <Field label="Max consecutive / guest" value={String(clampInt(data.maxConsecutiveBookingsPerGuest, 1, 10, 2))} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Select label="Minimum booking duration" value={d.minBookingMinutes} onChange={(e) => setD((p) => ({ ...p, minBookingMinutes: Number(e.target.value) }))}>
-            {DURATIONS.map((m) => (
-              <option key={m} value={m}>{fmtMinutes(m)}</option>
-            ))}
-          </Select>
-          <Select label="Maximum booking duration" value={d.maxBookingMinutes} onChange={(e) => setD((p) => ({ ...p, maxBookingMinutes: Number(e.target.value) }))}>
-            {DURATIONS.map((m) => (
-              <option key={m} value={m}>{fmtMinutes(m)}</option>
-            ))}
-          </Select>
-          <Input label="Max active bookings per guest" type="number" inputMode="numeric" min={0} max={20} value={d.maxActiveBookingsPerGuest} onChange={(e) => setD((p) => ({ ...p, maxActiveBookingsPerGuest: Number(e.target.value) }))} />
-          <Select label="Identify guest by" value={d.activeBookingIdentifyBy} onChange={(e) => setD((p) => ({ ...p, activeBookingIdentifyBy: e.target.value as "phone" | "email" | "either" }))}>
-            <option value="either">Either email or phone</option>
-            <option value="email">Email</option>
-            <option value="phone">Phone</option>
-          </Select>
-          <Input label="Active bookings window (hours)" type="number" inputMode="numeric" min={1} max={720} value={d.activeBookingWindowHours} onChange={(e) => setD((p) => ({ ...p, activeBookingWindowHours: Number(e.target.value) }))} />
-          <Input label="Max consecutive bookings per guest" type="number" inputMode="numeric" min={1} max={10} value={d.maxConsecutiveBookingsPerGuest} onChange={(e) => setD((p) => ({ ...p, maxConsecutiveBookingsPerGuest: Number(e.target.value) }))} />
-        </div>
-      )}
-    </SettingsSection>
-  );
-}
-
 /* ───────────────────────────── bits ─────────────────────────────────────── */
 
 function QuickLink({ href, icon, title, description }: { href: string; icon: React.ReactNode; title: string; description: string }) {
@@ -324,10 +246,3 @@ function QuickLink({ href, icon, title, description }: { href: string; icon: Rea
   );
 }
 
-function fmtMinutes(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (m === 0) return `${h}h`;
-  if (h === 0) return `${m}m`;
-  return `${h}h ${m}m`;
-}

@@ -76,7 +76,9 @@ const SETTINGS_SELECT = {
   hours: true,
   minBookingMinutes: true,
   maxBookingMinutes: true,
+  bookingDurationStepMinutes: true,
   maxActiveBookingsPerGuest: true,
+  maxSimultaneousBookings: true,
   activeBookingIdentifyBy: true,
   activeBookingWindowHours: true,
   maxConsecutiveBookingsPerGuest: true,
@@ -204,8 +206,10 @@ export async function PATCH(req: Request) {
     if (open24Hours === true) hours = [];
 
     const minBookingMinutes = body.minBookingMinutes === undefined ? undefined : clamp(body.minBookingMinutes, 30, 720, 60);
-    const maxBookingMinutes = body.maxBookingMinutes === undefined ? undefined : clamp(body.maxBookingMinutes, 30, 720, 120);
-    const maxActiveBookingsPerGuest = body.maxActiveBookingsPerGuest === undefined ? undefined : clamp(body.maxActiveBookingsPerGuest, 0, 20, 2);
+    const maxBookingMinutes = body.maxBookingMinutes === undefined ? undefined : clamp(body.maxBookingMinutes, 30, 720, 180);
+    const bookingDurationStepMinutes = body.bookingDurationStepMinutes === undefined ? undefined : clamp(body.bookingDurationStepMinutes, 15, 180, 60);
+    const maxActiveBookingsPerGuest = body.maxActiveBookingsPerGuest === undefined ? undefined : clamp(body.maxActiveBookingsPerGuest, 0, 20, 3);
+    const maxSimultaneousBookings = body.maxSimultaneousBookings === undefined ? undefined : clamp(body.maxSimultaneousBookings, 0, 5, 1);
     const activeBookingIdentifyBy = body.activeBookingIdentifyBy === undefined
       ? undefined
       : String(body.activeBookingIdentifyBy).toLowerCase() as 'either' | 'email' | 'phone';
@@ -224,7 +228,9 @@ export async function PATCH(req: Request) {
       hours,
       minBookingMinutes,
       maxBookingMinutes,
+      bookingDurationStepMinutes,
       maxActiveBookingsPerGuest,
+      maxSimultaneousBookings,
       activeBookingIdentifyBy,
       activeBookingWindowHours,
       maxConsecutiveBookingsPerGuest,

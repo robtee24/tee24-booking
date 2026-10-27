@@ -29,7 +29,9 @@ export type LocationSettings = {
   hours?: DayHours[] | null;
   minBookingMinutes?: number | null;
   maxBookingMinutes?: number | null;
+  bookingDurationStepMinutes?: number | null;
   maxActiveBookingsPerGuest?: number | null;
+  maxSimultaneousBookings?: number | null;
   activeBookingIdentifyBy?: "phone" | "email" | "either" | null;
   activeBookingWindowHours?: number | null;
   maxConsecutiveBookingsPerGuest?: number | null;

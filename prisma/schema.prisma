@@ -92,8 +92,10 @@ model Location {
   hours                          Json
   timezone                       String        @default("America/New_York")
   minBookingMinutes              Int           @default(60)
-  maxBookingMinutes              Int           @default(120)
-  maxActiveBookingsPerGuest      Int           @default(2)
+  maxBookingMinutes              Int           @default(180)
+  bookingDurationStepMinutes     Int           @default(60)
+  maxActiveBookingsPerGuest      Int           @default(3)
+  maxSimultaneousBookings        Int           @default(1)
   activeBookingIdentifyBy        String        @default("either")
   activeBookingWindowHours       Int           @default(24)
   maxConsecutiveBookingsPerGuest Int           @default(2)

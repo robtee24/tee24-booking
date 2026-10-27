@@ -7,6 +7,7 @@ import { fromZonedTime } from "date-fns-tz";
 import OtpFlow from "@/components/OtpFlow";
 import { toE164 } from "@/lib/phone";
 import { AvailabilityResult } from "@/types/availability";
+import { bookingDurationOptions, formatDurationMinutes } from "@/lib/booking-rules";
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -88,8 +89,9 @@ export default function BookPage() {
   const [locationTz, setLocationTz] = useState<string>("");
   const [adminNote, setAdminNote] = useState("");
   const [passUrl, setPassUrl] = useState<string | null>(null);
-  const [minDuration, setMinDuration] = useState<number>(30);
-  const [maxDuration, setMaxDuration] = useState<number>(120);
+  const [minDuration, setMinDuration] = useState<number>(60);
+  const [maxDuration, setMaxDuration] = useState<number>(180);
+  const [durationStep, setDurationStep] = useState<number>(60);
 
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -117,8 +119,9 @@ export default function BookPage() {
           setLocationTz(info.timezone || "America/New_York");
           setAdminNote(info.bookingNote || "");
           setPassUrl(info.passAccessUrl ?? null);
-          setMinDuration(info.minBookingMinutes ?? 30);
-          setMaxDuration(info.maxBookingMinutes ?? 120);
+          setMinDuration(info.minBookingMinutes ?? 60);
+          setMaxDuration(info.maxBookingMinutes ?? 180);
+          setDurationStep(info.bookingDurationStepMinutes ?? 60);
         }
       } catch {
         if (!cancelled) setLocationName(locationSlug);
@@ -127,12 +130,10 @@ export default function BookPage() {
     return () => { cancelled = true; };
   }, [locationSlug]);
 
-  const allowedDurations = useMemo(() => {
-    const durations: number[] = [];
-    const start = Math.max(minDuration, 30);
-    for (let d = start; d <= maxDuration; d += 30) durations.push(d);
-    return durations.length > 0 ? durations : [60];
-  }, [minDuration, maxDuration]);
+  const allowedDurations = useMemo(
+    () => bookingDurationOptions(minDuration, maxDuration, durationStep),
+    [minDuration, maxDuration, durationStep]
+  );
 
   useEffect(() => {
     if (!allowedDurations.includes(duration)) {
@@ -168,7 +169,7 @@ export default function BookPage() {
 
   const availableStartTimes = useMemo(() => {
     if (!availability?.startTimes) return [];
-    const times = availability.startTimes[duration as 30 | 60 | 90 | 120] || [];
+    const times = availability.startTimes[duration] || [];
     if (date === todayYMD) {
       const now = new Date();
       const cutoff = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -350,13 +351,13 @@ export default function BookPage() {
 
               <div>
                 <label className="mb-2 block text-apple-sm font-medium text-apple-text">
-                  Duration ({minDuration}–{maxDuration} min)
+                  Duration
                 </label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {allowedDurations.map(d => (
                     <button key={d} onClick={() => { setDuration(d); setStartTime(""); setSelectedBay(null); }}
                       className={`rounded-apple-sm border py-2.5 text-apple-sm font-medium transition-all duration-200 ${duration === d ? "bg-apple-blue text-white border-apple-blue" : "border-apple-border text-apple-text-secondary hover:border-apple-text-tertiary"}`}>
-                      {d} min
+                      {formatDurationMinutes(d)}
                     </button>
                   ))}
                 </div>

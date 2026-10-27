@@ -70,7 +70,7 @@ export async function getMobileAvailability(input: { locationSlug: string; date:
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new MobileError("Invalid date", 400, "BAD_REQUEST");
   const result = await getAvailability({ ...input, includeSlots: true });
   const location = await getPrisma().location.findUnique({ where: { slug: input.locationSlug }, select: { timezone: true, minBookingMinutes: true, maxBookingMinutes: true } });
-  return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: location?.minBookingMinutes ?? 60, maxBookingMinutes: location?.maxBookingMinutes ?? 120 };
+  return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: location?.minBookingMinutes ?? 60, maxBookingMinutes: location?.maxBookingMinutes ?? 180 };
 }
 
 export type CreateMemberBookingInput = { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH"; guests?: number };

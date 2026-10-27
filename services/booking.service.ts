@@ -6,6 +6,12 @@ import { sendEmail } from "@/lib/sendEmail";
 import { sendSms } from "@/lib/sendSms";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
 import { getAvailableBaysAtExactWindow, isSpecificBayAvailableAtExactWindow } from "./availability.service";
+import {
+  activeBookingLimitMessage,
+  consecutiveBookingMessage,
+  durationOutOfRangeMessage,
+  simultaneousBookingMessage,
+} from "@/lib/booking-rules";
 
 type IdentifyBy = "EMAIL" | "PHONE" | "EMAIL_OR_PHONE";
 
@@ -76,7 +82,10 @@ export async function createBooking(input: CreateBookingInput) {
       name: true,
       slug: true,
       timezone: true,
+      minBookingMinutes: true,
+      maxBookingMinutes: true,
       maxActiveBookingsPerGuest: true,
+      maxSimultaneousBookings: true,
       activeBookingIdentifyBy: true,
       maxConsecutiveBookingsPerGuest: true,
       notifications: {
@@ -89,6 +98,12 @@ export async function createBooking(input: CreateBookingInput) {
 
   const startUTC = fromZonedTime(localStart, location.timezone);
   const endUTC = fromZonedTime(localEnd, location.timezone);
+  const durationMin = Math.round((endUTC.getTime() - startUTC.getTime()) / 60_000);
+  const minMin = location.minBookingMinutes ?? 60;
+  const maxMin = location.maxBookingMinutes ?? 180;
+  if (source !== "ADMIN" && (durationMin < minMin || durationMin > maxMin)) {
+    throw new Error(durationOutOfRangeMessage(minMin, maxMin));
+  }
 
   // 3. Resolve bay — now supports admin picking specific bay
   let finalBayNumber: number;
@@ -163,14 +178,14 @@ export async function createBooking(input: CreateBookingInput) {
     throw new Error(`Bay ${finalBayNumber} is already booked by ${name}`);
   }
 
-  // 6. Guest limits
+  // 6. Guest / member limits (staff bookings skip these)
   await enforceGuestLimits({
     location,
     guestEmail: email?.toLowerCase().trim() ?? null,
     guestPhone: phone?.trim() ?? null,
     startUTC,
     endUTC,
-    bayNumber: finalBayNumber,
+    isAdmin: source === "ADMIN",
   });
 
   // 7. Create booking
@@ -460,13 +475,24 @@ export async function getBookingsForAdminDay(
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
+function identityWhere(identifyBy: IdentifyBy, guestEmail: string | null, guestPhone: string | null) {
+  if (identifyBy === "EMAIL" && guestEmail) return { email: guestEmail };
+  if (identifyBy === "PHONE" && guestPhone) return { phone: guestPhone };
+  if (identifyBy === "EMAIL_OR_PHONE") {
+    const OR: { email?: string; phone?: string }[] = [];
+    if (guestEmail) OR.push({ email: guestEmail });
+    if (guestPhone) OR.push({ phone: guestPhone });
+    if (OR.length) return { OR };
+  }
+  return null;
+}
+
 async function enforceGuestLimits({
   location,
   guestEmail,
   guestPhone,
   startUTC,
   endUTC,
-  bayNumber,
   isAdmin = false,
 }: {
   location: any;
@@ -474,107 +500,64 @@ async function enforceGuestLimits({
   guestPhone: string | null;
   startUTC: Date;
   endUTC: Date;
-  bayNumber: number;
   isAdmin?: boolean;
 }) {
-  if (isAdmin) {
-    return;
-  }
+  if (isAdmin) return;
 
   const identifyByRaw = location.activeBookingIdentifyBy ?? "either";
-  const identifyBy = identifyByRaw === "either" ? "EMAIL_OR_PHONE" : identifyByRaw.toUpperCase();
+  const identifyBy = (identifyByRaw === "either" ? "EMAIL_OR_PHONE" : identifyByRaw.toUpperCase()) as IdentifyBy;
+  const who = identityWhere(identifyBy, guestEmail, guestPhone);
+  if (!who) return;
 
-  // ── 1. Max Active Bookings Per Guest ─────────────────────────────
+  const prisma = getPrisma();
+
   if (location.maxActiveBookingsPerGuest && location.maxActiveBookingsPerGuest > 0) {
-    const where: any = {
-      locationId: location.id,
-      canceledAt: null,
-      end: { gt: new Date() },
-    };
-
-    if (identifyBy === "EMAIL" && guestEmail) {
-      where.email = guestEmail;
-    } else if (identifyBy === "PHONE" && guestPhone) {
-      where.phone = guestPhone;
-    } else if (identifyBy === "EMAIL_OR_PHONE") {
-      const ors: any[] = [];
-      if (guestEmail) ors.push({ email: guestEmail });
-      if (guestPhone) ors.push({ phone: guestPhone });
-      if (ors.length > 0) {
-        where.OR = ors;
-      }
-    }
-
-    if (where.email || where.phone || where.OR) {
-      const activeCount = await getPrisma().booking.count({ where });
-
-      if (activeCount >= location.maxActiveBookingsPerGuest) {
-        throw new Error(
-          `You already have ${activeCount} active bookings. Maximum allowed: ${location.maxActiveBookingsPerGuest}`
-        );
-      }
+    const activeCount = await prisma.booking.count({
+      where: { locationId: location.id, canceledAt: null, end: { gt: new Date() }, ...who },
+    });
+    if (activeCount >= location.maxActiveBookingsPerGuest) {
+      throw new Error(activeBookingLimitMessage(activeCount, location.maxActiveBookingsPerGuest));
     }
   }
 
-  // ── 2. Max Consecutive Bookings (Same Bay) ───────────────────────
-  if (location.maxConsecutiveBookingsPerGuest && location.maxConsecutiveBookingsPerGuest > 0) {
-    const baseWhere: any = {
-      locationId: location.id,
-      bayNumber,
-      canceledAt: null,
-    };
-
-    let hasGuestFilter = false;
-    if (identifyBy === "EMAIL" && guestEmail) {
-      baseWhere.email = guestEmail;
-      hasGuestFilter = true;
-    } else if (identifyBy === "PHONE" && guestPhone) {
-      baseWhere.phone = guestPhone;
-      hasGuestFilter = true;
-    } else if (identifyBy === "EMAIL_OR_PHONE") {
-      const ors: any[] = [];
-      if (guestEmail) ors.push({ email: guestEmail });
-      if (guestPhone) ors.push({ phone: guestPhone });
-      if (ors.length > 0) {
-        baseWhere.OR = ors;
-        hasGuestFilter = true;
-      }
+  if (location.maxSimultaneousBookings && location.maxSimultaneousBookings > 0) {
+    const overlapping = await prisma.booking.count({
+      where: {
+        locationId: location.id,
+        canceledAt: null,
+        start: { lt: endUTC },
+        end: { gt: startUTC },
+        ...who,
+      },
+    });
+    if (overlapping >= location.maxSimultaneousBookings) {
+      throw new Error(simultaneousBookingMessage());
     }
+  }
 
-    const existing = await getPrisma().booking.findMany({
-      where: baseWhere,
-      select: { id: true, start: true, end: true },
+  if (location.maxConsecutiveBookingsPerGuest && location.maxConsecutiveBookingsPerGuest > 0) {
+    const existing = await prisma.booking.findMany({
+      where: { locationId: location.id, canceledAt: null, ...who },
+      select: { start: true, end: true },
       orderBy: { start: "asc" },
     });
 
-    const all = [
-      ...existing.map(b => ({ start: b.start, end: b.end })),
-      { start: startUTC, end: endUTC },
-    ].sort((a, b) => a.start.getTime() - b.start.getTime());
-
-    // Find chain around the new booking
-    const pendingIndex = all.findIndex(
-      s => s.start.getTime() === startUTC.getTime()
-    );
-
+    const all = [...existing, { start: startUTC, end: endUTC }].sort((a, b) => a.start.getTime() - b.start.getTime());
+    const pendingIndex = all.findIndex((s) => s.start.getTime() === startUTC.getTime());
     let chain = 1;
-    const TOLERANCE = 5 * 60 * 1000; // 5 min
+    const TOLERANCE = 5 * 60 * 1000;
 
     for (let i = pendingIndex - 1; i >= 0; i--) {
-      if (Math.abs(all[i + 1].start.getTime() - all[i].end.getTime()) <= TOLERANCE) {
-        chain++;
-      } else break;
+      if (Math.abs(all[i + 1].start.getTime() - all[i].end.getTime()) <= TOLERANCE) chain++;
+      else break;
     }
     for (let i = pendingIndex + 1; i < all.length; i++) {
-      if (Math.abs(all[i].start.getTime() - all[i - 1].end.getTime()) <= TOLERANCE) {
-        chain++;
-      } else break;
+      if (Math.abs(all[i].start.getTime() - all[i - 1].end.getTime()) <= TOLERANCE) chain++;
+      else break;
     }
 
     if (chain > location.maxConsecutiveBookingsPerGuest) {
-      throw new Error(
-        `Cannot book: this would create ${chain} consecutive hours on Bay ${bayNumber}. Max allowed: ${location.maxConsecutiveBookingsPerGuest}`
-      );
+      throw new Error(consecutiveBookingMessage(chain, location.maxConsecutiveBookingsPerGuest));
     }
   }
 }

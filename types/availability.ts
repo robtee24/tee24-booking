@@ -6,7 +6,7 @@ export type TimeSlot = {
   availableCount: number;
 };
 
-export type StartTimes = Record<30 | 60 | 90 | 120, string[]>;
+export type StartTimes = Record<number, string[]>;
 
 export type AvailableBaysResult = {
   availableCount: number;

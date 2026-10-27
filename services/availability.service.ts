@@ -13,9 +13,9 @@ import type {
   TimeSlot,
   StartTimes,
 } from "@/types/availability";
+import { bookingDurationOptions, emptyStartTimes } from "@/lib/booking-rules";
 
 const STEP_MINUTES = 30;
-const DURATIONS = [30, 60, 90, 120] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Align a UTC date to the next step boundary based on local time minutes
@@ -158,11 +158,24 @@ export async function getAvailability(
 
   const location = await getPrisma().location.findUnique({
     where: { slug: locationSlug },
-    select: { id: true, timezone: true, open24Hours: true, hours: true },
+    select: {
+      id: true,
+      timezone: true,
+      open24Hours: true,
+      hours: true,
+      minBookingMinutes: true,
+      maxBookingMinutes: true,
+      bookingDurationStepMinutes: true,
+    },
   });
   if (!location || !location.timezone) throw new Error("Location not found or missing timezone");
 
   const tz = location.timezone;
+  const durations = bookingDurationOptions(
+    location.minBookingMinutes ?? 60,
+    location.maxBookingMinutes ?? 180,
+    location.bookingDurationStepMinutes ?? 60,
+  );
 
   // Local midnight UTC timestamp
   const localMidnightLocal = parse(`${dateStr} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());
@@ -176,7 +189,7 @@ export async function getAvailability(
   const operatingWindows = buildOperatingWindows(localMidnightUTC, location, tz);
   if (operatingWindows.length === 0) {
     return {
-      startTimes: { 30: [], 60: [], 90: [], 120: [] },
+      startTimes: emptyStartTimes(durations),
       ...(includeSlots && { slots: [] }),
       ...(includeFreeBays && { freeBaysBySlot: {} }),
     };
@@ -203,7 +216,7 @@ export async function getAvailability(
   const eligibleBayNumbers = getEligibleBayNumbers(bays, kind, hand);
   if (eligibleBayNumbers.length === 0) {
     return {
-      startTimes: { 30: [], 60: [], 90: [], 120: [] },
+      startTimes: emptyStartTimes(durations),
       ...(includeSlots && { slots: [] }),
       ...(includeFreeBays && { freeBaysBySlot: {} }),
     };
@@ -223,7 +236,7 @@ export async function getAvailability(
     return !intervals.some((i) => i.start < endUTC && i.end > startUTC);
   };
 
-  const startTimes: StartTimes = { 30: [], 60: [], 90: [], 120: [] };
+  const startTimes: StartTimes = emptyStartTimes(durations);
   const slots: TimeSlot[] | undefined = includeSlots ? [] : undefined;
   const freeBaysBySlot: Record<string, number[]> | undefined = includeFreeBays ? {} : undefined;
 
@@ -240,7 +253,7 @@ export async function getAvailability(
       }
     }
 
-    for (const duration of DURATIONS) {
+    for (const duration of durations) {
       const endUTC = addMinutes(startUTC, duration);
       if (endUTC > addMinutes(dayEndUTC, 120)) continue;
       if (!location.open24Hours && endUTC > activeWindow!.end) continue;
@@ -273,7 +286,7 @@ export async function getAvailability(
     cursorUTC = addMinutes(startUTC, STEP_MINUTES);
   }
 
-  for (const d of DURATIONS) startTimes[d].sort();
+  for (const d of durations) startTimes[d].sort();
 
   return {
     startTimes,

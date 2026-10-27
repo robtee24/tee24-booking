@@ -34,7 +34,9 @@ export type LocationBase = {
   timezone: string;
   minBookingMinutes: number;
   maxBookingMinutes: number;
+  bookingDurationStepMinutes: number;
   maxActiveBookingsPerGuest: number;
+  maxSimultaneousBookings: number;
   activeBookingIdentifyBy: "email" | "phone" | "either";
   activeBookingWindowHours: number;
   maxConsecutiveBookingsPerGuest: number;
