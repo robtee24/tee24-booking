@@ -3,11 +3,12 @@ import log from 'electron-log';
 import * as api from './api';
 import * as exportsMod from './exports';
 import { ApiError } from './api';
-import { getSettings, updateSettings, clearRegistration, DEFAULT_LAUNCH_MONITOR_PATHS } from './store';
-import { launchPlay, launchHelperOnly, pathsExist } from './launcher';
+import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings } from './store';
+import { launchPlay, launchHelperOnly, pathsExist, startWatching } from './launcher';
 import * as poller from './poller';
 import * as remote from './remote';
 import * as windows from './windows';
+import * as autostart from './autostart';
 import { runStartupUpdate, checkForUpdatesNow } from './updater';
 
 log.initialize();
@@ -28,10 +29,47 @@ if (!app.requestSingleInstanceLock()) {
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.disableHardwareAcceleration(); // transparent overlays behave better on bay PCs with mixed GPUs
 
+let autostartBusy: Promise<void> | null = null;
+
+/**
+ * Windows: a per-user logon task (immediate) with the HKCU Run entry as the
+ * fallback only if the task cannot be registered. Other platforms: Run entry.
+ */
 function applyAutostart() {
   if (!app.isPackaged) return;
-  const { openAtLogin } = getSettings();
-  app.setLoginItemSettings({ openAtLogin, path: process.execPath, args: ['--autostart'] });
+  const { openAtLogin, autostartTaskExe } = getSettings();
+  const exe = process.execPath;
+  const runEntry = (on: boolean) => app.setLoginItemSettings({ openAtLogin: on, path: exe, args: ['--autostart'] });
+
+  if (process.platform !== 'win32') {
+    runEntry(openAtLogin);
+    return;
+  }
+  if (autostartBusy) return;
+
+  autostartBusy = (async () => {
+    try {
+      if (openAtLogin) {
+        // Re-register only when the exe moved (or never registered); each call costs a PowerShell spawn.
+        if (autostartTaskExe !== exe || !(await autostart.logonTaskExists())) {
+          await autostart.registerLogonTask(exe);
+          updateSettings({ autostartTaskExe: exe });
+          autostart.logAutostart(`logon task registered for ${exe}`);
+        }
+        runEntry(false);
+      } else {
+        await autostart.unregisterLogonTask();
+        if (autostartTaskExe) updateSettings({ autostartTaskExe: null });
+        runEntry(false);
+      }
+    } catch (e) {
+      // Task Scheduler blocked (policy, service stopped): keep the Run entry so the kiosk still starts.
+      log.warn('[autostart] logon task failed; falling back to Run entry', e instanceof Error ? e.message : e);
+      runEntry(openAtLogin);
+    } finally {
+      autostartBusy = null;
+    }
+  })();
 }
 
 // ---------- Admin session (in-memory only) ----------
@@ -134,7 +172,7 @@ function registerIpc() {
       bayNumber: r.registration.bayNumber,
       bayName: r.bay?.name ?? null,
       launchMonitor: lm,
-      launchMonitorPath: s.launchMonitorPath || (lm ? DEFAULT_LAUNCH_MONITOR_PATHS[lm] ?? '' : ''),
+      launchMonitorPath: s.launchMonitorPath || defaultLaunchMonitorPath(lm),
       setupCompletedAt: new Date().toISOString(),
     });
     poller.pollNow();
@@ -214,6 +252,8 @@ function registerIpc() {
 // ---------- Boot ----------
 
 app.whenReady().then(async () => {
+  const migrated = migrateSettings();
+  if (migrated) log.info(`[store] migrated: ${migrated}`);
   applyAutostart();
   powerSaveBlocker.start('prevent-display-sleep');
   registerIpc();
@@ -234,6 +274,7 @@ app.whenReady().then(async () => {
   sendUpdate({ phase: 'done', version: app.getVersion() });
 
   poller.start();
+  startWatching(); // GSPro presence → home hides / toolbar shows, however GSPro was started
 
   // Staff: bring the kiosk home screen over GSPro
   globalShortcut.register('CommandOrControl+Shift+T', () => poller.setHomeForced(true));

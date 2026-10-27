@@ -190,16 +190,22 @@ function LaunchPaths({ state }: { state: KioskState }) {
     if (typeof p === 'string') (which === 'gs' ? setGsPath : setLmPath)(p);
   }
 
+  const lmOwnsGspro = /IDRAMonitor\.exe$/i.test(lmPath.trim());
+
   return (
     <div className="card stack">
       <div>
         <div className="card-title">What “Play” launches</div>
-        <div className="card-sub">Both programs start together. Leave the launch monitor blank if GSPro connects to it directly.</div>
+        <div className="card-sub">
+          {lmOwnsGspro
+            ? 'IDRAMonitor.exe opens GSPro and the IDRA connection itself (the same thing the GolfIn Launcher’s IDRA tile does), so Play only starts that. The GSPro path below is used for Export and the Test button.'
+            : 'Both programs start together. Leave the launch monitor blank if GSPro connects to it directly.'}
+        </div>
       </div>
       <div className="field">
         <label className="label">Launch monitor software ({labelLM(state.settings.launchMonitor)})</label>
         <div className="row">
-          <input className="input" value={lmPath} onChange={(e) => setLmPath(e.target.value)} placeholder="C:\Program Files\…\View.exe" />
+          <input className="input" value={lmPath} onChange={(e) => setLmPath(e.target.value)} placeholder="C:\Program Files\Sim Sports Corporation\IDRA\<version>\IDRAMonitor.exe" />
           <button className="btn" onClick={() => browse('lm')}>Browse</button>
           <button className="btn btn-sm" onClick={() => kiosk.adminLaunch('launchMonitor')} disabled={!lmPath}>Test</button>
         </div>

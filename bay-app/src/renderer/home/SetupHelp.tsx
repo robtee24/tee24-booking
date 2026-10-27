@@ -64,9 +64,9 @@ function walkthroughFor(lm: string): { title: string; body: string }[] {
   ];
   const byLm: Record<string, { title: string; body: string }[]> = {
     IDRA: [
-      { title: 'Launch monitor connected', body: 'The iDra’s status light should be solid. If it’s blinking, wait 30 seconds for it to finish booting.' },
-      { title: 'Press Play', body: 'Play opens Uneekor View and GSPro together. Wait for GSPro to say “Connected” in the top corner.' },
-      { title: 'Calibration', body: 'If shots fly oddly, re-run calibration in Uneekor View (Settings → Calibration). Keep your hands clear of the sensor during it.' },
+      { title: 'Launch monitor connected', body: 'The IDRA II should be powered and plugged into the PC. If its light is blinking, wait 30 seconds for it to finish booting.' },
+      { title: 'Press Play', body: 'Play starts the IDRA software, which opens GSPro itself. Wait for the orange IDRA badge at the top of the GSPro screen — that means the launch monitor is connected.' },
+      { title: 'Calibration', body: 'If shots fly oddly, run IDRA Auto-Calibration from the Windows Start menu. Keep your hands clear of the sensor during it.' },
     ],
     SKYTRAK: [
       { title: 'SkyTrak awake', body: 'Tap the power button once; the light turns green when it’s ready. Red means it’s charging/asleep.' },

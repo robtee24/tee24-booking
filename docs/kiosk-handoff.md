@@ -20,9 +20,28 @@ Electron app (`tee24-bay-kiosk`) that replaces the Golfin Launcher home screen o
 Default paths in `bay-app/src/main/store.ts`:
 
 - GSPro: `C:\GSProV1\Core\GSP\GSPro.exe`
-- IDRA / Golfin: `C:\Program Files\Uneekor\Uneekor View\View.exe`
+- IDRA II (GolfIn): `C:\Program Files\Sim Sports Corporation\IDRA\<version>\IDRAMonitor.exe` — resolved at runtime by `findIdraMonitor()`; 8.2.6 on the test PC
 - SkyTrak: `C:\Program Files\SkyTrak\SkyTrak.exe`
 - ProTee VX: `C:\Program Files\ProTee United\ProTee VX\ProTeeVX.exe`
+
+## How GolfIn starts GSPro (verified 27 Oct 2026 on the test PC)
+
+IDRA is **not** a Uneekor product. The launch monitor is the GolfIn **IDRA II**; the software publisher is Sim Sports Corporation. Earlier builds (≤ 1.1.0) shipped a Uneekor View path for IDRA that never existed on a bay PC, so Play started a bare GSPro with no launch monitor. `migrateSettings()` repairs that on first run of a newer build.
+
+Process tree when the GolfIn Launcher's IDRA tile is clicked (GolfIn Launcher 10.3.1, IDRA 8.2.6, GSPro 3.1.6.20):
+
+```
+GolfInLauncher.exe
+└─ IDRAMonitor.exe            (no arguments)
+   ├─ GSPro.exe               (no arguments)
+   └─ IDRA.exe                (connector; talks to GSPro over Open Connect)
+```
+
+- Starting `IDRAMonitor.exe` directly, with the GolfIn Launcher closed, produces exactly the same result. The kiosk does not need GolfIn running.
+- The orange "IDRA" badge at the top of GSPro is GSPro's own connected-launch-monitor indicator. There is no separate overlay window from IDRA.
+- `IDRAMonitor.exe`'s lifetime is **not** a reliable session signal. On the test laptop (no NVIDIA GPU) IDRA's camera process logs `CUDA is not available on this system`, `IDRA.exe` exits with code 400 two seconds after starting, and the monitor exits with it while GSPro keeps running. So `launcher.ts` polls `tasklist` for a `GSPro.exe` process every 2 s and treats *that* as the session, however GSPro was started (Play, GolfIn Launcher, shortcut). Play while GSPro is already running does not start a second copy.
+- GSPro runs as a borderless popup window, not exclusive fullscreen.
+- IDRA's own logs: `C:\ProgramData\Sim Sports Corporation\IDRA\logs\{idra,idra_monitor,cameras}`. GolfIn Launcher's: `C:\ProgramData\Sim Sports Corporation\GolfIn Launcher\Logs`.
 
 API base: `https://reservations.tee24.golf`.
 
@@ -120,8 +139,9 @@ The installed app is a normal Windows program.
 
 - Play errors show on the home screen (usually `Not found: <path>`).
 - Settings shows whether the GSPro and launch-monitor paths exist. **Test** next to each path launches that one program.
-- Log: `C:\Users\<windows user>\AppData\Roaming\Tee24 Bay Kiosk\logs\main.log`
-- Settings file beside it: `tee24-bay-kiosk.json` (device id, bay assignment, exe paths).
+- Log: `C:\Users\<windows user>\AppData\Roaming\tee24-bay-kiosk\logs\main.log` (lower-case, hyphenated folder)
+- Settings file in that same folder: `tee24-bay-kiosk.json` (device id, bay assignment, exe paths).
+- Start at login: a per-user Task Scheduler task named **Tee24 Bay Kiosk** (immediate at logon). The HKCU Run entry is only used if the task cannot be registered. The Run entry alone left the Windows desktop visible for about 90 s after boot on the test PC.
 - Lines tagged `[launcher]`, `[exports]`, or `[remote]` are the useful ones. Paste the tail of `main.log` back into Cursor on the Mac.
 
 Remote desktop from the admin console is optional. On the kiosk: **Settings → Remote support → Install remote support agent** (MeshCentral, outbound only). Then the location’s **Troubleshoot** page can open that PC, once Tee24’s MeshCentral server is configured. Until an agent is reporting, a screenshot plus `main.log` is the path.
@@ -131,7 +151,7 @@ There is no DevTools shortcut in the packaged app.
 ## Still untested on real hardware
 
 - Help (and therefore unlock / warning / export) staying above Golfin’s modal after Golfin is clicked.
-- Play launching real Uneekor View and GSPro, home hiding, **Ctrl+Shift+T**, home returning when GSPro exits.
+- Play launching `IDRAMonitor.exe` from the kiosk (as opposed to from a shell), home hiding, **Ctrl+Shift+T**, home returning when GSPro exits.
 - GSPro “Connected”, live ball flight, and a CSV produced by GSPro’s own clipboard → Export CSV (as opposed to the sample file).
 - Schedule, 10-minute warning, and phone check-in against a real booking on that bay.
 - Auto-update from a `kiosk-v*` release.

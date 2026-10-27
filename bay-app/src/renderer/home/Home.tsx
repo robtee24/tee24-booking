@@ -23,6 +23,9 @@ export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; on
 
   const cd = state.countdown;
   const cdLeft = cd ? new Date(cd.until).getTime() - now : null;
+  // Play pressed, GSPro process not seen yet: keep the home screen up with a status.
+  const starting = state.launcher.running && !state.launcher.gsproPid;
+  const busy = launching || starting;
 
   return (
     <div className="home">
@@ -58,10 +61,14 @@ export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; on
       <div className="home-center">
         <div style={{ width: 'min(980px, 100%)' }}>
           <div className="home-actions">
-            <button className="tile tile-play" onClick={play} disabled={launching}>
-              <span className="tile-icon">{launching ? <span className="spinner" /> : <PlayIcon size={34} />}</span>
-              <h2>Play</h2>
-              <p>Starts the launch monitor and GSPro.</p>
+            <button className="tile tile-play" onClick={play} disabled={busy}>
+              <span className="tile-icon">{busy ? <span className="spinner" /> : <PlayIcon size={34} />}</span>
+              <h2>{starting ? 'Starting GSPro…' : 'Play'}</h2>
+              <p>
+                {starting
+                  ? 'Give it a few seconds. The screen switches to GSPro as soon as it opens.'
+                  : /IDRAMonitor\.exe$/i.test(s.launchMonitorPath) ? 'Starts GSPro with the IDRA launch monitor.' : 'Starts the launch monitor and GSPro.'}
+              </p>
             </button>
             <button className="tile" onClick={onSetupHelp}>
               <span className="tile-icon"><WrenchIcon size={30} /></span>

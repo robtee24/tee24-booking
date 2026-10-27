@@ -123,7 +123,7 @@ function StepView({ step, index, total, onNext, onDone }: { step: TroubleshootSt
 
 export function labelLM(lm: string | null | undefined): string {
   switch ((lm ?? '').toUpperCase()) {
-    case 'IDRA': return 'Uneekor iDra';
+    case 'IDRA': return 'GolfIn IDRA II';
     case 'SKYTRAK': return 'SkyTrak';
     case 'PROTEE_VX': return 'ProTee VX';
     default: return 'Launch monitor';

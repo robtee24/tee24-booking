@@ -85,7 +85,9 @@ function applyWindows() {
   else windows.hideOverlay();
 
   // Floating Help/Schedule strip only while GSPro is running (home has its own buttons).
-  if (launcher.running && !homeForced) {
+  // Wait for a real GSPro process (gsproPid) before hiding home, otherwise the
+  // Windows desktop shows for the seconds between Play and GSPro's first window.
+  if (launcher.running && launcher.gsproPid && !homeForced) {
     windows.hideHome();
     windows.showToolbar();
   } else {
@@ -141,8 +143,12 @@ export async function pollNow() {
     if (res.location.slug !== s.locationSlug) patch.locationSlug = res.location.slug;
     if (Object.keys(patch).length) updateSettings(patch);
 
+    const cameOnline = !state.online || !!state.lastError;
     state = { ...state, online: true, lastError: null, lastPollAt: new Date().toISOString(), serverOffsetMs: offset, status: res };
     evaluate();
+    // evaluate() only publishes when the overlay/countdown changed; on a quiet bay
+    // the first successful poll changes neither, which left "Offline" on screen.
+    if (cameOnline) publish();
   } catch (e) {
     const err = e as { status?: number; message?: string };
     if (err.status === 404) {
