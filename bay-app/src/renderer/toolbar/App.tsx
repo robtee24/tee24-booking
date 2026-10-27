@@ -6,6 +6,8 @@ export function App() {
   const state = useKioskState();
   const now = useServerNow(state?.serverOffsetMs ?? 0);
   const cd = state?.countdown ?? null;
+  // Export only makes sense on the practice range (that's where GSPro writes shot CSVs).
+  const onRange = state?.screen.kind === 'range';
   const left = cd ? new Date(cd.until).getTime() - now : null;
 
   return (
@@ -18,7 +20,12 @@ export function App() {
         <CalendarIcon size={26} />
         Schedule
       </button>
-      <button className="fab fab-export" onClick={() => kiosk.openOverlay('export')} title="Send your GSPro shot data to the Tee24 app or your email">
+      <button
+        className="fab fab-export"
+        disabled={!onRange}
+        onClick={() => onRange && kiosk.openOverlay('export')}
+        title={onRange ? 'Send your GSPro shot data to the Tee24 app or your email' : 'Export is available on the practice range'}
+      >
         <UploadIcon size={26} />
         Export
       </button>

@@ -59,6 +59,7 @@ export const adminRoutes = {
     root: (slug: string) => `/admin/locations/${enc(slug)}`,
     dashboard: (slug: string) => `/admin/locations/${enc(slug)}/dashboard`,
     troubleshoot: (slug: string) => `/admin/locations/${enc(slug)}/troubleshoot`,
+    bayAlerts: (slug: string) => `/admin/locations/${enc(slug)}/bay-alerts`,
     checkIns: (slug: string) => `/admin/locations/${enc(slug)}/check-ins`,
     checkInAnalytics: (slug: string) => `/admin/locations/${enc(slug)}/check-ins/analytics`,
 
@@ -262,7 +263,10 @@ export const LOCATION_NAV: NavSection[] = [
     label: "Troubleshoot",
     icon: "wrench",
     href: adminRoutes.loc.troubleshoot,
-    items: [],
+    items: [
+      { label: "Bays & remote", href: adminRoutes.loc.troubleshoot, exact: true },
+      { label: "Bay Alerts", href: adminRoutes.loc.bayAlerts },
+    ],
   },
   {
     key: "settings",
@@ -329,6 +333,7 @@ export const SEGMENT_LABELS: Record<string, string> = {
   locations: "Locations",
   dashboard: "Dashboard",
   troubleshoot: "Troubleshoot",
+  "bay-alerts": "Bay Alerts",
   scheduling: "Scheduling",
   bookings: "Bookings",
   bays: "Bays",

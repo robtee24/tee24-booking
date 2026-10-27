@@ -58,6 +58,15 @@ export async function request<T>(
 
 // ---------- Types mirrored from the server ----------
 
+export interface BookingPlayers {
+  /** Member + guests allowed on this bay; null = not enforced (non-member booking) */
+  allowedPlayers: number | null;
+  includedGuests: number;
+  bookedGuests: number;
+  companions: { firstName: string; lastInitial: string; includedGuests: number }[];
+  unauthorizedGuestFeeCents: number;
+}
+
 export interface Booking {
   id: string;
   firstName: string;
@@ -65,6 +74,16 @@ export interface Booking {
   start: string;
   end: string;
   checkedInAt?: string | null;
+  players?: BookingPlayers | null;
+}
+
+export interface PlayerAllowance {
+  bookingId: string;
+  allowedPlayers: number | null;
+  booker: { memberId: string | null; firstName: string; lastInitial: string; includedGuests: number; bookedGuests: number };
+  companions: { memberId: string; firstName: string; lastInitial: string; includedGuests: number }[];
+  unauthorizedGuestFeeCents: number;
+  added?: { firstName: string; lastInitial: string; includedGuests: number };
 }
 
 export interface StatusResponse {
@@ -148,6 +167,28 @@ export function cancelTimeout(bookingId: string) {
     deviceId: s.deviceId,
     bookingId,
   });
+}
+
+// ---------- Players / unauthorized guests ----------
+
+export function addCompanionMember(bookingId: string, phone: string) {
+  const s = getSettings();
+  return request<PlayerAllowance>('POST', '/api/bay-app/players', { deviceId: s.deviceId, bookingId, action: 'add-member', phone });
+}
+
+/**
+ * Too-many-players event → admin alert. `action` is what the player chose:
+ * PROCEEDED (accepted the per-guest charge) or EXITED (left the game instead).
+ */
+export function createGuestViolation(body: {
+  bookingId: string | null;
+  screen: 'SETUP' | 'ROUND';
+  action: 'PROCEEDED' | 'EXITED';
+  playerCount: number;
+  allowedPlayers: number;
+}) {
+  const s = getSettings();
+  return request<{ id: string; extraGuests: number; feeCents: number; acknowledgedAt: string }>('POST', '/api/bay-app/guest-violation', { deviceId: s.deviceId, ...body });
 }
 
 // ---------- Admin (Quo SMS) endpoints ----------

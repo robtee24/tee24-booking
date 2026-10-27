@@ -2,9 +2,11 @@ import { app, powerMonitor } from 'electron';
 import log from 'electron-log';
 import { getStatus, cancelTimeout, type StatusResponse, type Booking } from './api';
 import { getSettings, isRegistered, updateSettings, type KioskSettings } from './store';
-import { getLauncherState, onLauncherChange, closeSession, type LauncherState } from './launcher';
+import { getLauncherState, onLauncherChange, closeSession, restartSession, type LauncherState } from './launcher';
 import { rememberRemoteInfo } from './remote';
 import * as windows from './windows';
+import * as screenWatch from './screen';
+import * as players from './players';
 
 /**
  * Kiosk state machine.
@@ -22,7 +24,7 @@ import * as windows from './windows';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle' | 'players';
 
 export interface KioskState {
   version: string;
@@ -37,6 +39,10 @@ export interface KioskState {
   countdown: { label: string; until: string } | null;
   launcher: LauncherState;
   settings: KioskSettings;
+  /** What GSPro is showing right now (OCR of the display while a session runs) */
+  screen: screenWatch.GsproScreen;
+  /** Too-many-players enforcement */
+  players: players.PlayersState;
 }
 
 const POLL_IDLE_MS = 15_000;
@@ -54,12 +60,15 @@ let state: KioskState = {
   countdown: null,
   launcher: getLauncherState(),
   settings: getSettings(),
+  screen: screenWatch.getScreen(),
+  players: players.getPlayersState(null),
 };
 
 const acceptedUpcoming = new Set<string>();
 const dismissedUnlock = new Set<string>();
 const cancelRequested = new Set<string>();
-let userMode: Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle'> = 'none';
+type UserMode = Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle' | 'players'>;
+let userMode: UserMode = 'none';
 
 // ---------- Idle timeout ----------
 //
@@ -116,7 +125,7 @@ export function getState(): KioskState {
 }
 
 function publish() {
-  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher: getLauncherState() };
+  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher: getLauncherState(), screen: screenWatch.getScreen() };
   windows.broadcast('kiosk:state', state);
   applyWindows();
 }
@@ -125,6 +134,19 @@ function applyWindows() {
   const { overlay, launcher } = state;
   if (overlay.mode !== 'none') windows.showOverlay();
   else windows.hideOverlay();
+
+  // Read GSPro's screen only while it is actually up. Scans pause while one of
+  // our own modals covers the screen (we would OCR ourselves).
+  if (launcher.running && !!launcher.gsproPid) {
+    screenWatch.startWatching(
+      () => state.overlay.mode !== 'none',
+      // Relax mid-round when the player count is fine (or not enforced).
+      () => !state.players.alert && !state.players.done,
+    );
+  } else {
+    screenWatch.stopWatching();
+    players.resetForSession();
+  }
 
   // Floating Help/Schedule strip only while GSPro is running (home has its own buttons).
   // Wait for a real GSPro process (gsproPid) before stepping aside, otherwise the
@@ -152,6 +174,10 @@ export function setHomeForced(v: boolean) {
 
 export function start() {
   onLauncherChange(() => publish());
+  screenWatch.onScreenChange(() => {
+    evaluate();
+    publish();
+  });
   if (!tickTimer) tickTimer = setInterval(evaluate, 1000);
   schedulePoll(0);
 }
@@ -260,6 +286,12 @@ function evaluate() {
     }
   }
 
+  // Too many players in GSPro for this booking: blocks until resolved. Sits
+  // above help/schedule/export but below the unlock modal (no booking yet).
+  const alert = overlay.mode === 'unlock' ? null : players.evaluatePlayers(st?.currentBooking ?? null, screenWatch.getScreen());
+  const playersState = players.getPlayersState(alert);
+  if (alert || (playersState.done && overlay.mode !== 'unlock')) overlay = { mode: 'players', booking: st?.currentBooking ?? null, deadline: null };
+
   // Inactivity warning wins over everything: it is the last thing the player
   // can still react to before GSPro is closed.
   const idle = evaluateIdle();
@@ -270,12 +302,58 @@ function evaluate() {
     overlay.booking?.id !== state.overlay.booking?.id ||
     overlay.deadline !== state.overlay.deadline ||
     countdown?.until !== state.countdown?.until ||
-    countdown?.label !== state.countdown?.label;
+    countdown?.label !== state.countdown?.label ||
+    JSON.stringify(playersState) !== JSON.stringify(state.players);
 
   if (changed || !state.lastPollAt) {
-    state = { ...state, overlay, countdown };
+    state = { ...state, overlay, countdown, players: playersState };
     publish();
   }
+}
+
+// ---------- Too-many-players actions ----------
+
+export async function playersProceed() {
+  const alert = state.players.alert;
+  if (!alert) throw new Error('Nothing to acknowledge');
+  const r = await players.proceed(alert);
+  evaluate();
+  publish();
+  return r;
+}
+
+export async function playersAddMember(phone: string) {
+  const bookingId = state.players.alert?.bookingId ?? state.status?.currentBooking?.id;
+  if (!bookingId) throw new Error('No reservation on this bay');
+  const r = await players.addMember(bookingId, phone);
+  evaluate();
+  publish();
+  schedulePoll(500); // pick up the server-side allowance too
+  return r;
+}
+
+export function playersSnooze() {
+  players.snooze();
+  evaluate();
+  publish();
+}
+
+export function playersDismiss() {
+  players.dismissDone();
+  evaluate();
+  publish();
+}
+
+export async function playersExitGame() {
+  const alert = state.players.alert;
+  players.snooze(90_000);
+  evaluate();
+  publish();
+  // Tell the admin console (timestamped) even though nothing is charged.
+  if (alert) void players.reportExit(alert);
+  setHomeForced(false);
+  await restartSession('too many players; player chose to exit');
+  forcePublish();
 }
 
 // ---------- Actions from renderer ----------
@@ -293,7 +371,7 @@ export function dismissUnlock(bookingId: string) {
   publish();
 }
 
-export function setUserMode(mode: Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle'>) {
+export function setUserMode(mode: UserMode) {
   userMode = mode;
   evaluate();
   publish();

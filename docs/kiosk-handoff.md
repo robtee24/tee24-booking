@@ -125,6 +125,24 @@ Pitching Wedge,98,125,24.0,8100,78,132,1
 
 The kiosk should list it as about 3 shots. A success screen means export works. No GSPro process is required for this test.
 
+## Screen reader: what GSPro is showing (added 27 Oct 2026)
+
+GSPro has no API for "which screen am I on" or "how many players", so the kiosk reads the display. `bay-app/resources/screen-ocr.ps1` is a PowerShell worker that uses the built-in Windows OCR (`Windows.Media.Ocr`, no install, ~0.3 s per scan). `bay-app/src/main/screen.ts` spawns it while GSPro is running, scans every 2.5 s (paused while one of our own modals is up), and classifies the screen:
+
+| Screen | Signal (OCR text) | Player count |
+| --- | --- | --- |
+| `setup` | header `ROUND SETTINGS` | rows with `Team / Color` minus `Empty Slot` dropdowns |
+| `round` | top-right hole card `PAR 3..6`, or ≥2 `n yds` rows top-left | number of `… yds` rows in the top-left scoreboard |
+| `range` | `DRIVING RANGE` / `SIDE SPIN` / `BACK SPIN`, without a hole card | — |
+| `menu` | `WELCOME`, `SELECT COURSE` | — |
+
+A kind has to be seen twice in a row before it counts. Verified against GSPro 3.1.6.20 at 1920×1200; a GSPro redesign that renames those labels will silently turn detection off (screen becomes `unknown`), it will not raise false alarms. **Settings → Test screen reader** on the kiosk runs one scan and shows what it saw. Scans run every 2.5 s on the menu / round settings / range / unknown screens, and back off to every 30 s once a round is under way and the player count is within the allowance (or not enforced); the first scan that shows another screen speeds it up again. Windows PowerShell's `ConvertTo-Json` leaves raw control characters (OCR sometimes emits BEL) that `JSON.parse` rejects — the script strips them and `screen.ts` retries once after stripping, otherwise every scan "times out".
+
+Two features ride on this:
+
+- **Export** in the toolbar is greyed out unless the screen is `range` (that is where GSPro writes shot CSVs).
+- **Too-many-players enforcement.** `GET /api/bay-app/status` now includes `currentBooking.players.allowedPlayers` = 1 (booker) + max(membership guest allowance, guests declared on the booking) + every companion member added at the kiosk (1 + their own guest allowance). Non-member bookings have `allowedPlayers: null` and are not enforced. When the GSPro player count exceeds that on the `setup` or `round` screen, the overlay blocks with a modal (wording differs: setup says "your account only allows X players"; in-round says "exit now or be charged"). Options: **Other players are members** (phone entry → `POST /api/bay-app/players {action:'add-member'}`, repeatable, the allowance recomputes), **Remove a player** (setup; hides the modal for 30 s) / **Exit the game** (round; closes GSPro + IDRA + GolfIn and relaunches them exactly like Play, and reports the exit to the admin console with a timestamp, no charge), or tick the mandatory box and **Proceed / Continue**. Both Proceed and Exit create a `GuestViolation` (`POST /api/bay-app/guest-violation` with `action: 'PROCEEDED' | 'EXITED'`) and raise an admin notification (`bay.guest-violation`; WARN for proceeded, INFO for exited). Nothing is recorded. Admins see them under **Troubleshoot → Bay Alerts** for the location; the fee is `UNAUTHORIZED_GUEST_FEE_CENTS` (default 5000) and is **not charged automatically** — the alert is the record, billing is a manual step. Migration `20261027060000_bay_guest_violations`.
+
 ## GSPro Open Connect is not a control API
 
 Docs: https://gsprogolf.com/GSProConnectV1.html

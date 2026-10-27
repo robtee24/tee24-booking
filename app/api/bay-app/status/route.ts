@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
 import { remoteInfoForKiosk, normalizeNodeId } from '@/lib/remote/meshcentral';
+import { getPlayerAllowance } from '@/services/bay-players.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -84,6 +85,17 @@ export async function GET(req: Request) {
       }),
     ]);
 
+    // Player allowance (member + guests) so the kiosk can compare against the
+    // players GSPro shows. Never let a failure here break the poll.
+    let players: Awaited<ReturnType<typeof getPlayerAllowance>> | null = null;
+    if (currentBooking) {
+      try {
+        players = await getPlayerAllowance(currentBooking.id);
+      } catch (e) {
+        console.warn('[bay-app/status] player allowance failed', e);
+      }
+    }
+
     return NextResponse.json({
       serverNow: now.toISOString(),
       remote: remoteInfoForKiosk(),
@@ -118,6 +130,15 @@ export async function GET(req: Request) {
             start: currentBooking.start.toISOString(),
             end: currentBooking.end.toISOString(),
             checkedInAt: currentBooking.checkedInAt ? currentBooking.checkedInAt.toISOString() : null,
+            players: players
+              ? {
+                  allowedPlayers: players.allowedPlayers,
+                  includedGuests: players.booker.includedGuests,
+                  bookedGuests: players.booker.bookedGuests,
+                  companions: players.companions.map((c) => ({ firstName: c.firstName, lastInitial: c.lastInitial, includedGuests: c.includedGuests })),
+                  unauthorizedGuestFeeCents: players.unauthorizedGuestFeeCents,
+                }
+              : null,
           }
         : null,
       nextBooking: nextBooking

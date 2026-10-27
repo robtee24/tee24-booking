@@ -233,6 +233,37 @@ function LaunchPaths({ state }: { state: KioskState }) {
       <div className="row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn btn-primary" onClick={save}>Save</button>
       </div>
+      <ScreenReaderTest state={state} />
+    </div>
+  );
+}
+
+/** One OCR scan of whatever is on screen; shows how the kiosk would classify it. */
+function ScreenReaderTest({ state }: { state: KioskState }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const live = state.screen;
+
+  async function run() {
+    setBusy(true);
+    const r = await kiosk.adminScreenTest();
+    setBusy(false);
+    if (isErr(r)) return setResult(`Error: ${r.error}`);
+    const s = r as { ok: boolean; kind: string; playerCount: number | null; ms: number; error?: string };
+    setResult(!s.ok ? `Screen reader failed: ${s.error ?? 'unknown error'}` : `Saw: ${s.kind}${s.playerCount != null ? ` · ${s.playerCount} player(s)` : ''} · ${s.ms} ms`);
+  }
+
+  return (
+    <div className="field" style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+      <label className="label">Screen reader (Export greying + player-count checks)</label>
+      <div className="row">
+        <button className="btn btn-sm" onClick={run} disabled={busy}>{busy ? 'Scanning…' : 'Test screen reader'}</button>
+        <span className="muted">
+          Live: {live.kind}{live.playerCount != null ? ` · ${live.playerCount} player(s)` : ''}{live.unavailable ? ' · OCR unavailable' : ''}
+        </span>
+      </div>
+      {result && <div className="hint" style={{ marginTop: 8 }}>{result}</div>}
+      <div className="hint">Bring GSPro to the front (Round Settings, a round, or the range) and press Test to see what the kiosk reads. The live value only updates while a session is running.</div>
     </div>
   );
 }

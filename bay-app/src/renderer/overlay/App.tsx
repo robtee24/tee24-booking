@@ -4,6 +4,7 @@ import type { Booking, KioskState } from '../shared/types';
 import { TroubleshootFlow } from '../shared/TroubleshootFlow';
 import { ScheduleView } from '../shared/ScheduleView';
 import { ExportFlow } from '../shared/ExportFlow';
+import { PlayersFlow } from './PlayersFlow';
 import { CloseIcon, LockIcon, DeleteIcon, CheckIcon } from '../shared/Icons';
 
 /**
@@ -38,6 +39,14 @@ export function App() {
         </Modal>
       )}
       {mode === 'idle' && deadline && <IdleWarning deadline={deadline} minutes={state.settings.idleCloseMinutes} />}
+      {mode === 'players' && (state.players.alert || state.players.done) && (
+        <PlayersFlow
+          alert={(state.players.alert ?? state.players.done)!}
+          done={!state.players.alert && !!state.players.done}
+          allowance={state.players.allowance}
+          booking={booking}
+        />
+      )}
     </div>
   );
 }

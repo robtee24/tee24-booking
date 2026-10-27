@@ -154,6 +154,7 @@ model Location {
   adminLinks              AdminLocation[]
   notifications           Notification[]
   bayAppRegistrations     BayAppRegistration[]
+  guestViolations         GuestViolation[]
   members                 Member[]
   visits                  Visit[]
   visitors                Visitor[]
@@ -219,6 +220,8 @@ model Booking {
 
   createdAt DateTime @default(now())
   Location  Location @relation(fields: [locationId], references: [id])
+  // Other members who joined this booking at the bay (kiosk "Other players are members").
+  companions BookingCompanion[]
 
   @@index([locationId, bayNumber, start])
   @@index([locationId, start, end])
@@ -452,6 +455,7 @@ model Member {
   swingAnalyses           SwingAnalysis[]
   shotDataExports         ShotDataExport[]
   drillLogs               DrillLog[]
+  bookingCompanions       BookingCompanion[]
 
   family        FamilyMember?
   visitorRecord Visitor?      @relation("VisitorMemberLink")
@@ -1700,6 +1704,57 @@ model Otp {
  * Bay App Registration (existing)
  * =========================
  */
+/// Another member who is playing on someone else's booking. Declared at the
+/// kiosk (phone number) when GSPro shows more players than the booking allows;
+/// their own guest allowance is added to the bay's player allowance.
+model BookingCompanion {
+  id             String   @id @default(cuid())
+  bookingId      String
+  memberId       String
+  /// Playing guests this member's membership includes per visit, at the time they were added
+  includedGuests Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, memberId])
+  @@index([memberId])
+}
+
+/// The kiosk saw more players in GSPro than the booking allows and the player
+/// acknowledged the unauthorized-guest charge and continued. The kiosk records
+/// the next two minutes of the bay screen as evidence (chunks below).
+model GuestViolation {
+  id             String    @id @default(cuid())
+  locationId     String
+  bayNumber      Int
+  bookingId      String?
+  memberId       String?
+  deviceId       String
+  /// SETUP (GSPro round-settings screen) | ROUND (in play)
+  screen         String
+  /// PROCEEDED (accepted the per-guest charge) | EXITED (left the game instead; no charge)
+  action         String    @default("PROCEEDED")
+  playerCount    Int
+  allowedPlayers Int
+  extraGuests    Int
+  /// Charge the player agreed to (extraGuests × unauthorized guest fee); 0 when they exited
+  feeCents       Int
+  /// Server time the player made the choice (ticked the box and proceeded, or exited)
+  acknowledgedAt DateTime
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  createdAt      DateTime  @default(now())
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, createdAt])
+  @@index([bookingId])
+  @@index([memberId])
+}
+
 model BayAppRegistration {
   id           String    @id @default(uuid())
   locationId   String

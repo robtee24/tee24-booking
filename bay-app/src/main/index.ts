@@ -9,6 +9,7 @@ import * as poller from './poller';
 import * as remote from './remote';
 import * as windows from './windows';
 import * as autostart from './autostart';
+import * as screenWatch from './screen';
 import { runStartupUpdate, checkForUpdatesNow } from './updater';
 
 log.initialize();
@@ -131,6 +132,12 @@ function registerIpc() {
   handle('kiosk:help', () => api.getHelp());
   handle('kiosk:findExports', () => exportsMod.findRecentCsvs());
   handle('kiosk:sendExports', (input: Parameters<typeof exportsMod.sendExports>[0]) => exportsMod.sendExports(input));
+  // Too-many-players modal
+  handle('kiosk:playersProceed', () => poller.playersProceed());
+  handle('kiosk:playersAddMember', (phone: string) => poller.playersAddMember(phone));
+  handle('kiosk:playersSnooze', () => poller.playersSnooze());
+  handle('kiosk:playersDismiss', () => poller.playersDismiss());
+  handle('kiosk:playersExitGame', () => poller.playersExitGame());
 
   // ---- Admin ----
   handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));
@@ -223,6 +230,7 @@ function registerIpc() {
     return launchHelperOnly(which);
   });
   handle('admin:pathsExist', () => pathsExist());
+  handle('admin:screenTest', () => screenWatch.scanOnce());
   handle('admin:remoteStatus', () => remote.getRemoteAgentStatus());
   handle('admin:remoteInstall', async () => {
     requireAdmin();

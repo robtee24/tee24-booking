@@ -7,6 +7,9 @@ export type { UpdatePhase } from '../../main/updater';
 export type { RemoteAgentStatus } from '../../main/remote';
 export type { LauncherState } from '../../main/launcher';
 export type { FoundCsv, ExportResult } from '../../main/exports';
+export type { GsproScreen, ScreenKind } from '../../main/screen';
+export type { PlayersAlert, PlayersState } from '../../main/players';
+export type { PlayerAllowance, BookingPlayers } from '../../main/api';
 
 export type TroubleshootStep = {
   question?: string;

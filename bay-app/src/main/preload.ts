@@ -33,6 +33,12 @@ const api = {
   findExports: () => ipcRenderer.invoke('kiosk:findExports'),
   sendExports: (input: { paths: string[]; delivery: 'APP' | 'EMAIL' | 'BOTH'; bookingId?: string | null; phone?: string | null; email?: string | null }) =>
     ipcRenderer.invoke('kiosk:sendExports', input),
+  // Too-many-players modal
+  playersProceed: () => ipcRenderer.invoke('kiosk:playersProceed'),
+  playersAddMember: (phone: string) => ipcRenderer.invoke('kiosk:playersAddMember', phone),
+  playersSnooze: () => ipcRenderer.invoke('kiosk:playersSnooze'),
+  playersDismiss: () => ipcRenderer.invoke('kiosk:playersDismiss'),
+  playersExitGame: () => ipcRenderer.invoke('kiosk:playersExitGame'),
 
   // Admin (Quo SMS sign-in)
   adminSendOtp: (phone: string) => ipcRenderer.invoke('admin:sendOtp', phone),
@@ -48,6 +54,7 @@ const api = {
   adminBrowseExe: (title: string) => ipcRenderer.invoke('admin:browseExe', title),
   adminLaunch: (which: 'launchMonitor' | 'gspro') => ipcRenderer.invoke('admin:launch', which),
   adminPathsExist: () => ipcRenderer.invoke('admin:pathsExist'),
+  adminScreenTest: () => ipcRenderer.invoke('admin:screenTest'),
   adminRemoteStatus: () => ipcRenderer.invoke('admin:remoteStatus'),
   adminRemoteInstall: () => ipcRenderer.invoke('admin:remoteInstall'),
   adminRemoteUninstall: () => ipcRenderer.invoke('admin:remoteUninstall'),

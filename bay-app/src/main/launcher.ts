@@ -307,6 +307,26 @@ export async function closeSession(reason: string): Promise<void> {
   void tick();
 }
 
+/**
+ * Close the whole session and start it again, exactly as if the player pressed
+ * Play on the home screen (used by "Exit the game" on the too-many-players
+ * modal, so the bay comes back ready at the GSPro menu).
+ */
+export async function restartSession(reason: string): Promise<LauncherState> {
+  await closeSession(reason);
+  // Wait for the watcher to confirm GSPro is gone (it takes a couple of polls).
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && (state.running || (await findGsproPid()))) {
+    await new Promise((r) => setTimeout(r, 500));
+    void tick();
+  }
+  if (state.running) endSession();
+  // IDRA / the GolfIn launcher release the launch monitor a beat after exiting.
+  await new Promise((r) => setTimeout(r, 2000));
+  log.info(`[launcher] relaunching session after ${reason}`);
+  return launchPlay();
+}
+
 export function pathsExist() {
   const s = getSettings();
   return {

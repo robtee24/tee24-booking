@@ -11,6 +11,14 @@ files:
   - dist/**/*
   - package.json
 
+# Shipped next to app.asar (process.resourcesPath). screen-ocr.ps1 is the
+# Windows-OCR worker the kiosk uses to read GSPro's screen (see src/main/screen.ts).
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - "**/*"
+
 # Auto-update + /desktop-app download both read from GitHub Releases on the
 # public tee24-booking repo. Tags look like kiosk-v1.2.3 (see .github/workflows).
 publish:
