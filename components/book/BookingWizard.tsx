@@ -18,6 +18,8 @@ type Identity = {
     gilmorePlanId: string | null;
     gilmoreName: string;
     gilmorePriceCents: number;
+    gilmoreGuestTiers: number[];
+    gilmoreMaxGuests: number;
     signupPath: string;
     plans: { id: string; name: string; productType: string; priceCents: number }[];
   };
@@ -235,7 +237,7 @@ export function BookingWizard({ locationSlug }: { locationSlug: string }) {
 
   function guestSignupHref() {
     if (!identity) return "#";
-    const guestsOnPass = Math.max(0, players - 1);
+    const guestsOnPass = Math.min(Math.max(0, players - 1), identity.guest.gilmoreMaxGuests);
     const params = new URLSearchParams({
       from: "booking",
       plan: identity.guest.gilmorePlanId ?? "",
@@ -304,7 +306,13 @@ export function BookingWizard({ locationSlug }: { locationSlug: string }) {
   }
 
   const isMember = Boolean(identity.member && identity.access?.eligible);
-  const guestTotal = identity.guest.gilmorePriceCents + Math.max(0, players - 1) * identity.guest.unauthorizedFeeCents;
+  // Guests declared at signup are priced on the day-pass tiers ($15 / $10 / $5); anyone beyond the
+  // pass's guest cap is an unauthorized guest at the flat fee. Mirrors guestCentsFor() on the server.
+  const companions = Math.max(0, players - 1);
+  const declaredGuests = Math.min(companions, identity.guest.gilmoreMaxGuests);
+  const overflowGuests = companions - declaredGuests;
+  const declaredGuestCents = identity.guest.gilmoreGuestTiers.slice(0, declaredGuests).reduce((s, c) => s + c, 0);
+  const guestTotal = identity.guest.gilmorePriceCents + declaredGuestCents + overflowGuests * identity.guest.unauthorizedFeeCents;
 
   return (
     <div className="mx-auto max-w-xl space-y-6 px-6 py-10">
@@ -439,9 +447,15 @@ export function BookingWizard({ locationSlug }: { locationSlug: string }) {
         <div className="space-y-3 rounded-apple border border-apple-divider bg-white p-4">
           <p className="text-apple-sm font-medium">Guest total before signup</p>
           <p className="text-apple-2xl font-semibold">{money(identity.guest.gilmorePriceCents)} <span className="text-apple-sm font-normal text-apple-text-secondary">{identity.guest.gilmoreName}</span></p>
-          {players > 1 && (
+          {declaredGuests > 0 && (
             <p className="text-apple-sm text-apple-text-secondary">
-              {players - 1} additional guest{players === 2 ? "" : "s"} · {money(identity.guest.unauthorizedFeeCents)} each if they aren't on a pass
+              {declaredGuests} guest{declaredGuests === 1 ? "" : "s"} · {money(declaredGuestCents)}
+              <span className="text-apple-text-tertiary"> ({identity.guest.gilmoreGuestTiers.slice(0, declaredGuests).map((c) => money(c)).join(" / ")})</span>
+            </p>
+          )}
+          {overflowGuests > 0 && (
+            <p className="text-apple-sm text-amber-900">
+              {overflowGuests} more than the pass allows · {money(overflowGuests * identity.guest.unauthorizedFeeCents)} at the unauthorized guest rate
             </p>
           )}
           <p className="text-apple-xs text-apple-text-tertiary">A charge of {money(identity.guest.unauthorizedFeeCents)} per unauthorized guest will be charged to your account.</p>
