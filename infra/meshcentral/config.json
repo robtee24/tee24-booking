@@ -4,6 +4,7 @@
   "settings": {
     "cert": "remote.tee24.golf",
     "port": 8080,
+    "aliasPort": 443,
     "redirPort": 0,
     "tlsOffload": true,
     "cookieIpCheck": false,

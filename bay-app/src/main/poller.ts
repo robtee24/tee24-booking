@@ -4,7 +4,7 @@ import log from 'electron-log';
 import { getStatus, cancelTimeout, type StatusResponse, type Booking } from './api';
 import { getSettings, isRegistered, updateSettings, type KioskSettings } from './store';
 import { getLauncherState, onLauncherChange, closeSession, restartSession, type LauncherState } from './launcher';
-import { rememberRemoteInfo } from './remote';
+import { rememberRemoteInfo, agentInstalled, readNodeId } from './remote';
 import * as windows from './windows';
 import * as screenWatch from './screen';
 import * as players from './players';
@@ -254,6 +254,8 @@ function schedulePoll(ms: number) {
   pollTimer = setTimeout(pollNow, ms);
 }
 
+let nodeIdProbeDone = false;
+
 export async function pollNow() {
   if (polling) return;
   polling = true;
@@ -263,7 +265,17 @@ export async function pollNow() {
       publish();
       return;
     }
-    const s = getSettings();
+    let s = getSettings();
+    // Agent installed outside the kiosk (setup script, IT) — pick up its node id so the
+    // heartbeat reports it and the admin Troubleshoot page can deep-link to this PC.
+    if (!s.remoteNodeId && agentInstalled() && !nodeIdProbeDone) {
+      nodeIdProbeDone = true;
+      const id = await readNodeId();
+      if (id) {
+        updateSettings({ remoteNodeId: id });
+        s = getSettings();
+      }
+    }
     const res = await getStatus({ nodeId: s.remoteNodeId });
     const offset = new Date(res.serverNow).getTime() - Date.now();
     rememberRemoteInfo(res.remote);
