@@ -8,6 +8,7 @@ import { isFullAccess } from "@/lib/access";
 import { getActorContext } from "@/lib/actor";
 import { can } from "@/lib/permissions";
 import { kisiConfigured } from "@/lib/kisi";
+import { isMigrationFrozen } from "@/lib/migration-freeze";
 import { listDoors, refreshDoorStatuses, syncDoorsFromKisi } from "@/services/door.service";
 
 export const dynamic = "force-dynamic";
@@ -34,10 +35,18 @@ export async function POST(req: NextRequest) {
   if (!can(actor, "door.manage")) return forbidden();
 
   const body = await req.json().catch(() => ({}));
-  if (body?.action !== "sync") return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  if (body?.action !== "sync" && body?.action !== "sweep-users") return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   if (!kisiConfigured()) return NextResponse.json({ error: "Kisi is not configured (KISI_API_KEY missing)" }, { status: 409 });
 
   try {
+    if (body.action === "sweep-users") {
+      // Remove Kisi users who have no door access in Tee24. dryRun lists them without deleting.
+      if (!can(actor, "kisi.override")) return forbidden();
+      if (isMigrationFrozen()) return NextResponse.json({ error: "MIGRATION_FREEZE is on — Kisi is still managed by GymDesk" }, { status: 409 });
+      const { reconcileKisiOrphans } = await import("@/services/reconciliation.service");
+      const r = await reconcileKisiOrphans({ dryRun: body.dryRun !== false });
+      return NextResponse.json({ ok: true, dryRun: body.dryRun !== false, ...r });
+    }
     const r = await syncDoorsFromKisi();
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {

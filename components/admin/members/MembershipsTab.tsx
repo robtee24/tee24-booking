@@ -205,6 +205,10 @@ export function MembershipsTab({ memberId }: { slug: string; memberId: string })
               "cancel",
               () => api(`/api/admin/memberships/${modal.sub.id}/cancel`, { method: "POST", json: body }),
               (r) => {
+                const refund = (r as { refund?: { amountCents: number } | null; refundError?: string | null })?.refund;
+                const refundError = (r as { refundError?: string | null })?.refundError;
+                if (refund && !refundError) return { title: "Cancelled and refunded", description: `$${(refund.amountCents / 100).toFixed(2)} is on the way back to their card.` };
+                if (refundError) return { tone: "error", title: "Cancelled — refund failed", description: refundError };
                 const fee = (r as { earlyCancelFee?: { feeCents: number; charged: boolean; failureReason: string | null; invoiceNumber: number } | null })?.earlyCancelFee;
                 if (!fee) return { title: "Cancellation recorded" };
                 return fee.charged
@@ -217,7 +221,12 @@ export function MembershipsTab({ memberId }: { slug: string; memberId: string })
       )}
       {modal?.kind === "freeze" && <FreezeModal sub={modal.sub} busy={busy === "freeze"} onClose={() => setModal(null)} onSubmit={(body) => run("freeze", () => api(`/api/admin/memberships/${modal.sub.id}/freeze`, { method: "POST", json: body }), "Freeze scheduled")} />}
       {modal?.kind === "extend" && <ExtendModal sub={modal.sub} busy={busy === "extend"} onClose={() => setModal(null)} onSubmit={(body) => run("extend", () => api(`/api/admin/memberships/${modal.sub.id}/extend`, { method: "POST", json: body }), "Membership extended")} />}
-      {modal?.kind === "change" && <ChangePlanModal sub={modal.sub} plans={data.plans} busy={busy === "change"} onClose={() => setModal(null)} onSubmit={(body) => run("change", () => api(`/api/admin/memberships/${modal.sub.id}/change-plan`, { method: "POST", json: body }), "Plan changed")} />}
+      {modal?.kind === "change" && <ChangePlanModal sub={modal.sub} plans={data.plans} busy={busy === "change"} onClose={() => setModal(null)} onSubmit={(body) => run("change", () => api(`/api/admin/memberships/${modal.sub.id}/change-plan`, { method: "POST", json: body }), (r) => {
+                const result = (r as { result?: { applied?: string; displayName?: string; chargedCents?: number; effectiveAt?: string } }).result;
+                if (result?.applied === "scheduled") return { title: "Change scheduled", description: `${result.displayName} starts ${result.effectiveAt ? fmtDate(result.effectiveAt) : "at the next renewal"}.` };
+                if (result?.chargedCents) return { title: "Plan upgraded", description: `${result.displayName} — charged $${(result.chargedCents / 100).toFixed(2)} today.` };
+                return { title: "Plan changed", description: result?.displayName };
+              })} />}
     </div>
   );
 }
@@ -274,36 +283,46 @@ function AddMembershipModal({ plans, busy, onClose, onSubmit }: { plans: Plan[];
 
 /* ---------------- Cancel ---------------- */
 function CancelModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
-  const [timing, setTiming] = React.useState<"end_of_period" | "immediate" | "date">("end_of_period");
-  const [date, setDate] = React.useState("");
+  const [mode, setMode] = React.useState<"renewal" | "now">("renewal");
   const [reason, setReason] = React.useState(CANCEL_REASONS[0]);
   const [notes, setNotes] = React.useState("");
-  const [fee, setFee] = React.useState("");
   const [waive, setWaive] = React.useState(false);
+  const [last, setLast] = React.useState<{ refundableCents: number; amountCents: number; paidAt: string; invoiceNumber: number | null } | null | undefined>(undefined);
   const earlyFee = earlyCancelFeeDue(sub);
+  React.useEffect(() => {
+    api<{ lastPayment: { refundableCents: number; amountCents: number; paidAt: string; invoiceNumber: number | null } | null }>(`/api/admin/memberships/${sub.id}/cancel`)
+      .then((r) => setLast(r.lastPayment))
+      .catch(() => setLast(null));
+  }, [sub.id]);
+  const canRefund = mode === "now" && last && last.refundableCents > 0;
+  const label = mode === "now" ? (canRefund ? `Cancel now & refund $${(last!.refundableCents / 100).toFixed(2)}` : "Cancel now") : `Cancel on ${fmtDate(sub.paidThroughDate ?? sub.nextInvoiceDate)}`;
   return (
-    <Modal open onClose={onClose} title={`Cancel ${subName(sub)}`} footer={<Footer danger onClose={onClose} busy={busy} label="Cancel membership" disabled={timing === "date" && !date} onSubmit={() => onSubmit({ timing, date: timing === "date" ? date : undefined, reason, notes: notes || undefined, cancelFeeCents: fee ? Math.round(Number(fee) * 100) : undefined, waiveEarlyCancelFee: waive })} />}>
+    <Modal open onClose={onClose} title={`Cancel ${subName(sub)}`} footer={<Footer danger onClose={onClose} busy={busy} label={label} disabled={mode === "now" && last === undefined} onSubmit={() => onSubmit({ timing: mode === "now" ? "immediate" : "end_of_period", refundLastPayment: mode === "now" && !!last && last.refundableCents > 0, reason, notes: notes || undefined, waiveEarlyCancelFee: waive || mode === "now" })} />}>
       <div className="space-y-3">
-        {earlyFee > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={() => setMode("renewal")} className={`rounded-apple border p-3 text-left text-apple-sm ${mode === "renewal" ? "border-apple-text bg-apple-fill-secondary" : "border-apple-border hover:border-apple-text/40"}`}>
+            <div className="font-medium text-apple-text">Cancel at next renewal</div>
+            <p className="mt-1 text-apple-xs text-apple-text-secondary">Access stays through {fmtDate(sub.paidThroughDate ?? sub.nextInvoiceDate)}. They won&apos;t be charged again. We&apos;ll email them that the cancellation is scheduled.</p>
+          </button>
+          <button type="button" onClick={() => setMode("now")} className={`rounded-apple border p-3 text-left text-apple-sm ${mode === "now" ? "border-apple-red bg-apple-red/5" : "border-apple-border hover:border-apple-text/40"}`}>
+            <div className="font-medium text-apple-text">Cancel now & refund</div>
+            <p className="mt-1 text-apple-xs text-apple-text-secondary">Ends immediately, removes door access, and refunds their last payment. They get emails for both the cancel and the refund.</p>
+          </button>
+        </div>
+        {mode === "now" && last === undefined && <p className="text-apple-xs text-apple-text-tertiary">Looking up their last payment…</p>}
+        {mode === "now" && last && <p className="rounded-apple bg-apple-fill-secondary p-3 text-apple-sm text-apple-text">Last payment: <Money cents={last.amountCents} />{last.invoiceNumber ? ` · invoice #${last.invoiceNumber}` : ""} · {fmtDate(last.paidAt)}. Refundable now: <Money cents={last.refundableCents} />.</p>}
+        {mode === "now" && last === null && <p className="rounded-apple bg-apple-orange/10 p-3 text-apple-sm text-apple-orange">No refundable card payment on file. Cancelling now will still end access; refund a specific charge from Payments if needed.</p>}
+        {earlyFee > 0 && mode === "renewal" && (
           <div className="rounded-apple border border-apple-orange/40 bg-apple-orange/5 p-3 text-apple-sm text-apple-text">
             <p className="font-medium text-apple-orange">Inside promotional minimum term</p>
-            <p className="mt-0.5 text-apple-xs text-apple-text-secondary">
-              This member signed up with a {sub.commitmentMonths}-month minimum (through {fmtDate(sub.commitmentEndsAt)}). Cancelling now charges the <Money cents={earlyFee} /> promotional discount back to their card on file, as they agreed at signup.
-            </p>
-            <div className="mt-2"><Checkbox label="Waive the early-cancellation fee" checked={waive} onChange={setWaive} /></div>
+            <p className="mt-0.5 text-apple-xs text-apple-text-secondary">Cancelling before {fmtDate(sub.commitmentEndsAt)} would charge the <Money cents={earlyFee} /> promotional discount back. Scheduling for renewal avoids that.</p>
+            <div className="mt-2"><Checkbox label="Waive the early-cancellation fee if they cancel sooner" checked={waive} onChange={setWaive} /></div>
           </div>
         )}
-        <Select label="When" value={timing} onChange={(e) => setTiming(e.target.value as never)}>
-          <option value="end_of_period">End of paid period ({fmtDate(sub.paidThroughDate)})</option>
-          <option value="date">Specific date</option>
-          <option value="immediate">Immediately</option>
-        </Select>
-        {timing === "date" && <Input label="Cancel on" type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
         <Select label="Reason" value={reason} onChange={(e) => setReason(e.target.value)}>
           {CANCEL_REASONS.map((r) => <option key={r}>{r}</option>)}
         </Select>
         <Textarea label="Notes (internal)" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        <Input label="Cancellation fee ($)" type="number" min={0} step="0.01" value={fee} onChange={(e) => setFee(e.target.value)} hint="Optional — creates a one-off invoice" />
       </div>
     </Modal>
   );
@@ -346,37 +365,53 @@ function ExtendModal({ sub, busy, onClose, onSubmit }: { sub: Sub; busy: boolean
 }
 
 /* ---------------- Change plan ---------------- */
+type Preview = {
+  kind: "upgrade" | "downgrade" | "none";
+  dueTodayCents: number;
+  effectiveAt: string | null;
+  current: { displayName: string; netPriceCents: number; billingCadence: string };
+  target: { displayName: string; netPriceCents: number; guestCount: number; billingCadence: string };
+  requiresCard: boolean;
+  hasCard: boolean;
+};
 function ChangePlanModal({ sub, plans, busy, onClose, onSubmit }: { sub: Sub; plans: Plan[]; busy: boolean; onClose: () => void; onSubmit: (b: Record<string, unknown>) => void }) {
-  const others = plans.filter((p) => p.id !== sub.plan.id);
-  const [newPlanId, setNewPlanId] = React.useState(others[0]?.id ?? "");
-  const [proration, setProration] = React.useState<"PROSPECTIVE" | "RETROACTIVE" | "NONE">("PROSPECTIVE");
-  const [invoiceProration, setInvoiceProration] = React.useState(true);
+  const list = (plans.length ? plans : [sub.plan]).filter((p) => p.productType === "RECURRING" || p.id === sub.plan.id);
+  const [newPlanId, setNewPlanId] = React.useState(sub.plan.id);
   const [guests, setGuests] = React.useState(sub.guestCount);
-  const [price, setPrice] = React.useState("");
-  const newPlan = others.find((p) => p.id === newPlanId);
-  const maxG = newPlan ? maxGuestsFor(newPlan) : 0;
+  const [preview, setPreview] = React.useState<Preview | null>(null);
+  const newPlan = list.find((p) => p.id === newPlanId) ?? sub.plan;
+  const maxG = maxGuestsFor(newPlan);
   const guestCount = Math.min(guests, maxG);
-  const computed = newPlan ? newPlan.priceCents + guestCentsFor(newPlan, guestCount) : 0;
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      api<{ preview: Preview }>(`/api/admin/memberships/${sub.id}/change-plan?planId=${encodeURIComponent(newPlanId)}&guestCount=${guestCount}`)
+        .then((r) => setPreview(r.preview))
+        .catch(() => setPreview(null));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [sub.id, newPlanId, guestCount]);
+  const label = preview?.kind === "upgrade" && preview.dueTodayCents > 0
+    ? `Charge $${(preview.dueTodayCents / 100).toFixed(2)} & switch`
+    : preview?.kind === "downgrade"
+      ? "Schedule for next renewal"
+      : "Change plan";
   return (
-    <Modal open onClose={onClose} title="Change plan" description={`Switching from ${subName(sub)} (${(sub.priceCents / 100).toFixed(2)} / ${sub.billingCadence.toLowerCase()}).`} footer={<Footer onClose={onClose} busy={busy} label="Change plan" disabled={!newPlanId} onSubmit={() => onSubmit({ newPlanId, proration, invoiceProration, guestCount, priceOverrideCents: price ? Math.round(Number(price) * 100) : undefined })} />}>
+    <Modal open onClose={onClose} title="Upgrade or downgrade" description="Upgrades (including adding a guest) charge the prorated difference today. Downgrades take effect at the next renewal." footer={<Footer onClose={onClose} busy={busy} label={label} disabled={!preview || preview.kind === "none"} onSubmit={() => onSubmit({ newPlanId, guestCount })} />}>
       <div className="space-y-3">
-        <Select label="New plan" value={newPlanId} onChange={(e) => setNewPlanId(e.target.value)}>
-          {others.map((p) => <option key={p.id} value={p.id}>{p.name} — {(p.priceCents / 100).toFixed(2)} / {p.billingCadence.toLowerCase()}</option>)}
+        <Select label="Plan" value={newPlanId} onChange={(e) => { setNewPlanId(e.target.value); setGuests(0); }}>
+          {list.map((p) => <option key={p.id} value={p.id}>{p.name} — {(p.priceCents / 100).toFixed(2)} / {p.billingCadence.toLowerCase()}{p.id === sub.plan.id ? " (current)" : ""}</option>)}
         </Select>
-        {newPlan && maxG > 0 && <GuestSelect plan={newPlan} value={guestCount} onChange={setGuests} />}
-        {newPlan && (
-          <div className="rounded-apple bg-apple-fill-secondary p-3 text-apple-sm">
-            <div className="flex items-center justify-between"><span className="text-apple-text-secondary">New membership</span><span className="font-medium text-apple-text">{membershipDisplayName(newPlan.name, guestCount, newPlan.productType)}</span></div>
-            <div className="mt-1 flex items-center justify-between"><span className="text-apple-text-secondary">New price</span><span className="font-medium text-apple-text"><Money cents={price ? Math.round(Number(price) * 100) : computed} /> / {newPlan.billingCadence.toLowerCase()}</span></div>
+        {maxG > 0 && <GuestSelect plan={newPlan} value={guestCount} onChange={setGuests} />}
+        {preview && (
+          <div className="rounded-apple bg-apple-fill-secondary p-3 text-apple-sm space-y-1">
+            <div className="flex justify-between"><span className="text-apple-text-secondary">Now</span><span>{preview.current.displayName} · <Money cents={preview.current.netPriceCents} /> / {preview.current.billingCadence.toLowerCase()}</span></div>
+            <div className="flex justify-between"><span className="text-apple-text-secondary">New</span><span className="font-medium text-apple-text">{preview.target.displayName} · <Money cents={preview.target.netPriceCents} /> / {preview.target.billingCadence.toLowerCase()}</span></div>
+            {preview.kind === "upgrade" && <div className="flex justify-between"><span className="text-apple-text-secondary">Due today</span><span className="font-medium"><Money cents={preview.dueTodayCents} /> prorated</span></div>}
+            {preview.kind === "downgrade" && <p className="text-apple-xs text-apple-text-secondary">Starts {preview.effectiveAt ? fmtDate(preview.effectiveAt) : "at the next renewal"}. Nothing is charged today.</p>}
+            {preview.kind === "none" && <p className="text-apple-xs text-apple-text-tertiary">That&apos;s already their current plan.</p>}
+            {preview.requiresCard && !preview.hasCard && <p className="text-apple-xs text-apple-orange">No card on file — add one on the Payments tab first.</p>}
           </div>
         )}
-        <Input label="Price override ($)" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder={(computed / 100).toFixed(2)} hint="Leave blank for plan price + guests. Use this to keep a legacy or discounted rate." />
-        <Select label="Proration" value={proration} onChange={(e) => setProration(e.target.value as never)}>
-          <option value="PROSPECTIVE">Prospective — new price from the next invoice</option>
-          <option value="RETROACTIVE">Retroactive — prorate the current period</option>
-          <option value="NONE">None</option>
-        </Select>
-        {proration !== "NONE" && <Checkbox label="Invoice the prorated difference now (if any)" checked={invoiceProration} onChange={setInvoiceProration} />}
       </div>
     </Modal>
   );

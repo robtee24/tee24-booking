@@ -39,6 +39,11 @@ export const SYSTEM_MERGE_FIELDS: { key: string; label: string }[] = [
   { key: "checkin_code", label: "Front-desk check-in code" },
   { key: "referral_code", label: "Referral code" },
   { key: "sale_total", label: "Sale total" },
+  { key: "previous_plan", label: "Previous plan (plan changes)" },
+  { key: "new_price", label: "New per-period price (plan changes)" },
+  { key: "change_summary", label: "Plan-change summary sentence" },
+  { key: "freeze_start", label: "Freeze start date" },
+  { key: "reason", label: "Reason (door access on/off)" },
 ];
 
 const portal = "{portal_url}";
@@ -126,6 +131,30 @@ export const SYSTEM_TEMPLATES: SystemTemplateDef[] = [
     description: "Freeze ended; access restored.",
     email: { defaultOn: true, subject: "Welcome back — your membership is active again", body: `Hi {first_name},<br><br>Your {plan_name} membership is active again and door access is restored. See you soon!` },
     sms: { defaultOn: false, body: `Your {plan_name} membership is active again. Welcome back!` },
+  },
+  {
+    eventKey: "membership.freeze-scheduled",
+    group: "Memberships",
+    label: "Freeze scheduled",
+    description: "A future freeze was booked; billing and access pause on the start date.",
+    email: { defaultOn: true, subject: "Your membership freeze is scheduled", body: `Hi {first_name},<br><br>Your {plan_name} membership will be frozen starting <strong>{freeze_start}</strong> and resumes on <strong>{due_date}</strong>. Billing and door access pause for that window.<br><br>Need to change it? Reply to this email or visit <a href="${portal}">${portal}</a>.` },
+    sms: { defaultOn: false, body: `Your {plan_name} membership freezes {freeze_start} and resumes {due_date}. Questions? ${portal}` },
+  },
+  {
+    eventKey: "membership.plan-changed",
+    group: "Memberships",
+    label: "Plan changed / upgraded",
+    description: "An upgrade, downgrade or guest add-on took effect. {amount} is any prorated charge made today.",
+    email: { defaultOn: true, subject: "Your membership is now {plan_name}", body: `Hi {first_name},<br><br>Your membership has been changed from <strong>{previous_plan}</strong> to <strong>{plan_name}</strong>.<br><br>{change_summary}<br><br>Going forward you'll be billed <strong>{new_price}</strong> starting {due_date}.<br><br>Manage your membership: <a href="${portal}">${portal}</a>` },
+    sms: { defaultOn: true, body: `Your membership is now {plan_name}. {change_summary} Next bill: {new_price} on {due_date}. ${portal}` },
+  },
+  {
+    eventKey: "membership.downgrade-scheduled",
+    group: "Memberships",
+    label: "Change scheduled for next renewal",
+    description: "A downgrade (or guest removal) was queued; it takes effect at the next renewal.",
+    email: { defaultOn: true, subject: "Your membership change is scheduled", body: `Hi {first_name},<br><br>We've scheduled your switch from <strong>{previous_plan}</strong> to <strong>{plan_name}</strong>. You keep your current plan through <strong>{due_date}</strong>; the new plan and price (<strong>{new_price}</strong>) start then. Nothing is charged today.<br><br>Changed your mind? You can cancel the scheduled change any time: <a href="${portal}">${portal}</a>` },
+    sms: { defaultOn: true, body: `Your switch to {plan_name} ({new_price}) starts {due_date}. Nothing is charged today. Change your mind: ${portal}` },
   },
   {
     eventKey: "membership.expiring",
@@ -253,6 +282,22 @@ export const SYSTEM_TEMPLATES: SystemTemplateDef[] = [
     email: { defaultOn: false, subject: "Checked in at {location_name}", body: `Hi {first_name}, you're checked in at {location_name}. Enjoy your session!` },
     sms: { defaultOn: false, body: `Checked in at {location_name}. Enjoy, {first_name}!` },
   },
+  {
+    eventKey: "access.enabled",
+    group: "Attendance",
+    label: "Door access turned on",
+    description: "Sent when 24/7 door access is granted or restored. Kisi separately emails the mobile-key invite.",
+    email: { defaultOn: true, subject: "Your door access is active", body: `Hi {first_name},<br><br>Your 24/7 door access at {location_name} is active ({reason}). Use the Tee24 app or your Kisi mobile key to unlock the door.<br><br>If you haven't set up your key yet, look for an email from Kisi with your invitation.` },
+    sms: { defaultOn: true, body: `Your door access at {location_name} is active. Unlock with the Tee24 app or your Kisi key.` },
+  },
+  {
+    eventKey: "access.disabled",
+    group: "Attendance",
+    label: "Door access turned off",
+    description: "Sent when door access is revoked (cancellation, freeze, failed payment, staff action).",
+    email: { defaultOn: true, subject: "Your door access has been turned off", body: `Hi {first_name},<br><br>Your door access at {location_name} has been turned off. Reason: <strong>{reason}</strong>.<br><br>If this is unexpected, reply to this email or visit <a href="${portal}">${portal}</a> to review your account.` },
+    sms: { defaultOn: true, body: `Your door access at {location_name} is now off ({reason}). Questions? ${portal}` },
+  },
 
   // ── Sales ────────────────────────────────────────────────────────────────
   {
@@ -310,4 +355,9 @@ export const SAMPLE_MEMBER_VARS: Record<string, string> = {
   checkin_code: "4821",
   referral_code: "JS4K2P",
   sale_total: "$32.50",
+  previous_plan: "The Noonan",
+  new_price: "$125.00/month",
+  change_summary: "We charged $16.13 today for the rest of your current period.",
+  freeze_start: "Nov 1, 2026",
+  reason: "Membership cancelled",
 };

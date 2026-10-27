@@ -26,6 +26,7 @@ import { Prisma } from "@prisma/client";
 import {
   kisiAddUserToGroup,
   kisiCreateUser,
+  kisiDeleteMember,
   kisiListUserGroups,
   kisiRemoveUserFromGroup,
   kisiSendCredentialLink,
@@ -75,6 +76,7 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
       kisiUserId: true,
       kisiAccessEnabled: true,
       kisiAccessReason: true,
+      kisiAccessUpdatedAt: true,
       locationId: true,
       organizationId: true,
     },
@@ -87,7 +89,11 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
     return { enabled: member.kisiAccessEnabled, reason: member.kisiAccessReason ?? "Migration freeze — Kisi managed by GymDesk" };
   }
 
-  // 1. Ensure Kisi user exists (lazy create on first activation)
+  const wasEnabled = member.kisiAccessEnabled;
+
+  // 1. Ensure Kisi user exists (lazy create on first activation / re-activation).
+  //    A member who lost access was deleted from Kisi outright, so re-enabling
+  //    creates a fresh Kisi identity and records it in MemberKisiLink.
   let kisiUserId = member.kisiUserId ? Number(member.kisiUserId) : null;
   if (desired.enabled && !kisiUserId) {
     try {
@@ -101,6 +107,9 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
         where: { id: member.id },
         data: { kisiUserId: String(created.id) },
       });
+      await prisma.memberKisiLink.create({
+        data: { memberId: member.id, kisiUserId: String(created.id), kisiMemberId: created.memberId != null ? String(created.memberId) : null, email: member.email.toLowerCase() },
+      }).catch((e) => console.warn("[access-sync] kisi link record failed", e));
       await kisiSendCredentialLink(created.id).catch((e: any) => {
         console.warn("[access-sync] failed to send credential link", e);
       });
@@ -144,8 +153,52 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
     }
   }
 
+  // 2b. Access revoked → remove the person from Kisi entirely. Leaving disabled
+  //     users in Kisi is how stale access accumulated under GymDesk. Unlock
+  //     history lives in our Visit table and MemberKisiLink keeps the old ids.
+  if (!desired.enabled && kisiUserId) {
+    try {
+      const r = await kisiDeleteMember({ userId: kisiUserId, email: member.email });
+      await prisma.member.update({ where: { id: member.id }, data: { kisiUserId: null } });
+      await prisma.memberKisiLink.updateMany({
+        where: { memberId: member.id, kisiUserId: String(kisiUserId), unlinkedAt: null },
+        data: { unlinkedAt: new Date(), unlinkReason: humanizeReason(desired.reason), ...(r.kisiMemberId != null ? { kisiMemberId: String(r.kisiMemberId) } : {}) },
+      });
+      // Legacy GymDesk-era links never got a row — backfill one so history is complete.
+      const linked = await prisma.memberKisiLink.count({ where: { memberId: member.id, kisiUserId: String(kisiUserId) } });
+      if (!linked) {
+        await prisma.memberKisiLink.create({
+          data: { memberId: member.id, kisiUserId: String(kisiUserId), kisiMemberId: r.kisiMemberId != null ? String(r.kisiMemberId) : null, email: member.email.toLowerCase(), linkedAt: member.kisiAccessUpdatedAt ?? new Date(), unlinkedAt: new Date(), unlinkReason: humanizeReason(desired.reason) },
+        });
+      }
+    } catch (err: any) {
+      console.error("[access-sync] kisiDeleteMember failed", err);
+      await adminNotify({
+        organizationId: member.organizationId,
+        locationId: member.locationId,
+        kind: "integration.alert",
+        severity: "ERROR",
+        title: "Kisi removal failed",
+        body: `${member.firstName} ${member.lastName} lost door access but could not be removed from Kisi: ${err.message}. Their door groups were revoked; remove them in Kisi manually or re-run "Resync".`,
+        link: `/admin/locations/${member.locationId}/members/list/${member.id}`,
+        data: { memberId: member.id, kisiUserId, error: err.message },
+      });
+    }
+  }
+
   // 3. Persist mirror + audit + admin notification
   const result = await persistMirror(member.id, desired.enabled, desired.reason);
+
+  // Member-facing message only when access actually flipped (not on nightly re-asserts).
+  if (wasEnabled !== desired.enabled) {
+    const { emitMemberEvent } = await import("@/lib/events");
+    void emitMemberEvent(desired.enabled ? "access.enabled" : "access.disabled", {
+      memberId: member.id,
+      locationId: member.locationId,
+      organizationId: member.organizationId,
+      vars: { reason: humanizeReason(desired.reason) },
+    });
+  }
 
   void audit({
     organizationId: member.organizationId,
@@ -239,9 +292,10 @@ export async function computeDesiredAccessState(memberId: string): Promise<Desir
 
   if (!member) return { enabled: false, reason: "membership_cancelled", desiredGroupIds: [] };
 
-  // Disabled if no active subscription
+  // Disabled if no active subscription (frozen members read as frozen, not cancelled)
   if (member.membershipSubscriptions.length === 0) {
-    return { enabled: false, reason: "membership_cancelled", desiredGroupIds: [] };
+    const frozen = await prisma.membershipSubscription.count({ where: { memberId, status: "FROZEN" } });
+    return { enabled: false, reason: frozen ? "freeze_start" : "membership_cancelled", desiredGroupIds: [] };
   }
 
   // Disabled if any required document is unsigned past grace

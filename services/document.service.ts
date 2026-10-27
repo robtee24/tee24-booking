@@ -17,6 +17,7 @@ import { sendEmail } from "@/lib/notify";
 import { sendQuoSms } from "@/lib/quo";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { memberBaseUrl } from "@/lib/public-url";
+import { emitMemberEvent } from "@/lib/events";
 
 export type CreateDocumentInput = {
   organizationId?: string | null;
@@ -57,6 +58,46 @@ export async function createDocument(input: CreateDocumentInput, actorId?: strin
   });
 
   return doc;
+}
+
+export type UpdateDocumentInput = {
+  name?: string;
+  description?: string | null;
+  bodyHtml?: string;
+  requiredAtSignup?: boolean;
+  expiresAfterDays?: number | null;
+  graceAfterExpiryDays?: number | null;
+  active?: boolean;
+};
+
+export async function updateDocument(documentId: string, input: UpdateDocumentInput, actorId?: string) {
+  const prisma = getPrisma();
+  const existing = await prisma.document.findUnique({ where: { id: documentId } });
+  if (!existing) throw new Error("Document not found");
+  const bumpVersion = input.bodyHtml != null && input.bodyHtml !== existing.bodyHtml;
+  const updated = await prisma.document.update({
+    where: { id: documentId },
+    data: {
+      name: input.name ?? undefined,
+      description: input.description !== undefined ? input.description : undefined,
+      bodyHtml: input.bodyHtml ?? undefined,
+      requiredAtSignup: input.requiredAtSignup ?? undefined,
+      expiresAfterDays: input.expiresAfterDays !== undefined ? input.expiresAfterDays : undefined,
+      graceAfterExpiryDays: input.graceAfterExpiryDays ?? undefined,
+      active: input.active ?? undefined,
+      ...(bumpVersion ? { version: { increment: 1 } } : {}),
+    },
+  });
+  void audit({
+    organizationId: existing.organizationId,
+    actorId,
+    action: "document.update",
+    entityType: "Document",
+    entityId: documentId,
+    before: existing,
+    after: updated,
+  });
+  return updated;
 }
 
 export async function publishNewVersion(opts: {
@@ -377,6 +418,14 @@ export async function expireOldDocumentSignings(now = new Date()) {
         data: { status: "EXPIRED" },
       });
       expired++;
+      const member = await prisma.member.findUnique({ where: { id: a.memberId }, select: { locationId: true, organizationId: true } });
+      void emitMemberEvent("document.expired", {
+        memberId: a.memberId,
+        locationId: member?.locationId,
+        organizationId: member?.organizationId,
+        refs: { assignmentId: a.id },
+        vars: { documentName: a.document.name },
+      });
       // Re-evaluate access if document is required
       if (a.document.requiredAtSignup) {
         const desired = await computeDesiredAccessState(a.memberId);

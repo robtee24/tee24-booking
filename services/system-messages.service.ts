@@ -145,6 +145,11 @@ export function buildMemberVars(member: MemberForVars, extra?: Record<string, un
     document_name: "",
     card_last4: "",
     sale_total: "",
+    previous_plan: "",
+    new_price: "",
+    change_summary: "",
+    freeze_start: "",
+    reason: "",
     // camelCase aliases for legacy {{firstName}} templates
     firstName: member.firstName ?? "",
     lastName: member.lastName ?? "",

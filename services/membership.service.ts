@@ -16,6 +16,7 @@ import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { adminNotify } from "@/lib/admin-notify";
+import { emitMemberEvent } from "@/lib/events";
 import { getSquareCreds, squareCancelSubscription } from "@/lib/square";
 import type { MembershipSubscription, MembershipPlan } from "@prisma/client";
 import { earlyCancelFeeDue, guestCentsFor, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
@@ -186,6 +187,7 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
       cancelledAt: isImmediate ? new Date() : null,
       cancelledById: actorId ?? null,
       endDate: isImmediate ? new Date() : paidThrough,
+      autoRenew: false,
     },
   });
 
@@ -218,6 +220,9 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
   });
 
   if (isImmediate) {
+    if (await noOtherLiveSubscriptions(sub.memberId, sub.id)) {
+      await prisma.member.update({ where: { id: sub.memberId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
     const desired = await computeDesiredAccessState(sub.memberId);
     void applyAccessState(sub.memberId, desired);
   }
@@ -259,6 +264,109 @@ export async function cancelSubscription(input: CancelInput, actorId?: string) {
   }
 
   return Object.assign(updated, { earlyCancelFee });
+}
+
+/**
+ * The most recent successful card payment for a subscription (what "Cancel now &
+ * refund" gives back). Prefers charges tied to the subscription's invoices; falls
+ * back to the member's latest membership charge for legacy/imported rows.
+ */
+export async function lastMembershipPayment(subscriptionId: string) {
+  const prisma = getPrisma();
+  const sub = await prisma.membershipSubscription.findUnique({ where: { id: subscriptionId }, select: { memberId: true } });
+  if (!sub) return null;
+  const where = { status: { in: ["SUCCEEDED", "PARTIALLY_REFUNDED"] }, squarePaymentId: { not: null } };
+  const charge =
+    (await prisma.charge.findFirst({ where: { ...where, OR: [{ subscriptionId }, { invoice: { subscriptionId } }] }, orderBy: { createdAt: "desc" }, include: { refunds: { where: { status: { notIn: ["REJECTED", "FAILED"] } }, select: { amountCents: true } }, invoice: { select: { number: true, description: true } } } })) ??
+    (await prisma.charge.findFirst({ where: { ...where, memberId: sub.memberId, invoice: { subscriptionId: { not: null } } }, orderBy: { createdAt: "desc" }, include: { refunds: { where: { status: { notIn: ["REJECTED", "FAILED"] } }, select: { amountCents: true } }, invoice: { select: { number: true, description: true } } } }));
+  if (!charge) return null;
+  const refunded = charge.refunds.reduce((s, r) => s + r.amountCents, 0);
+  const refundableCents = Math.max(0, charge.amountCents - refunded);
+  return { chargeId: charge.id, amountCents: charge.amountCents, refundedCents: refunded, refundableCents, paidAt: charge.createdAt, invoiceNumber: charge.invoice?.number ?? null, description: charge.invoice?.description ?? null };
+}
+
+/** True when the member has no other membership that still grants anything. */
+async function noOtherLiveSubscriptions(memberId: string, exceptSubscriptionId: string) {
+  const n = await getPrisma().membershipSubscription.count({
+    where: { memberId, id: { not: exceptSubscriptionId }, status: { in: ["ACTIVE", "CANCEL_SCHEDULED", "FROZEN", "FREEZE_SCHEDULED", "COMP", "PENDING"] } },
+  });
+  return n === 0;
+}
+
+export type CancelNowInput = {
+  subscriptionId: string;
+  reason: string;
+  notes?: string;
+  /** Refund the most recent successful membership payment back to the card. */
+  refundLastPayment: boolean;
+  /** Partial refund override (cents). Defaults to the full refundable amount. */
+  refundAmountCents?: number;
+};
+
+/**
+ * "Cancel now & refund": ends the membership immediately, drops any open/scheduled
+ * invoices for it, revokes door access (which removes the member from Kisi), and
+ * optionally refunds the last payment. Member messages: membership.cancelled and
+ * payment.refunded (the latter is emitted by refundCharge).
+ */
+export async function cancelNowAndRefund(input: CancelNowInput, actorId?: string) {
+  const prisma = getPrisma();
+  const sub = await prisma.membershipSubscription.findUnique({ where: { id: input.subscriptionId }, include: { member: true, plan: true } });
+  if (!sub) throw new Error("Subscription not found");
+  if (sub.status === "CANCELLED") throw new Error("This membership is already cancelled");
+
+  const payment = input.refundLastPayment ? await lastMembershipPayment(sub.id) : null;
+  if (input.refundLastPayment && (!payment || payment.refundableCents <= 0)) {
+    throw new Error("No refundable card payment was found for this membership. Cancel without a refund, or refund a specific charge from the Payments tab.");
+  }
+
+  // 1. End it now (the early-cancel fee is waived — we're giving money back, not taking it).
+  const cancelled = await cancelSubscription({ subscriptionId: sub.id, immediate: true, reason: input.reason, notes: input.notes, waiveEarlyCancelFee: true }, actorId);
+  await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { autoRenew: false, pendingPlanId: null, pendingGuestCount: null, pendingPriceCents: null, pendingChangeAt: null } });
+
+  // 2. Nothing further should be collected for this membership.
+  const open = await prisma.invoice.findMany({ where: { subscriptionId: sub.id, status: { in: ["SCHEDULED", "PAST_DUE", "FAILED"] } }, select: { id: true } });
+  const { writeOffInvoice, refundCharge } = await import("./billing.service");
+  for (const inv of open) await writeOffInvoice(inv.id, { reason: "Membership cancelled immediately", actorId }).catch((e) => console.warn("[cancelNow] write-off failed", inv.id, e));
+
+  // 3. Member record
+  if (await noOtherLiveSubscriptions(sub.memberId, sub.id)) {
+    await prisma.member.update({ where: { id: sub.memberId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+  }
+
+  // 4. Refund
+  let refund: { chargeId: string; amountCents: number } | null = null;
+  let refundError: string | null = null;
+  if (payment) {
+    const amount = Math.min(payment.refundableCents, Math.max(1, Math.round(input.refundAmountCents ?? payment.refundableCents)));
+    try {
+      await refundCharge({ chargeId: payment.chargeId, amountCents: amount, reason: `Membership cancelled: ${input.reason}`, actorId });
+      refund = { chargeId: payment.chargeId, amountCents: amount };
+    } catch (e) {
+      refundError = e instanceof Error ? e.message : String(e);
+      void adminNotify({
+        organizationId: sub.member.organizationId,
+        locationId: sub.locationId,
+        kind: "integration.alert",
+        severity: "ERROR",
+        title: `Refund failed for ${sub.member.firstName} ${sub.member.lastName}`,
+        body: `Membership was cancelled but the ${(amount / 100).toFixed(2)} refund did not go through: ${refundError}. Refund it from the Payments tab.`,
+        link: `/admin/locations/${sub.locationId}/members/list/${sub.memberId}`,
+        data: { subscriptionId: sub.id, chargeId: payment.chargeId },
+      });
+    }
+  }
+
+  void emitMemberEvent("membership.cancelled", {
+    memberId: sub.memberId,
+    locationId: sub.locationId,
+    organizationId: sub.member.organizationId,
+    actorAdminId: actorId ?? null,
+    refs: { subscriptionId: sub.id },
+    vars: { planName: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType), reason: input.reason, dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), amount: refund ? `$${(refund.amountCents / 100).toFixed(2)}` : "" },
+  });
+
+  return { subscription: cancelled, voidedInvoices: open.length, refund, refundError };
 }
 
 export async function undoCancellation(subscriptionId: string, actorId?: string) {
@@ -576,10 +684,20 @@ export async function applyScheduledCancellations(now = new Date()) {
   for (const s of due) {
     await prisma.membershipSubscription.update({
       where: { id: s.id },
-      data: { status: "CANCELLED", cancelledAt: now, endDate: now },
+      data: { status: "CANCELLED", cancelledAt: now, endDate: now, autoRenew: false },
     });
+    if (await noOtherLiveSubscriptions(s.memberId, s.id)) {
+      await prisma.member.update({ where: { id: s.memberId }, data: { status: "CANCELLED" } }).catch(() => undefined);
+    }
     const desired = await computeDesiredAccessState(s.memberId);
     void applyAccessState(s.memberId, desired);
+    const plan = await prisma.membershipPlan.findUnique({ where: { id: s.planId }, select: { name: true, productType: true } });
+    void emitMemberEvent("membership.cancelled", {
+      memberId: s.memberId,
+      locationId: s.locationId,
+      refs: { subscriptionId: s.id },
+      vars: { planName: plan ? membershipDisplayName(plan.name, s.guestCount, plan.productType) : undefined, reason: s.cancellationReason ?? undefined, dueDate: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) },
+    });
   }
   return due.length;
 }
@@ -591,8 +709,15 @@ export async function applyScheduledFreezeTransitions(now = new Date()) {
   });
   for (const s of startNow) {
     await prisma.membershipSubscription.update({ where: { id: s.id }, data: { status: "FROZEN" } });
+    await prisma.member.update({ where: { id: s.memberId, status: "ACTIVE" }, data: { status: "FROZEN" } }).catch(() => undefined);
     const desired = await computeDesiredAccessState(s.memberId);
     void applyAccessState(s.memberId, desired);
+    void emitMemberEvent("membership.frozen", {
+      memberId: s.memberId,
+      locationId: s.locationId,
+      refs: { subscriptionId: s.id },
+      vars: { dueDate: s.freezeResumeDate ? s.freezeResumeDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "", reason: s.freezeReason ?? undefined },
+    });
   }
 
   const resumeNow = await prisma.membershipSubscription.findMany({
@@ -601,10 +726,12 @@ export async function applyScheduledFreezeTransitions(now = new Date()) {
   for (const s of resumeNow) {
     await prisma.membershipSubscription.update({
       where: { id: s.id },
-      data: { status: "ACTIVE", freezeStartDate: null, freezeResumeDate: null },
+      data: { status: "ACTIVE", freezeStartDate: null, freezeResumeDate: null, autoRenew: true, ...(s.nextInvoiceDate && s.nextInvoiceDate < now ? { nextInvoiceDate: now } : {}) },
     });
+    await prisma.member.update({ where: { id: s.memberId, status: "FROZEN" }, data: { status: "ACTIVE" } }).catch(() => undefined);
     const desired = await computeDesiredAccessState(s.memberId);
     void applyAccessState(s.memberId, desired);
+    void emitMemberEvent("membership.resumed", { memberId: s.memberId, locationId: s.locationId, refs: { subscriptionId: s.id } });
   }
 
   return { started: startNow.length, resumed: resumeNow.length };

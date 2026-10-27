@@ -118,7 +118,9 @@ export function TagsEditor({ slug, memberId, tags: initial }: { slug: string; me
 /* Kisi toggle                                                         */
 /* ------------------------------------------------------------------ */
 
-export function KisiAccessCard({ memberId, enabled: initial, reason, kisiUserId }: { memberId: string; enabled: boolean; reason: string | null; kisiUserId: string | null }) {
+export type KisiLinkRow = { kisiUserId: string; linkedAt: string; unlinkedAt: string | null; unlinkReason: string | null };
+
+export function KisiAccessCard({ memberId, enabled: initial, reason, kisiUserId, history = [] }: { memberId: string; enabled: boolean; reason: string | null; kisiUserId: string | null; history?: KisiLinkRow[] }) {
   const { toast } = useToast();
   const router = useRouter();
   const [enabled, setEnabled] = React.useState(initial);
@@ -167,17 +169,32 @@ export function KisiAccessCard({ memberId, enabled: initial, reason, kisiUserId 
         hint={reason ? `Reason: ${reason.replace(/_/g, " ")}` : "Follows membership status and billing automatically."}
       />
       <div className="flex flex-wrap items-center gap-2 text-apple-xs text-apple-text-tertiary">
-        <span>{kisiUserId ? `Kisi user ${kisiUserId}` : "Not linked to a Kisi user yet"}</span>
+        <span>{kisiUserId ? `Kisi user ${kisiUserId}` : enabled ? "Kisi user will be created on next sync" : "Not in Kisi (removed when access was turned off)"}</span>
         <button type="button" onClick={() => void resync()} disabled={busy !== null} className="inline-flex items-center gap-1 font-medium text-apple-blue hover:underline disabled:opacity-50">
           <RefreshCw className={`h-3 w-3 ${busy === "resync" ? "animate-spin" : ""}`} /> Re-sync from status
         </button>
       </div>
 
+      {history.length > 0 && (
+        <details className="text-apple-xs text-apple-text-tertiary">
+          <summary className="cursor-pointer select-none">Kisi history ({history.length})</summary>
+          <ul className="mt-1 space-y-0.5">
+            {history.map((h) => (
+              <li key={`${h.kisiUserId}-${h.linkedAt}`}>
+                User {h.kisiUserId} · added {new Date(h.linkedAt).toLocaleDateString()}{h.unlinkedAt ? ` · removed ${new Date(h.unlinkedAt).toLocaleDateString()}${h.unlinkReason ? ` (${h.unlinkReason})` : ""}` : " · current"}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <Modal
         open={confirm !== null}
         onClose={() => setConfirm(null)}
-        title={confirm ? "Manually enable door access?" : "Manually disable door access?"}
-        description="This overrides the automatic rule until the next re-sync and is recorded in the audit log."
+        title={confirm ? "Enable door access?" : "Disable door access?"}
+        description={confirm
+          ? "Creates (or re-creates) this member in Kisi and grants their plan's door groups. Kisi emails them a mobile-key invite; we send a confirmation."
+          : "Removes this member from Kisi completely — mobile key, groups and shares. Their unlock history stays in Tee24. We notify the member. Automatic rules (membership, billing) can re-enable it on the next sync."}
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="secondary" onClick={() => setConfirm(null)}>Cancel</Button>

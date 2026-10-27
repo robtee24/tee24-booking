@@ -239,12 +239,60 @@ export type ApplyResult =
   | { applied: "now"; displayName: string; chargedCents: number; invoiceId: string | null }
   | { applied: "scheduled"; displayName: string; effectiveAt: string };
 
+function fmtMoney(cents: number) {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+function fmtDateLong(iso: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function emitPlanChangeEvent(opts: {
+  preview: ChangePreview;
+  applied: "now" | "scheduled";
+  memberId: string;
+  locationId: string;
+  organizationId: string | null;
+  subscriptionId: string;
+  chargedCents: number;
+  invoiceId?: string | null;
+  actorAdminId?: string | null;
+}) {
+  const { preview } = opts;
+  const due = fmtDateLong(preview.effectiveAt);
+  const changeSummary =
+    opts.applied === "scheduled"
+      ? `You keep ${preview.current.displayName} through ${due}. Nothing is charged today.`
+      : opts.chargedCents > 0
+        ? `We charged ${fmtMoney(opts.chargedCents)} today for the rest of this period.`
+        : "No extra charge today.";
+  void emitMemberEvent(opts.applied === "scheduled" ? "membership.downgrade-scheduled" : "membership.plan-changed", {
+    memberId: opts.memberId,
+    locationId: opts.locationId,
+    organizationId: opts.organizationId,
+    actorAdminId: opts.actorAdminId ?? null,
+    refs: { subscriptionId: opts.subscriptionId, invoiceId: opts.invoiceId ?? undefined },
+    vars: {
+      planName: preview.target.displayName,
+      previousPlan: preview.current.displayName,
+      newPrice: `${fmtMoney(preview.target.netPriceCents)} / ${preview.target.billingCadence.toLowerCase()}`,
+      changeSummary,
+      dueDate: due,
+      amount: opts.chargedCents > 0 ? fmtMoney(opts.chargedCents) : "",
+    },
+  });
+}
+
 /** Apply a previewed change. Throws PortalError with a member-friendly message on any problem. */
-export async function applyChange(memberId: string, input: { planId?: string | null; guestCount: number }): Promise<ApplyResult> {
+export async function applyChange(
+  memberId: string,
+  input: { planId?: string | null; guestCount: number },
+  opts?: { force?: boolean; actorId?: string },
+): Promise<ApplyResult> {
   const prisma = getPrisma();
   const now = new Date();
   const preview = await previewChange(memberId, input, now);
-  if (preview.mode === "request") throw new PortalError(preview.requestReason ?? "This change needs a team member", 409);
+  if (preview.mode === "request" && !opts?.force) throw new PortalError(preview.requestReason ?? "This change needs a team member", 409);
   if (preview.kind === "none") throw new PortalError("That's already your current plan");
 
   const sub = (await loadSub(memberId))!;
@@ -261,15 +309,17 @@ export async function applyChange(memberId: string, input: { planId?: string | n
     if (!effectiveAt) {
       // No renewal date on file: apply immediately (nothing to protect).
       await applySubscriptionChange(sub, target, preview.target.guestCount, price.storedPriceCents, price.guestCents, memberId);
-      await notifyStaff(member, sub.id, `Plan change · ${name}`, `${name} switched from ${preview.current.displayName} to ${displayName} (${fmt(price.netPriceCents)}/${sub.billingCadence.toLowerCase()}) via the clubhouse.`);
+      emitPlanChangeEvent({ preview, applied: "now", memberId, locationId: member.locationId, organizationId: member.organizationId, subscriptionId: sub.id, chargedCents: 0, actorAdminId: opts?.actorId ?? null });
+      await notifyStaff(member, sub.id, `Plan change · ${name}`, `${name} switched from ${preview.current.displayName} to ${displayName} (${fmtMoney(price.netPriceCents)}/${sub.billingCadence.toLowerCase()})${opts?.force ? "" : " via the clubhouse"}.`);
       return { applied: "now", displayName, chargedCents: 0, invoiceId: null };
     }
     await prisma.membershipSubscription.update({
       where: { id: sub.id },
       data: { pendingPlanId: target.id, pendingGuestCount: preview.target.guestCount, pendingPriceCents: price.storedPriceCents, pendingChangeAt: effectiveAt },
     });
-    void audit({ organizationId: member.organizationId, actorRole: "MEMBER", action: "membership.plan-change", entityType: "MembershipSubscription", entityId: sub.id, metadata: { via: "portal", memberId, scheduled: true, effectiveAt, planId: target.id, guestCount: preview.target.guestCount, priceCents: price.storedPriceCents } });
-    await notifyStaff(member, sub.id, `Scheduled plan change · ${name}`, `${name} scheduled a change from ${preview.current.displayName} to ${displayName} (${fmt(price.netPriceCents)}/${sub.billingCadence.toLowerCase()}) effective ${effectiveAt.toLocaleDateString("en-US")} via the clubhouse.`);
+    void audit({ organizationId: member.organizationId, actorId: opts?.actorId, actorRole: opts?.force ? "ADMIN" : "MEMBER", action: "membership.plan-change", entityType: "MembershipSubscription", entityId: sub.id, metadata: { via: opts?.force ? "admin" : "portal", memberId, scheduled: true, effectiveAt, planId: target.id, guestCount: preview.target.guestCount, priceCents: price.storedPriceCents } });
+    emitPlanChangeEvent({ preview, applied: "scheduled", memberId, locationId: member.locationId, organizationId: member.organizationId, subscriptionId: sub.id, chargedCents: 0, actorAdminId: opts?.actorId ?? null });
+    await notifyStaff(member, sub.id, `Scheduled plan change · ${name}`, `${name} scheduled a change from ${preview.current.displayName} to ${displayName} (${fmtMoney(price.netPriceCents)}/${sub.billingCadence.toLowerCase()}) effective ${effectiveAt.toLocaleDateString("en-US")}${opts?.force ? "" : " via the clubhouse"}.`);
     return { applied: "scheduled", displayName, effectiveAt: effectiveAt.toISOString() };
   }
 
@@ -304,14 +354,8 @@ export async function applyChange(memberId: string, input: { planId?: string | n
 
   await applySubscriptionChange(sub, target, preview.target.guestCount, price.storedPriceCents, price.guestCents, memberId);
 
-  void emitMemberEvent("membership.renewed", {
-    memberId,
-    locationId: member.locationId,
-    organizationId: member.organizationId,
-    refs: { subscriptionId: sub.id, invoiceId: invoiceId ?? undefined },
-    vars: { planName: displayName, previousPlanName: preview.current.displayName, prorationCents: charged, planChange: "yes" },
-  });
-  await notifyStaff(member, sub.id, `Plan upgrade · ${name}`, `${name} upgraded from ${preview.current.displayName} to ${displayName} (${fmt(price.netPriceCents)}/${sub.billingCadence.toLowerCase()}) via the clubhouse${charged ? ` and paid ${fmt(charged)} prorated` : ""}.`);
+  emitPlanChangeEvent({ preview, applied: "now", memberId, locationId: member.locationId, organizationId: member.organizationId, subscriptionId: sub.id, chargedCents: charged, invoiceId, actorAdminId: opts?.actorId ?? null });
+  await notifyStaff(member, sub.id, `Plan upgrade · ${name}`, `${name} upgraded from ${preview.current.displayName} to ${displayName} (${fmtMoney(price.netPriceCents)}/${sub.billingCadence.toLowerCase()})${opts?.force ? "" : " via the clubhouse"}${charged ? ` and paid ${fmtMoney(charged)} prorated` : ""}.`);
   return { applied: "now", displayName, chargedCents: charged, invoiceId };
 }
 
@@ -368,7 +412,24 @@ export async function applyPendingChangeIfDue(subscriptionId: string, asOf: Date
     await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { pendingPlanId: null, pendingGuestCount: null, pendingPriceCents: null, pendingChangeAt: null } });
     return false;
   }
+  const previous = membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType);
+  const next = membershipDisplayName(target.name, sub.pendingGuestCount, target.productType);
   await applySubscriptionChange(sub, target, sub.pendingGuestCount, sub.pendingPriceCents, guestCentsFor(target, sub.pendingGuestCount), sub.memberId);
+  const loc = await prisma.member.findUnique({ where: { id: sub.memberId }, select: { locationId: true, organizationId: true } });
+  void emitMemberEvent("membership.plan-changed", {
+    memberId: sub.memberId,
+    locationId: loc?.locationId,
+    organizationId: loc?.organizationId,
+    refs: { subscriptionId: sub.id },
+    vars: {
+      planName: next,
+      previousPlan: previous,
+      newPrice: `$${(sub.pendingPriceCents / 100).toFixed(2)}`,
+      changeSummary: `Your scheduled change to ${next} is now in effect.`,
+      dueDate: asOf.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      amount: "",
+    },
+  });
   return true;
 }
 
@@ -384,5 +445,3 @@ async function notifyStaff(member: { id: string; organizationId: string | null; 
     data: { memberId: member.id, subscriptionId },
   }).catch(() => undefined);
 }
-
-const fmt = (cents: number) => `$${(cents / 100).toFixed(2)}`;

@@ -19,6 +19,11 @@ export type MemberEventKind =
   | "membership.cancelled"
   | "membership.frozen"
   | "membership.resumed"
+  | "membership.freeze-scheduled"
+  | "membership.plan-changed" // upgrade / add-on applied (now)
+  | "membership.downgrade-scheduled" // change queued for the next renewal
+  | "access.enabled" // door access turned on
+  | "access.disabled" // door access turned off
   | "membership.expiring" // fixed-term ending soon
   | "membership.expired"
   | "trial.started"

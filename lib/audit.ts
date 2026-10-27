@@ -28,7 +28,7 @@ export type AuditAction =
   | "billing.discount-apply"
   | "billing.square-connect" | "billing.square-disconnect"
   // Documents
-  | "document.create" | "document.assign" | "document.sign" | "document.void"
+  | "document.create" | "document.update" | "document.assign" | "document.sign" | "document.void"
   | "document.resend" | "document.delete"
   // Kisi
   | "kisi.access-enable" | "kisi.access-disable" | "kisi.access-override"

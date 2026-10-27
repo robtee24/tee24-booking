@@ -453,6 +453,7 @@ model Member {
 
   family        FamilyMember?
   visitorRecord Visitor?      @relation("VisitorMemberLink")
+  kisiLinks     MemberKisiLink[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -962,6 +963,25 @@ model MemberPhoto {
   updatedAt DateTime @updatedAt
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/// History of Kisi identities for a member. A Kisi member is deleted whenever
+/// door access is revoked and recreated (new ids) when it's restored; this keeps
+/// the trail so old unlock events still attribute to the right person.
+model MemberKisiLink {
+  id           String    @id @default(cuid())
+  memberId     String
+  kisiUserId   String
+  kisiMemberId String?
+  email        String
+  linkedAt     DateTime  @default(now())
+  unlinkedAt   DateTime?
+  unlinkReason String?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([kisiUserId])
 }
 
 /// Files a member uploads for staff review (e.g. ID for a service / student / senior discount).

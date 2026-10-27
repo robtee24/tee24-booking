@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPrisma } from "@/lib/db";
 import { Button, Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { FileText, Plus } from "lucide-react";
+import { DocumentsLibraryActions } from "@/components/admin/members/DocumentsLibraryActions";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,7 @@ export default async function DocumentsLibraryPage({ params }: { params: Promise
                   <div className="text-apple-text">{d._count.assignments}</div>
                 </div>
               </div>
+              <DocumentsLibraryActions slug={slug} id={d.id} active={d.active} />
             </Card>
           ))}
         </div>

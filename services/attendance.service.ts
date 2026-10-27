@@ -74,6 +74,11 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
   let member = input.kisiUserId
     ? await prisma.member.findFirst({ where: { kisiUserId: input.kisiUserId } })
     : null;
+  if (!member && input.kisiUserId) {
+    // The Kisi identity may have been deleted since (access revoked) — use the link history.
+    const link = await prisma.memberKisiLink.findFirst({ where: { kisiUserId: input.kisiUserId }, orderBy: { linkedAt: "desc" }, select: { memberId: true } });
+    if (link) member = await prisma.member.findUnique({ where: { id: link.memberId } });
+  }
   let matchedBy: "KISI_USER_ID" | "EMAIL" | "NONE" = member ? "KISI_USER_ID" : "NONE";
   if (!member && email) {
     const candidates = await prisma.member.findMany({

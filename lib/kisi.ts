@@ -61,6 +61,39 @@ export async function kisiFindMemberByEmail(email: string): Promise<KisiMember |
   return hit ? memberOf(hit) : null;
 }
 
+/** Look up the organization member record for a Kisi *user id* (falls back to email). */
+export async function kisiFindMemberByUserId(userId: number, email?: string | null): Promise<KisiMember | null> {
+  const list = await kisiFetch<any[]>(`/members?user_id=${userId}&limit=50`).catch(() => [] as any[]);
+  const hit = (list ?? []).find((m) => (m.user_id ?? m.user?.id) === userId);
+  if (hit) return memberOf(hit);
+  return email ? kisiFindMemberByEmail(email) : null;
+}
+
+/** Every organization member (paginated). Used by reconciliation to find orphans. */
+export async function kisiListAllMembers(): Promise<KisiMember[]> {
+  const out: KisiMember[] = [];
+  const limit = 100;
+  for (let offset = 0; offset < 20_000; offset += limit) {
+    const page = await kisiFetch<any[]>(`/members?limit=${limit}&offset=${offset}`);
+    if (!page?.length) break;
+    out.push(...page.map(memberOf));
+    if (page.length < limit) break;
+  }
+  return out;
+}
+
+/**
+ * Remove a person from the Kisi organization entirely. Deleting the organization
+ * member revokes every role assignment, share and mobile credential for that
+ * person at once. 404 is treated as already gone.
+ */
+export async function kisiDeleteMember(input: { userId: number; email?: string | null }): Promise<{ deleted: boolean; kisiMemberId: number | null }> {
+  const m = await kisiFindMemberByUserId(input.userId, input.email);
+  if (!m) return { deleted: false, kisiMemberId: null };
+  await kisiFetch(`/members/${m.id}`, { method: "DELETE" }).catch((e) => { if (!/\(404\)/.test(String(e))) throw e; });
+  return { deleted: true, kisiMemberId: m.id };
+}
+
 /**
  * Ensure a Kisi organization member exists for this email and return the *user id*
  * (the id used by role assignments / shares). Idempotent: reuses an existing member.
@@ -71,9 +104,9 @@ export async function kisiCreateUser(input: {
   name: string;
   phone?: string;
   organizationId?: number;
-}): Promise<{ id: number }> {
+}): Promise<{ id: number; memberId: number | null }> {
   const existing = await kisiFindMemberByEmail(input.email);
-  if (existing) return { id: existing.user_id ?? existing.id };
+  if (existing) return { id: existing.user_id ?? existing.id, memberId: existing.id };
   const data = await kisiFetch<any>("/members", {
     method: "POST",
     body: JSON.stringify({
@@ -85,7 +118,7 @@ export async function kisiCreateUser(input: {
       },
     }),
   });
-  return { id: data.user_id ?? data.user?.id ?? data.id };
+  return { id: data.user_id ?? data.user?.id ?? data.id, memberId: data.id ?? null };
 }
 
 /**

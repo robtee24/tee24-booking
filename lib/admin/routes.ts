@@ -84,6 +84,7 @@ export const adminRoutes = {
       membershipNew: (slug: string) => `/admin/locations/${enc(slug)}/members/memberships/new`,
       documents: (slug: string) => `/admin/locations/${enc(slug)}/members/documents`,
       documentNew: (slug: string) => `/admin/locations/${enc(slug)}/members/documents/new`,
+      documentEdit: (slug: string, id: string) => `/admin/locations/${enc(slug)}/members/documents/${enc(id)}`,
       attendance: (slug: string) => `/admin/locations/${enc(slug)}/members/attendance`,
       tags: (slug: string) => `/admin/locations/${enc(slug)}/members/tags`,
       customFields: (slug: string) => `/admin/locations/${enc(slug)}/members/custom-fields`,

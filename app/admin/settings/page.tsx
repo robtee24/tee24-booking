@@ -46,22 +46,22 @@ const SECTIONS = [
   },
   {
     title: "Square (payments)",
-    body: "API token, webhook signature key, default location id.",
-    href: adminRoutes.settingsHealth(),
+    body: "Connect each location's Square account under Billing → Settings.",
+    href: "square" as const,
     icon: <CreditCard className="h-5 w-5" />,
     accent: "green" as const,
   },
   {
     title: "Kisi (door access)",
-    body: "API key, webhook secret, door-to-location map.",
-    href: adminRoutes.settingsHealth(),
+    body: "Live door status, remote unlock, and which location each lock belongs to.",
+    href: adminRoutes.doorAccess(),
     icon: <KeyRound className="h-5 w-5" />,
     accent: "purple" as const,
   },
   {
     title: "Quo (SMS)",
-    body: "API key, sender number, opt-in keyword, brand name.",
-    href: adminRoutes.settingsHealth(),
+    body: "Sender number, marketing SMS, and opt-in language.",
+    href: "quo" as const,
     icon: <MessageSquare className="h-5 w-5" />,
     accent: "orange" as const,
   },
@@ -74,8 +74,8 @@ const SECTIONS = [
   },
   {
     title: "PayPal Payouts",
-    body: "Client ID/Secret, sandbox/live, payout approval workflow.",
-    href: adminRoutes.settingsHealth(),
+    body: "Referral payouts are configured under Marketing → Referrals.",
+    href: "paypal" as const,
     icon: <Banknote className="h-5 w-5" />,
     accent: "green" as const,
   },
@@ -143,7 +143,14 @@ export default async function OrgSettingsPage() {
     : null;
 
   const full = isFullAccess(me.role);
-  const sections = SECTIONS.filter((s) => !s.fullOnly || full);
+  const firstLoc = await getPrisma().location.findFirst({ orderBy: { name: "asc" }, select: { slug: true, name: true } });
+  const resolveHref = (href: string) => {
+    if (href === "square") return firstLoc ? adminRoutes.loc.billing.settings(firstLoc.slug) : adminRoutes.locations();
+    if (href === "quo") return firstLoc ? adminRoutes.loc.marketing.settings(firstLoc.slug) : adminRoutes.settingsEmail();
+    if (href === "paypal") return firstLoc ? adminRoutes.loc.marketing.referrals(firstLoc.slug) : adminRoutes.locations();
+    return href;
+  };
+  const sections = SECTIONS.filter((s) => !s.fullOnly || full).map((s) => ({ ...s, href: resolveHref(s.href) }));
 
   return (
     <div className="space-y-6">

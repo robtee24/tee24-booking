@@ -405,6 +405,13 @@ export async function POST(req: NextRequest) {
       refs: { subscriptionId: sub.id, invoiceId: invoice.id },
       vars: { planName: displayName, amount: (invoice.totalCents / 100).toFixed(2), firstName, signupFormId: form.id },
     });
+    void emitMemberEvent("member.welcome", {
+      memberId: member.id,
+      locationId: location.id,
+      organizationId: location.organizationId,
+      refs: { subscriptionId: sub.id },
+      vars: { planName: displayName, firstName },
+    });
 
     const payToken = await ensurePayToken(invoice.id);
     const payUrl = publicPayUrl(payToken);

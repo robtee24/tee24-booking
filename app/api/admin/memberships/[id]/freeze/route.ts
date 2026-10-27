@@ -54,13 +54,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     if (immediate) await getPrisma().member.update({ where: { id: g.sub.memberId }, data: { status: "FROZEN" } }).catch(() => undefined);
 
-    void emitMemberEvent("membership.frozen", {
+    const fmt = (d: Date | null | undefined) =>
+      d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+    void emitMemberEvent(immediate ? "membership.frozen" : "membership.freeze-scheduled", {
       memberId: g.sub.memberId,
       locationId: g.sub.locationId,
       organizationId: g.sub.organizationId,
       actorAdminId: g.admin.id,
       refs: { subscriptionId: id, invoiceId: feeInvoice?.id },
-      vars: { planName: g.sub.planName, freezeStart: result.freezeStartDate?.toISOString() ?? null, resumeDate: resumeDate.toISOString(), feeCents },
+      vars: {
+        planName: g.sub.planName,
+        freezeStart: fmt(result.freezeStartDate ?? startDate),
+        dueDate: fmt(resumeDate),
+        resumeDate: fmt(resumeDate),
+        feeCents,
+      },
     });
 
     return NextResponse.json({ ok: true, subscription: result, feeInvoice });

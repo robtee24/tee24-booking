@@ -18,13 +18,14 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
   if (!member || member.location.slug !== slug) notFound();
 
   const prisma = getPrisma();
-  const [recentInvoices, recentVisits, overdue, lastVisit, creditAgg, deviceSummary] = await Promise.all([
+  const [recentInvoices, recentVisits, overdue, lastVisit, creditAgg, deviceSummary, kisiLinks] = await Promise.all([
     prisma.invoice.findMany({ where: { memberId: id }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.visit.findMany({ where: { memberId: id }, orderBy: { enteredAt: "desc" }, take: 5, include: { bay: { select: { number: true } } } }),
     prisma.invoice.findMany({ where: { memberId: id, status: { in: ["SCHEDULED", "PAST_DUE", "FAILED"] }, dueDate: { lt: new Date() } }, select: { totalCents: true, refundedCents: true } }),
     prisma.visit.findFirst({ where: { memberId: id }, orderBy: { enteredAt: "desc" }, select: { enteredAt: true } }),
     prisma.memberCredit.aggregate({ where: { memberId: id }, _sum: { amountCents: true } }),
     memberDeviceSummary(id),
+    prisma.memberKisiLink.findMany({ where: { memberId: id }, orderBy: { linkedAt: "desc" }, take: 10, select: { kisiUserId: true, linkedAt: true, unlinkedAt: true, unlinkReason: true } }),
   ]);
   const overdueCents = overdue.reduce((s, i) => s + (i.totalCents - i.refundedCents), 0);
   const creditBalanceCents = creditAgg._sum.amountCents ?? 0;
@@ -127,7 +128,7 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
           <Card>
             <CardHeader title="Door access" subtitle="Kisi" />
             <div className="mt-3">
-              <KisiAccessCard memberId={id} enabled={member.kisiAccessEnabled} reason={member.kisiAccessReason} kisiUserId={member.kisiUserId} />
+              <KisiAccessCard memberId={id} enabled={member.kisiAccessEnabled} reason={member.kisiAccessReason} kisiUserId={member.kisiUserId} history={kisiLinks.map((l) => ({ kisiUserId: l.kisiUserId, linkedAt: l.linkedAt.toISOString(), unlinkedAt: l.unlinkedAt?.toISOString() ?? null, unlinkReason: l.unlinkReason }))} />
             </div>
           </Card>
           <Card>

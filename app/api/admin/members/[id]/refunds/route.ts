@@ -29,14 +29,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (body.asCredit || !charge.squarePaymentId) {
       if (!body.asCredit) return NextResponse.json({ error: "This charge was not taken by card. Refund it as account credit instead." }, { status: 400 });
       refund = await addCredit({ memberId: id, amountCents, type: "REFUND_AS_CREDIT", reason: reason ?? `Refund of charge ${charge.id}`, actorId: g.admin.id });
+      void emitMemberEvent("payment.refunded", {
+        memberId: id, locationId: g.member.locationId, organizationId: g.member.organizationId, actorAdminId: g.admin.id,
+        refs: { chargeId: charge.id, invoiceId: charge.invoiceId ?? undefined }, vars: { amountCents, reason: reason ?? null, asCredit: "yes" },
+      });
     } else {
+      // refundCharge already emits payment.refunded
       refund = await refundCharge({ chargeId: charge.id, amountCents, reason, actorId: g.admin.id });
     }
-
-    void emitMemberEvent("payment.refunded", {
-      memberId: id, locationId: g.member.locationId, organizationId: g.member.organizationId, actorAdminId: g.admin.id,
-      refs: { chargeId: charge.id, invoiceId: charge.invoiceId ?? undefined }, vars: { amountCents, reason: reason ?? null, asCredit: body.asCredit ? "yes" : "no" },
-    });
     return NextResponse.json({ ok: true, refund });
   } catch (e) {
     return apiError(e);

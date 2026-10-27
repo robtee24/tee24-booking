@@ -109,6 +109,25 @@ export function DoorAccessClient({
     }
   }
 
+  type Sweep = { dryRun: boolean; scanned: number; deleted: number; unknown: number; skippedStaff: number; removed?: string[]; unknownEmails?: string[] };
+  const [sweep, setSweep] = React.useState<Sweep | null>(null);
+  const [sweeping, setSweeping] = React.useState(false);
+
+  async function sweepUsers(dryRun: boolean) {
+    setSweeping(true);
+    try {
+      const res = await fetch("/api/admin/doors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sweep-users", dryRun }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Sweep failed");
+      setSweep(data);
+      if (!dryRun) toast({ tone: "success", title: `Removed ${data.deleted} Kisi user${data.deleted === 1 ? "" : "s"}` });
+    } catch (e) {
+      toast({ tone: "error", title: "Kisi user sweep failed", description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSweeping(false);
+    }
+  }
+
   async function assign(door: DoorRow, locationId: string) {
     const prev = doors;
     setDoors((ds) =>
@@ -222,8 +241,48 @@ export function DoorAccessClient({
               Sync from Kisi
             </Button>
           )}
+          {canManage && (
+            <Button variant="secondary" size="sm" loading={sweeping} onClick={() => void sweepUsers(true)} disabled={!kisiConfigured} iconLeft={<ShieldAlert className="h-3.5 w-3.5" />}>
+              Check Kisi users
+            </Button>
+          )}
         </div>
       </div>
+
+      <Modal
+        open={sweep !== null}
+        onClose={() => setSweep(null)}
+        title={sweep?.dryRun ? "Kisi users without door access" : "Kisi users removed"}
+        description="Anyone in your Kisi organization who maps to a Tee24 member with door access off. Staff accounts and people Tee24 doesn't know are never removed."
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={() => setSweep(null)}>Close</Button>
+            {sweep?.dryRun && (sweep?.deleted ?? 0) > 0 && (
+              <Button variant="danger" loading={sweeping} onClick={() => void sweepUsers(false)}>Remove {sweep?.deleted} from Kisi</Button>
+            )}
+          </div>
+        }
+      >
+        {sweep && (
+          <div className="space-y-3 text-apple-sm">
+            <p className="text-apple-text-secondary">Scanned {sweep.scanned} Kisi users · {sweep.skippedStaff} staff skipped · {sweep.unknown} not in Tee24.</p>
+            {sweep.removed && sweep.removed.length > 0 ? (
+              <div>
+                <div className="text-apple-xs font-semibold uppercase tracking-wide text-apple-text-tertiary">{sweep.dryRun ? "Will be removed" : "Removed"} ({sweep.removed.length})</div>
+                <ul className="mt-1 max-h-48 space-y-0.5 overflow-auto text-apple-text">{sweep.removed.map((r) => <li key={r}>{r}</li>)}</ul>
+              </div>
+            ) : (
+              <p className="text-apple-green">Nobody to remove — Kisi matches Tee24.</p>
+            )}
+            {sweep.unknownEmails && sweep.unknownEmails.length > 0 && (
+              <div>
+                <div className="text-apple-xs font-semibold uppercase tracking-wide text-apple-text-tertiary">In Kisi, not in Tee24 (review manually)</div>
+                <ul className="mt-1 max-h-32 space-y-0.5 overflow-auto text-apple-text-secondary">{sweep.unknownEmails.map((r) => <li key={r}>{r}</li>)}</ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {visible.length === 0 ? (
         <EmptyState
