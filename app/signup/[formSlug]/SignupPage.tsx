@@ -63,7 +63,8 @@ export async function SignupPage({ formSlug, sp, staging = false }: { formSlug: 
         slug: form.slug,
         name: form.name,
         description: form.description,
-        defaultPlanId: form.defaultPlanId,
+        // The booking flow hands guests over with ?plan=<id> (The Gilmore) so it starts preselected.
+        defaultPlanId: typeof sp.plan === "string" && sp.plan ? sp.plan : form.defaultPlanId,
         allowDiscountCode: form.allowDiscountCode,
         photoRequired: form.photoRequired,
         collectTax: form.collectTax,
