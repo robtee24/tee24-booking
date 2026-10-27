@@ -37,6 +37,36 @@ export function App() {
           <ExportFlow currentBooking={state.status?.currentBooking ?? null} onClose={() => kiosk.openOverlay('none')} />
         </Modal>
       )}
+      {mode === 'idle' && deadline && <IdleWarning deadline={deadline} minutes={state.settings.idleCloseMinutes} />}
+    </div>
+  );
+}
+
+// ---------- Idle: no input for a while; GSPro closes unless someone taps ----------
+
+function IdleWarning({ deadline, minutes }: { deadline: string; minutes: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  const left = new Date(deadline).getTime() - now;
+  return (
+    <div className="modal" style={{ textAlign: 'center' }}>
+      <div className="modal-head" style={{ textAlign: 'center' }}>
+        <div className="eyebrow">Still playing?</div>
+        <h1>No activity for {minutes} {minutes === 1 ? 'minute' : 'minutes'}</h1>
+        <p>GSPro will close and this bay will reset unless someone taps the screen or moves the mouse.</p>
+      </div>
+      <div className="modal-body" style={{ textAlign: 'center' }}>
+        <div className={`countdown-big ${left < 15_000 ? 'bad' : 'warn'}`}>{formatCountdown(left)}</div>
+        <div className="tiny" style={{ marginTop: 6 }}>until GSPro closes</div>
+      </div>
+      <div className="modal-foot" style={{ justifyContent: 'center' }}>
+        <button className="btn btn-primary btn-lg" onClick={() => kiosk.openOverlay('none')}>
+          Keep playing
+        </button>
+      </div>
     </div>
   );
 }

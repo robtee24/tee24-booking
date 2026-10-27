@@ -1,8 +1,8 @@
-import { app } from 'electron';
+import { app, powerMonitor } from 'electron';
 import log from 'electron-log';
 import { getStatus, cancelTimeout, type StatusResponse, type Booking } from './api';
 import { getSettings, isRegistered, updateSettings, type KioskSettings } from './store';
-import { getLauncherState, onLauncherChange, type LauncherState } from './launcher';
+import { getLauncherState, onLauncherChange, closeSession, type LauncherState } from './launcher';
 import { rememberRemoteInfo } from './remote';
 import * as windows from './windows';
 
@@ -22,7 +22,7 @@ import * as windows from './windows';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle';
 
 export interface KioskState {
   version: string;
@@ -59,7 +59,49 @@ let state: KioskState = {
 const acceptedUpcoming = new Set<string>();
 const dismissedUnlock = new Set<string>();
 const cancelRequested = new Set<string>();
-let userMode: Exclude<OverlayMode, 'unlock' | 'upcoming'> = 'none';
+let userMode: Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle'> = 'none';
+
+// ---------- Idle timeout ----------
+//
+// GSPro has no API that tells us whether anyone is playing, so "activity" is
+// system-wide mouse/keyboard input (powerMonitor.getSystemIdleTime). Players
+// mid-round may not touch the PC for a while, so a countdown modal appears
+// before anything closes; any tap or click resets the idle clock and clears it.
+
+/** Seconds of warning before the close; shorter limits get a shorter warning. */
+function idleWarnSeconds(limitSec: number) {
+  return Math.min(60, Math.max(10, Math.floor(limitSec / 2)));
+}
+let idleClosing = false;
+
+/** Returns an 'idle' overlay if the session is about to be closed for inactivity, else null. */
+function evaluateIdle(): KioskState['overlay'] | null {
+  const { idleCloseMinutes } = getSettings();
+  const launcher = getLauncherState();
+  if (!launcher.running || !launcher.gsproPid) {
+    // Session is over (or never started); arm the idle close for the next one.
+    idleClosing = false;
+    return null;
+  }
+  if (!idleCloseMinutes || idleCloseMinutes <= 0 || idleClosing) return null;
+
+  const limit = idleCloseMinutes * 60;
+  const idle = powerMonitor.getSystemIdleTime();
+  if (idle >= limit) {
+    // Stays set until the watcher reports the session gone, so a slow force-kill
+    // doesn't trigger a second close.
+    idleClosing = true;
+    log.info(`[idle] no input for ${idle}s (limit ${limit}s); closing the session`);
+    void closeSession(`idle ${idleCloseMinutes} min`);
+    return null;
+  }
+  const warn = idleWarnSeconds(limit);
+  if (idle >= limit - warn) {
+    const deadline = new Date(Math.round((Date.now() + (limit - idle) * 1000) / 1000) * 1000).toISOString();
+    return { mode: 'idle', booking: null, deadline };
+  }
+  return null;
+}
 
 let pollTimer: NodeJS.Timeout | null = null;
 let tickTimer: NodeJS.Timeout | null = null;
@@ -85,18 +127,23 @@ function applyWindows() {
   else windows.hideOverlay();
 
   // Floating Help/Schedule strip only while GSPro is running (home has its own buttons).
-  // Wait for a real GSPro process (gsproPid) before hiding home, otherwise the
+  // Wait for a real GSPro process (gsproPid) before stepping aside, otherwise the
   // Windows desktop shows for the seconds between Play and GSPro's first window.
-  if (launcher.running && launcher.gsproPid && !homeForced) {
-    windows.hideHome();
+  const inSession = launcher.running && !!launcher.gsproPid && !homeForced;
+  if (inSession) {
+    // Home stays visible *under* GSPro (see windows.parkHomeBehind), so GSPro
+    // closing reveals the kiosk, never the desktop.
+    windows.parkHomeBehind(!wasInSession);
     windows.showToolbar();
   } else {
     windows.hideToolbar();
     windows.showHome();
   }
+  wasInSession = inSession;
 }
+let wasInSession = false;
 
-/** Staff shortcut (Ctrl+Shift+T) brings the home screen over GSPro; Play hides it again. */
+/** Staff shortcut (Ctrl+Shift+T) brings the home screen over GSPro; Play parks it again. */
 let homeForced = false;
 export function setHomeForced(v: boolean) {
   homeForced = v;
@@ -213,6 +260,11 @@ function evaluate() {
     }
   }
 
+  // Inactivity warning wins over everything: it is the last thing the player
+  // can still react to before GSPro is closed.
+  const idle = evaluateIdle();
+  if (idle) overlay = idle;
+
   const changed =
     overlay.mode !== state.overlay.mode ||
     overlay.booking?.id !== state.overlay.booking?.id ||
@@ -241,7 +293,7 @@ export function dismissUnlock(bookingId: string) {
   publish();
 }
 
-export function setUserMode(mode: Exclude<OverlayMode, 'unlock' | 'upcoming'>) {
+export function setUserMode(mode: Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle'>) {
   userMode = mode;
   evaluate();
   publish();

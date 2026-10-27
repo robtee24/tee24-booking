@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import log from 'electron-log';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -75,6 +76,8 @@ export interface KioskSettings {
   remoteAgentInstalledAt: string | null;
   /** Behaviour */
   openAtLogin: boolean;
+  /** Close GSPro (and the launch-monitor programs) after this many minutes with no mouse/keyboard input. 0 = never. */
+  idleCloseMinutes: number;
   /** Exe path the Windows logon task was last registered with (null = not registered) */
   autostartTaskExe: string | null;
   /** Set once the first-run wizard has been completed */
@@ -96,6 +99,7 @@ const DEFAULTS: KioskSettings = {
   remoteNodeId: null,
   remoteAgentInstalledAt: null,
   openAtLogin: true,
+  idleCloseMinutes: 10,
   autostartTaskExe: null,
   setupCompletedAt: null,
 };
@@ -113,10 +117,23 @@ function filePath(): string {
 function load(): KioskSettings {
   if (cache) return cache;
   let data: Partial<KioskSettings> = {};
-  try {
-    data = JSON.parse(fs.readFileSync(filePath(), 'utf8'));
-  } catch {
-    data = {};
+  const file = filePath();
+  if (fs.existsSync(file)) {
+    try {
+      // Tolerate a UTF-8 BOM (e.g. from PowerShell's Set-Content -Encoding UTF8).
+      data = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    } catch (err) {
+      // Never silently reset: a reset mints a new deviceId and drops the bay
+      // registration. Keep the broken file for recovery and start from defaults.
+      const backup = `${file}.corrupt-${Date.now()}.bak`;
+      try {
+        fs.copyFileSync(file, backup);
+      } catch {
+        /* best effort */
+      }
+      log.error(`[store] settings file unreadable (${(err as Error).message}); backed up to ${backup}`);
+      data = {};
+    }
   }
   cache = { ...DEFAULTS, ...data };
   if (!cache.deviceId) {

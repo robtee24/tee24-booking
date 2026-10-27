@@ -277,6 +277,36 @@ export function launchHelperOnly(which: 'launchMonitor' | 'gspro'): LauncherStat
   return state;
 }
 
+// ---------- Close everything (idle timeout / staff) ----------
+
+/** Programs that make up a bay session, beyond GSPro itself. */
+const SESSION_IMAGES = ['IDRA.exe', 'IDRAMonitor.exe', 'GolfInLauncher.exe'];
+
+function taskkill(images: string[], force: boolean): Promise<void> {
+  if (process.platform !== 'win32' || !images.length) return Promise.resolve();
+  const args = images.flatMap((im) => ['/IM', im]).concat('/T', force ? ['/F'] : []);
+  return new Promise((resolve) => execFile('taskkill.exe', args, { windowsHide: true, timeout: 15_000 }, () => resolve()));
+}
+
+/**
+ * End the session: close GSPro, the launch-monitor software and the GolfIn
+ * Launcher. Polite close first (WM_CLOSE; GSPro exits cleanly on it), then
+ * force anything still alive a few seconds later. Home comes back through the
+ * normal GSPro-presence watcher.
+ */
+export async function closeSession(reason: string): Promise<void> {
+  const s = getSettings();
+  const images = Array.from(new Set([gsproImageName(), ...SESSION_IMAGES, ...(s.launchMonitorPath ? [path.basename(s.launchMonitorPath)] : [])]));
+  log.info(`[launcher] closing session (${reason}): ${images.join(', ')}`);
+  await taskkill(images, false);
+  await new Promise((r) => setTimeout(r, 5000));
+  if (await findGsproPid()) {
+    log.warn('[launcher] GSPro still running after polite close; forcing');
+  }
+  await taskkill(images, true);
+  void tick();
+}
+
 export function pathsExist() {
   const s = getSettings();
   return {

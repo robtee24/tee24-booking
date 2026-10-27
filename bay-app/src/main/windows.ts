@@ -160,6 +160,36 @@ export function hideHome() {
   get('home')?.hide();
 }
 
+/**
+ * Keep home visible but *underneath* GSPro while a session runs, so the
+ * moment GSPro's window closes the player sees the kiosk, not the desktop.
+ *
+ * Verified on Windows 11: a hidden window re-shown with showInactive() is
+ * placed below the current foreground window. So: drop the (topmost) toolbar
+ * for a beat, hide home so GSPro takes foreground, then re-show home inactive
+ * and bring the toolbar back. Idempotent; cheap enough to call on each publish.
+ */
+let parking = false;
+export function parkHomeBehind(force = false) {
+  const home = get('home');
+  if (!home || parking) return;
+  if (home.isVisible() && !home.isFocused() && !force) return; // already parked
+  parking = true;
+  const toolbar = get('toolbar');
+  const toolbarWasVisible = !!toolbar?.isVisible();
+  toolbar?.hide();
+  home.hide();
+  setTimeout(() => {
+    try {
+      const h = get('home');
+      if (h && !h.isVisible()) h.showInactive();
+      if (toolbarWasVisible) showToolbar();
+    } finally {
+      parking = false;
+    }
+  }, 300);
+}
+
 export function broadcast(channel: string, payload: unknown) {
   for (const name of ['home', 'toolbar', 'overlay'] as WinName[]) {
     const w = get(name);

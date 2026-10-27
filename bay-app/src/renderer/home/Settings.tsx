@@ -170,6 +170,7 @@ function Assignment({ state, session, onChanged }: { state: KioskState; session:
 function LaunchPaths({ state }: { state: KioskState }) {
   const [lmPath, setLmPath] = useState(state.settings.launchMonitorPath);
   const [gsPath, setGsPath] = useState(state.settings.gsproPath);
+  const [idleMin, setIdleMin] = useState(String(state.settings.idleCloseMinutes ?? 10));
   const [exists, setExists] = useState<{ launchMonitor: boolean; gspro: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -179,7 +180,7 @@ function LaunchPaths({ state }: { state: KioskState }) {
   useEffect(() => { refresh(); }, []);
 
   async function save() {
-    const r = await kiosk.adminSaveLocal({ launchMonitorPath: lmPath.trim(), gsproPath: gsPath.trim() });
+    const r = await kiosk.adminSaveLocal({ launchMonitorPath: lmPath.trim(), gsproPath: gsPath.trim(), idleCloseMinutes: Number(idleMin) || 0 });
     if (isErr(r)) return setMsg(r.error);
     setMsg('Saved.');
     refresh();
@@ -220,9 +221,17 @@ function LaunchPaths({ state }: { state: KioskState }) {
         </div>
         {exists && <div className={`hint ${exists.gspro ? '' : 'error'}`} style={{ marginTop: 8 }}>{exists.gspro ? 'Found.' : 'Not found at this path.'}</div>}
       </div>
+      <div className="field">
+        <label className="label">Close GSPro after inactivity</label>
+        <div className="row">
+          <input className="input" style={{ maxWidth: 120 }} inputMode="numeric" value={idleMin} onChange={(e) => setIdleMin(e.target.value.replace(/\D/g, ''))} />
+          <span className="muted">minutes without any mouse or keyboard input (0 = never)</span>
+        </div>
+        <div className="hint">A “Still playing?” countdown shows first; any tap cancels it. Closes GSPro, the IDRA software and the GolfIn Launcher.</div>
+      </div>
       {msg && <div className="success">{msg}</div>}
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary" onClick={save}>Save paths</button>
+        <button className="btn btn-primary" onClick={save}>Save</button>
       </div>
     </div>
   );

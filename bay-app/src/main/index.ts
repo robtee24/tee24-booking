@@ -196,9 +196,13 @@ function registerIpc() {
   });
   handle('admin:saveLocal', (patch: Record<string, unknown>) => {
     requireAdmin();
-    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin'] as const;
+    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin', 'idleCloseMinutes'] as const;
     const clean: Record<string, unknown> = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
+    if ('idleCloseMinutes' in clean) {
+      const n = Number(clean.idleCloseMinutes);
+      clean.idleCloseMinutes = Number.isFinite(n) && n >= 0 ? Math.min(240, Math.round(n)) : 10;
+    }
     const s = updateSettings(clean);
     applyAutostart();
     poller.forcePublish();
