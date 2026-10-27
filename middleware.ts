@@ -20,7 +20,7 @@ const PUBLIC_ADMIN_PATHS = new Set([
 // (e.g. https://clubhouse.tee24.golf). Requests for those pages that arrive on
 // another host (reservations.tee24.golf, *.vercel.app) are redirected so the
 // address bar, cookies and shared links all agree. API routes are untouched.
-const MEMBER_PATHS = /^\/(signup|daypass|pay|sign|portal)(\/.*)?$/;
+const MEMBER_PATHS = /^\/(signup|signup-staging|daypass|pay|sign|portal)(\/.*)?$/;
 
 function memberHostRedirect(request: NextRequest): NextResponse | null {
   const target = (process.env.MEMBER_BASE_URL || "").trim().replace(/\/+$/, "");
@@ -83,5 +83,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*", "/signup/:path*", "/daypass/:path*", "/pay/:path*", "/sign/:path*", "/portal/:path*"],
+  matcher: ["/admin/:path*", "/api/admin/:path*", "/signup/:path*", "/signup-staging/:path*", "/daypass/:path*", "/pay/:path*", "/sign/:path*", "/portal/:path*"],
 };

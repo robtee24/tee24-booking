@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
   const guestCount = Math.max(0, Math.floor(Number(sp.get("guestCount") ?? 0)) || 0);
   const prisma = getPrisma();
   const form = await prisma.signupForm.findUnique({ where: { slug: formSlug }, include: { location: { select: { id: true, organizationId: true } } } });
-  if (!form || !form.active) return NextResponse.json({ ok: false, reason: "Form not found" }, { status: 404 });
+  // /signup-staging previews unpublished forms; the staging flag lets those previews price out too.
+  const staging = sp.get("staging") === "1";
+  if (!form || (!form.active && !staging)) return NextResponse.json({ ok: false, reason: "Form not found" }, { status: 404 });
   let lookupCode = code;
   if (promoId) {
     const promo = await prisma.discount.findUnique({ where: { id: promoId }, select: { code: true, showOnSignup: true, active: true } });
@@ -92,6 +94,7 @@ export async function POST(req: NextRequest) {
       smsConsent, emailConsent, utm, referralCode,
       discountCode, sourceId, verificationToken, customFields,
       guestCount: guestCountRaw, promoDiscountId, promoIdDataUrl, promoAcknowledged,
+      staging,
     } = body;
 
     if (!formSlug || !planId || !firstName || !lastName || !email || !phone) {
@@ -119,7 +122,8 @@ export async function POST(req: NextRequest) {
       where: { slug: formSlug },
       include: { location: true },
     });
-    if (!form || !form.active || !form.location) {
+    // Submissions from /signup-staging may target forms that are not yet published.
+    if (!form || (!form.active && staging !== true) || !form.location) {
       return NextResponse.json({ error: "Form not found or inactive" }, { status: 404 });
     }
     const location = form.location;
