@@ -49,6 +49,7 @@ type FormProps = {
   utm: { source: string | null; medium: string | null; campaign: string | null; term: string | null; content: string | null };
   referralCode: string | null;
   square: SquarePublicConfig;
+  initialGuestCount?: number;
 };
 
 type Step = 1 | 2 | 3;
@@ -142,10 +143,10 @@ async function fileToUploadDataUrl(file: File): Promise<string> {
   return fileToPhotoDataUrl(file, 1600);
 }
 
-export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square }: FormProps) {
+export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square, initialGuestCount = 0 }: FormProps) {
   const [step, setStep] = useState<Step>(1);
   const [selectedPlanId, setSelectedPlanId] = useState(form.defaultPlanId ?? plans[0]?.id ?? "");
-  const [guestCount, setGuestCount] = useState(0);
+  const [guestCount, setGuestCount] = useState(initialGuestCount);
   // Signup promotion (mutually exclusive with a discount code)
   const [promoId, setPromoId] = useState<string | null>(null);
   const [promoPreview, setPromoPreview] = useState<{ ok: boolean; text: string; amountCents: number } | null>(null);
@@ -632,6 +633,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                         );
                       })}
                     </div>
+                    <p className="mt-3 text-apple-xs text-apple-text-tertiary">A charge of $50 per unauthorized guest will be charged to your account.</p>
                   </div>
                 </div>
               </div>

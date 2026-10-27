@@ -24,7 +24,8 @@ export default async function PublicSignupPage({
     include: { location: { select: { id: true, name: true, slug: true, organizationId: true, taxRateBps: true, cardSurchargeBps: true, currency: true } } },
   });
 
-  if (!form || !form.active) notFound();
+  const fromBooking = typeof sp.from === "string" && sp.from === "booking";
+  if (!form || (!form.active && !fromBooking)) notFound();
 
   // Resolve allowed plans (+ location price overrides)
   const allowedPlanIds = (form.allowedPlanIds as string[] | null) ?? null;
@@ -65,7 +66,7 @@ export default async function PublicSignupPage({
         slug: form.slug,
         name: form.name,
         description: form.description,
-        defaultPlanId: form.defaultPlanId,
+        defaultPlanId: typeof sp.plan === "string" && sp.plan ? sp.plan : form.defaultPlanId,
         allowDiscountCode: form.allowDiscountCode,
         photoRequired: form.photoRequired,
         collectTax: form.collectTax,
@@ -107,6 +108,7 @@ export default async function PublicSignupPage({
       utm={utm}
       referralCode={referralCode}
       square={square}
+      initialGuestCount={typeof sp.guests === "string" ? Math.max(0, Number(sp.guests) || 0) : 0}
     />
   );
 }

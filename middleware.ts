@@ -34,7 +34,7 @@ function memberHostRedirect(request: NextRequest): NextResponse | null {
     return null;
   }
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
-  if (!host || host === targetHost || host.startsWith("localhost") || host.startsWith("127.0.0.1")) return null;
+  if (!host || host === targetHost || host.startsWith("localhost") || host.startsWith("127.0.0.1") || host.includes("vercel.app")) return null;
   const url = new URL(`${target}${pathname}${request.nextUrl.search}`);
   return NextResponse.redirect(url, 308);
 }

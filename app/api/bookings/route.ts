@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
       handedness: body.handedness === "LH" ? "LH" : "RH",
 
       source: "PUBLIC",
+      memberId: typeof body.memberId === "string" ? body.memberId : undefined,
     });
 
     return NextResponse.json({ ok: true, booking: result });

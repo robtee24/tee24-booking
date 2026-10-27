@@ -13,6 +13,7 @@ const ISSUER = "tee24-phone-verification";
 export const SIGNUP_PHONE_AUDIENCE = "signup";
 export const PORTAL_LOGIN_AUDIENCE = "portal-login";
 export const MOBILE_TRANSFER_AUDIENCE = "mobile-transfer";
+export const BOOKING_PHONE_AUDIENCE = "booking";
 const TTL_SECONDS = 30 * 60;
 
 function secret() {
