@@ -35,7 +35,7 @@ export async function lookupBookingIdentity(rawPhone: string, locationSlug: stri
   const form = location
     ? await prisma.signupForm.findFirst({
         where: { locationId: location.id, slug: location.slug },
-        select: { slug: true, allowedPlanIds: true },
+        select: { slug: true, active: true, allowedPlanIds: true },
       })
     : null;
 
@@ -66,7 +66,8 @@ export async function lookupBookingIdentity(rawPhone: string, locationSlug: stri
       gilmorePlanId: gilmore?.id ?? null,
       gilmoreName: gilmore?.name ?? "The Gilmore",
       gilmorePriceCents: gilmore?.priceCents ?? 5000,
-      signupPath: form ? `/signup/${form.slug}` : location ? `/daypass/${location.slug}` : "/daypass",
+      // Unpublished forms are reachable at /signup-staging until they are switched on in admin.
+      signupPath: form ? `${form.active ? "/signup" : "/signup-staging"}/${form.slug}` : location ? `/daypass/${location.slug}` : "/daypass",
       plans: plans.map((p) => ({ id: p.id, name: p.name, productType: p.productType, priceCents: p.priceCents })),
     },
   };

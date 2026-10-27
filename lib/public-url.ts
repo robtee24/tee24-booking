@@ -23,4 +23,4 @@ export function memberUrl(path: string): string {
 }
 
 /** Paths that belong to the member-facing site (used by middleware to redirect off the reservations host). */
-export const MEMBER_PATH_PREFIXES = ["/signup", "/daypass", "/pay", "/sign", "/portal"] as const;
+export const MEMBER_PATH_PREFIXES = ["/signup", "/signup-staging", "/daypass", "/pay", "/sign", "/portal"] as const;

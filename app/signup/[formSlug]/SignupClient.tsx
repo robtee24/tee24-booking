@@ -50,6 +50,8 @@ type FormProps = {
   referralCode: string | null;
   square: SquarePublicConfig;
   initialGuestCount?: number;
+  /** Served from /signup-staging: allow unpublished forms on the API as well. */
+  staging?: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -143,7 +145,8 @@ async function fileToUploadDataUrl(file: File): Promise<string> {
   return fileToPhotoDataUrl(file, 1600);
 }
 
-export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square, initialGuestCount = 0 }: FormProps) {
+export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square, initialGuestCount = 0, staging = false }: FormProps) {
+  const stagingQs = staging ? "&staging=1" : "";
   const [step, setStep] = useState<Step>(1);
   const [selectedPlanId, setSelectedPlanId] = useState(form.defaultPlanId ?? plans[0]?.id ?? "");
   const [guestCount, setGuestCount] = useState(initialGuestCount);
@@ -235,7 +238,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&promoId=${encodeURIComponent(promo.id)}`);
+        const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&promoId=${encodeURIComponent(promo.id)}${stagingQs}`);
         const json = await res.json();
         if (cancelled) return;
         if (json.ok) setPromoPreview({ ok: true, text: json.description, amountCents: json.amountCents ?? 0 });
@@ -384,7 +387,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     if (!discount.trim() || !plan) return;
     setCheckingCode(true);
     try {
-      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(discount.trim())}`);
+      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(discount.trim())}${stagingQs}`);
       const json = await res.json();
       if (json.ok) { setDiscountPreview({ ok: true, text: `${json.code}: ${json.description}`, amountCents: json.amountCents ?? 0 }); setPromoId(null); setPromoAck(false); }
       else setDiscountPreview({ ok: false, text: json.reason ?? "Invalid code", amountCents: 0 });
@@ -430,6 +433,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
         body: JSON.stringify({
           formSlug: form.slug,
           planId: plan.id,
+          staging,
           ...profile,
           phone: phoneState.phone,
           phoneToken: phoneState.token,
