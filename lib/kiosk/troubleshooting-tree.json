@@ -78,9 +78,9 @@
         "buttonText": "There are no balls and/or white objects around the hitting area"
       },
       {
-        "question": "Are your irons being picked up but your driver is not?",
-        "subtext": "If your irons read but your driver does not, switch to regular tees and place the tee closer to the middle of the hitting mat.",
-        "buttonText": "Switched to regular tees and moved closer to center"
+        "question": "Have you reset the cameras?",
+        "subtext": "Click the IDRA button at the top of the screen, then select \"Reset\". Give it a few seconds to reconnect, then hit a test shot.",
+        "buttonText": "Cameras reset and tested"
       },
       {
         "question": "Have you restarted the computer?",
