@@ -182,7 +182,18 @@ The installed app is a normal Windows program.
 - Start at login: a per-user Task Scheduler task named **Tee24 Bay Kiosk** (immediate at logon). The HKCU Run entry is only used if the task cannot be registered. The Run entry alone left the Windows desktop visible for about 90 s after boot on the test PC.
 - Lines tagged `[launcher]`, `[exports]`, or `[remote]` are the useful ones. Paste the tail of `main.log` back into Cursor on the Mac.
 
-Remote desktop from the admin console is optional. On the kiosk: **Settings → Remote support → Install remote support agent** (MeshCentral, outbound only). Then the location’s **Troubleshoot** page can open that PC, once Tee24’s MeshCentral server is configured. Until an agent is reporting, a screenshot plus `main.log` is the path.
+Remote desktop from the admin console is optional. On the kiosk: **Settings → Remote support → Install remote support agent** (MeshCentral, outbound only). Then the location’s **Troubleshoot** page can open that PC. Until an agent is reporting, a screenshot plus `main.log` is the path.
+
+### Remote-support server (deployed 27 Oct 2026)
+
+- MeshCentral runs on Fly.io: app `tee24-remote`, region `ord`, one machine, volume `meshcentral_data` (config and DB live on the volume, so the Dockerfile’s `config.json` is only used on first boot). Public URL **https://remote.tee24.golf** (Fly cert issued; CNAME at Bluehost → `tee24-remote.fly.dev`). The site is served by Fly, not Vercel — Vercel is serverless and cannot hold the agents’ persistent WebSockets.
+- Deploy from `infra/meshcentral/` (not the repo root, or the Dockerfile’s `COPY config.json` fails): `flyctl deploy --ha=false -a tee24-remote`. flyctl lives at `%USERPROFILE%\.fly\bin\flyctl.exe` on the test PC.
+- Account: `tee24` (site admin, rob@tee24.golf). Password is in `%USERPROFILE%\tee24-meshcentral-admin.txt` on the test PC — not in the repo. Reset with `node meshcentral --resetaccount tee24 --pass …` over `flyctl ssh console`.
+- Device group: **Tee24 Bays**, id `mesh//s1jG4sPkk0eTlp6qRw7alOr3MfE2zB1YrY4ESxNFM1EJRupfL17fjfIQ$DHYmNIN`. Agent download: `https://remote.tee24.golf/meshagents?id=4&meshid=s1jG4sPkk0eTlp6qRw7alOr3MfE2zB1YrY4ESxNFM1EJRupfL17fjfIQ%24DHYmNIN&installflags=0`.
+- Vercel env (what makes the kiosk install button and the admin Troubleshoot deep-link work): `MESHCENTRAL_URL=https://remote.tee24.golf`, `MESHCENTRAL_MESH_ID=<the mesh id above>`, `MESHCENTRAL_ADMIN_USER=tee24`, `MESHCENTRAL_LOGIN_TOKEN_KEY=<output of 'node meshcentral --logintokenkey' on the server>`. Redeploy after setting them.
+- Login tokens are only valid if the signer’s clock is within 30 s behind / 60 min ahead of the server. Vercel is fine; the test PC’s clock was 15 h fast on 27 Oct, which is why a locally signed token was rejected.
+- Server-side commands go through `flyctl ssh console -a tee24-remote -C "sh -c '…'"`; `meshctrl` is at `/opt/meshcentral/meshcentral/meshctrl.js` and authenticates with `--loginuser tee24 --loginkey <token key>` against `ws://127.0.0.1:8080`.
+- Installing the agent needs one UAC approval on the bay PC. `%USERPROFILE%\tee24-remote-setup.ps1` on the test PC does the clock resync and the agent install in one elevated run.
 
 There is no DevTools shortcut in the packaged app.
 
