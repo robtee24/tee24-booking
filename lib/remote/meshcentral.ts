@@ -75,12 +75,17 @@ export function deviceSessionUrl(nodeId: string, opts?: { view?: "desktop" | "te
   const node = normalizeNodeId(nodeId);
   if (!node) return null;
   const viewmode = { desktop: 11, terminal: 12, files: 13, details: 10 }[opts?.view ?? "desktop"];
-  const params = new URLSearchParams({ gotonode: node, viewmode: String(viewmode), hide: "16" });
+  // MeshCentral's UI prefixes `gotonode` with "node/<domain>/" itself, so pass the bare id.
+  // It also reads the query string WITHOUT percent-decoding and discards values containing
+  // '%', so the id's '$' / '@' must go in literally (no URLSearchParams here). Both are legal
+  // query characters; Express decodes the `login` token fine either way.
+  const bareId = node.slice("node//".length);
+  let url = `${cfg.url}/?gotonode=${bareId}&viewmode=${viewmode}&hide=16`;
   if (cfg.loginTokenKey) {
     const userid = `user/${cfg.domain}/${cfg.adminUser}`;
-    params.set("login", encodeLoginToken(userid, cfg.loginTokenKey));
+    url += `&login=${encodeLoginToken(userid, cfg.loginTokenKey)}`;
   }
-  return `${cfg.url}/?${params.toString()}`;
+  return url;
 }
 
 /**

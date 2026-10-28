@@ -46,7 +46,7 @@ export function TroubleshootBays({ slug, bays, remote }: { slug: string; bays: A
         title="Bay computers"
         subtitle={
           bays.length
-            ? `${online}/${bays.length} kiosks online · ${withAgent}/${bays.length} ready for remote access${remote.configured ? "" : " · remote support not configured"}`
+            ? `${online}/${bays.length} kiosks online · ${withAgent}/${bays.length} ready for remote access${remote.configured ? " · Remote in opens a new tab — click Connect there to start the screen" : " · remote support not configured"}`
             : "No bays yet."
         }
         action={
@@ -86,7 +86,7 @@ export function TroubleshootBays({ slug, bays, remote }: { slug: string; bays: A
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-1.5">
-                  <Button size="sm" disabled={!canRemote} loading={busy === `${b.id}:desktop`} iconLeft={<Monitor className="h-3.5 w-3.5" />} onClick={() => void openSession(b, "desktop")} title={canRemote ? "Open remote desktop" : "Remote agent not reporting yet"}>
+                  <Button size="sm" disabled={!canRemote} loading={busy === `${b.id}:desktop`} iconLeft={<Monitor className="h-3.5 w-3.5" />} onClick={() => void openSession(b, "desktop")} title={canRemote ? "Open remote desktop (then click Connect in the new tab)" : "Remote agent not reporting yet"}>
                     Remote in
                   </Button>
                   <Button size="sm" variant="secondary" disabled={!canRemote} loading={busy === `${b.id}:terminal`} iconLeft={<TerminalSquare className="h-3.5 w-3.5" />} onClick={() => void openSession(b, "terminal")} title="Open terminal">
