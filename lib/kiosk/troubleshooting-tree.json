@@ -83,6 +83,11 @@
         "buttonText": "Cameras reset and tested"
       },
       {
+        "question": "Are your irons being picked up but your driver is not?",
+        "subtext": "If your irons read but your driver does not, switch to regular tees and place the tee closer to the middle of the hitting mat.",
+        "buttonText": "Switched to regular tees and moved closer to center"
+      },
+      {
         "question": "Have you restarted the computer?",
         "subtext": "The computer may need to be restarted. Press the Windows key, then click on the power button, then select restart.",
         "buttonText": "Computer restarted"

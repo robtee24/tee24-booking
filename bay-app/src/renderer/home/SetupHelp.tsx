@@ -12,12 +12,17 @@ function formatPhoneDisplay(raw: string): string {
 
 type Tab = 'walkthrough' | 'troubleshoot';
 
+const SUPPORT_PHONE = '5024102382';
+
 /** "Setup Help" tile: a setup walkthrough for this bay plus the troubleshooting guide. */
 export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('walkthrough');
   const lm = state.status?.bay.launchMonitor ?? state.settings.launchMonitor ?? 'OTHER';
   const notes = state.status?.bay.setupNotes;
-  const phone = state.status?.location.phone ?? null;
+  // Facility support line. Overridden per location when an admin fills in
+  // Location → Settings → Details → Phone; otherwise the Tee24 502 number
+  // (the same one the troubleshooting guide uses for maintenance tickets).
+  const phone = state.status?.location.phone || SUPPORT_PHONE;
 
   return (
     <div className="page">
@@ -65,7 +70,7 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
                 <div className="card-title">Need a hand?</div>
                 <div className="card-sub">
                   If you haven’t been able to fix the issue, or need help getting started, call{' '}
-                  {phone ? <b className="guide-phone">{formatPhoneDisplay(phone)}</b> : <b>the Tee24 number on your confirmation message</b>}
+                  <b className="guide-phone">{formatPhoneDisplay(phone)}</b>
                   {' '}and press <b>extension 1</b> for immediate help.
                 </div>
                 <div className="card-sub" style={{ marginTop: 6 }}>The Help button (also floating on the right while GSPro is open) has step-by-step fixes for common problems.</div>
