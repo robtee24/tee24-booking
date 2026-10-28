@@ -134,8 +134,17 @@ function afterIdleClose() {
   } else {
     updateSettings({ idleCloseCount: count });
     log.info(`[idle] close ${count}${every > 0 ? ` of ${every} before a maintenance restart` : ''}`);
+    // Nobody is at the bay: a good moment to apply a held update (the restart
+    // branch skips this, the fresh boot runs its own check).
+    idleCloseHook?.();
   }
   publish();
+}
+
+let idleCloseHook: (() => void) | null = null;
+/** Called after an inactivity close that did not schedule a restart. */
+export function setIdleCloseHook(fn: (() => void) | null) {
+  idleCloseHook = fn;
 }
 
 function scheduleRestart(reason: string) {

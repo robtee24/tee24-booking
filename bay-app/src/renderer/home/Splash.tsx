@@ -17,6 +17,11 @@ export function Splash({ phase }: { phase: Phase }) {
       sub = phase.version ? `Downloading version ${phase.version}` : 'Downloading the latest version';
       percent = phase.percent;
       break;
+    case 'ready':
+      title = 'Update ready';
+      sub = 'It will install as soon as the bay is free.';
+      percent = 100;
+      break;
     case 'installing':
       title = 'Installing update';
       sub = 'The kiosk will restart in a moment.';

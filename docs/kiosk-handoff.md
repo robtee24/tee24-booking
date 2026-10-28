@@ -47,7 +47,15 @@ API base: `https://reservations.tee24.golf`.
 
 ## Published build
 
-Windows installer only (NSIS, x64, per-machine, unsigned). GitHub Actions workflow: `.github/workflows/kiosk-release.yml`. Tags look like `kiosk-v1.2.3`.
+Windows installer only (NSIS, x64, **per-user** since 1.2.0, unsigned). GitHub Actions workflow: `.github/workflows/kiosk-release.yml`. Tags look like `kiosk-v1.2.3`.
+
+### Auto-update (changed 27 Oct 2026)
+
+The kiosk checks GitHub Releases on every launch — so on every PC restart — and blocks on the splash until the check finishes; an update downloads and installs before the home screen appears. If the check cannot complete (bay PC booted before the network was up) it retries every 2 minutes until one succeeds, then every 6 hours. A download found while someone is playing is held ("Update ready") and installs at the next idle close or the next periodic check that finds the bay free. `bay-app/src/main/updater.ts`.
+
+**Why the install moved from per-machine to per-user.** 1.1.0 and earlier installed to `C:\Program Files` (perMachine). electron-builder then writes `isAdminRightsRequired: true` into `latest.yml`, and electron-updater launches the installer through `elevate.exe` — a UAC prompt on the secure desktop that nobody at a bay can click. The app has already quit by then, so the kiosk goes dark until the prompt times out and the logon task runs again. Per-user installs (`%LOCALAPPDATA%\Programs\tee24-bay-kiosk`) need no elevation, which is how Electron apps are meant to self-update.
+
+Migrating a bay that still has the per-machine 1.1.0: the per-user installer does not touch the `C:\Program Files` copy, so either (a) let the old kiosk auto-update — it installs the per-user copy alongside, relaunches it, and the app re-points the logon task at the new exe (the old folder stays behind, inert; remove it via **Apps & features → Tee24 Bay Kiosk** when convenient) — or (b) on site: uninstall the old one (one UAC click), run the new installer. Settings (`%APPDATA%\tee24-bay-kiosk\tee24-bay-kiosk.json`) survive both. The Clarksville test PC was migrated by hand on 27 Oct. Note that the old 1.1.0 kiosks will auto-update **without** a UAC prompt because the *new* `latest.yml` has no `isAdminRightsRequired`.
 
 Latest as of this note: **1.1.0**, published 23 Oct 2026.
 
@@ -146,6 +154,8 @@ Two features ride on this:
 ## Maintenance restart every Nth inactivity close (added 27 Oct 2026)
 
 When the idle timer closes a session (GSPro and the launch monitor are shut and the kiosk returns home), `poller.ts` bumps `idleCloseCount` in the settings file. When it reaches `restartEveryIdleCloses` (default **4**, admin-editable under **Settings → Restart the PC every N inactivity closes**, `0` disables) the counter resets and the kiosk runs `shutdown.exe /r /f /t 30` and shows a full-screen "This computer is restarting" notice with a 30-second countdown. **Cancel — I'm about to play** runs `shutdown /a` and dismisses it. Only inactivity closes count; a member ending their own session or a schedule change does not. Changing the setting resets the counter.
+
+Each restart is also an update check (see *Auto-update* above), so a bay is never more than one maintenance restart behind the latest release.
 
 **Prerequisite: Windows must sign itself back in.** The kiosk starts from a logon-triggered scheduled task, so after a restart it only reappears once the Windows user is logged on. The Clarksville test PC has no auto-logon configured (`HKLM\...\Winlogon\AutoAdminLogon` is empty) — on that machine the restart would leave the bay at the Windows sign-in screen until someone types the password. Set up auto-logon (Sysinternals `Autologon.exe` stores the password encrypted, or the `AutoAdminLogon` / `DefaultUserName` / `DefaultPassword` registry values) before relying on this, or set the count to `0`.
 

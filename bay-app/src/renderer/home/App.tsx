@@ -25,9 +25,15 @@ export function App() {
     const t = setTimeout(() => setGrace(true), 2500);
     return () => clearTimeout(t);
   }, []);
-  const booted = update.phase === 'done' || update.phase === 'none' || update.phase === 'error' || (grace && update.phase === 'boot');
+  // Once booted, stay booted: later background checks ('checking', 'none') must
+  // not bring the splash back. A download/install does take over the screen.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (update.phase === 'done' || update.phase === 'none' || update.phase === 'error' || (grace && update.phase === 'boot')) setBooted(true);
+  }, [update, grace]);
+  const updating = update.phase === 'downloading' || update.phase === 'installing';
 
-  if (!state || !booted) return <Splash phase={update} />;
+  if (!state || !booted || updating) return <Splash phase={update} />;
 
   if (!state.registered) {
     return <Setup onDone={() => setScreen('home')} />;

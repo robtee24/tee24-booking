@@ -39,7 +39,13 @@ win:
 
 nsis:
   oneClick: true
-  perMachine: true
+  # Per-user install (%LOCALAPPDATA%\Programs\Tee24 Bay Kiosk). This is what lets
+  # auto-update run unattended: a per-machine install marks latest.yml
+  # isAdminRightsRequired and electron-updater then launches the installer via
+  # elevate.exe, which stops at a UAC prompt nobody at the bay can click.
+  # Bays installed per-machine before this change get the per-user copy on
+  # their next update; remove the old Program Files copy via Apps & features.
+  perMachine: false
   allowToChangeInstallationDirectory: false
   runAfterFinish: true
   createDesktopShortcut: false

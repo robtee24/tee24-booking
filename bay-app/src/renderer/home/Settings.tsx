@@ -373,13 +373,14 @@ function AppUpdates({ state }: { state: KioskState }) {
       <div className="card stack">
         <div>
           <div className="card-title">Tee24 Bay Kiosk v{state.version}</div>
-          <div className="card-sub">The kiosk checks for updates every time it opens and installs them automatically.</div>
+          <div className="card-sub">The kiosk checks for updates every time it starts (retrying until it is online) and every few hours after that. Updates install on their own whenever nobody is playing.</div>
         </div>
         {phase && (
           <div className="muted">
             {phase.phase === 'checking' && 'Checking for updates…'}
             {phase.phase === 'none' && 'You’re on the latest version.'}
             {phase.phase === 'downloading' && `Downloading update… ${phase.percent}%`}
+            {phase.phase === 'ready' && `Version ${phase.version} is downloaded and will install once the bay is free.`}
             {phase.phase === 'installing' && 'Installing — the kiosk will restart.'}
             {phase.phase === 'error' && `Update check failed: ${phase.message}`}
           </div>

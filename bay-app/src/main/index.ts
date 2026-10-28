@@ -10,7 +10,7 @@ import * as remote from './remote';
 import * as windows from './windows';
 import * as autostart from './autostart';
 import * as screenWatch from './screen';
-import { runStartupUpdate, checkForUpdatesNow } from './updater';
+import { runStartupUpdate, checkForUpdatesNow, startBackgroundUpdates, onBayIdle } from './updater';
 
 log.initialize();
 log.transports.file.level = 'info';
@@ -293,6 +293,16 @@ app.whenReady().then(async () => {
 
   poller.start();
   startWatching(); // GSPro presence → home hides / toolbar shows, however GSPro was started
+
+  // Keep checking after boot (retry if the network was not up yet, then
+  // periodically); install only when nobody is playing.
+  const broadcastUpdate = (p: unknown) => windows.broadcast('kiosk:update', p);
+  const bayIsFree = () => {
+    const s = poller.getState();
+    return !s.launcher.running && s.overlay.mode === 'none';
+  };
+  startBackgroundUpdates(broadcastUpdate, bayIsFree, result);
+  poller.setIdleCloseHook(() => onBayIdle(broadcastUpdate, bayIsFree));
 
   // Staff: bring the kiosk home screen over GSPro
   globalShortcut.register('CommandOrControl+Shift+T', () => poller.setHomeForced(true));
