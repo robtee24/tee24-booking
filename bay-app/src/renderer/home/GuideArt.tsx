@@ -124,7 +124,7 @@ export function ProjectorArt() {
   );
 }
 
-/** Step 3 — this kiosk's home screen with a finger on Play. */
+/** Step 3 — this kiosk's home screen with the mouse pointer on Play. */
 export function PlayArt() {
   return (
     <Frame>
@@ -146,10 +146,26 @@ export function PlayArt() {
       <rect x="218" y="94" width="26" height="26" rx="7" fill="rgba(255,255,255,0.08)" />
       <rect x="218" y="146" width="80" height="9" rx="3" fill="#cbd5e1" />
       <rect x="218" y="164" width="100" height="5" rx="2" fill="#64748b" />
-      {/* tap ripple + hand, kept off the "Play" label */}
-      <circle cx="160" cy="118" r="20" fill="none" stroke="#fff" strokeWidth="2" opacity="0.5" />
-      <PointingHand x={164} y={122} scale={0.9} />
+      {/* click ripple + mouse pointer, kept off the "Play" label */}
+      <circle cx="150" cy="112" r="14" fill="none" stroke="#fff" strokeWidth="2" opacity="0.55" />
+      <circle cx="150" cy="112" r="24" fill="none" stroke="#fff" strokeWidth="2" opacity="0.25" />
+      <MousePointer x={150} y={112} scale={1.6} />
     </Frame>
+  );
+}
+
+/** Standard arrow cursor, tip at (x, y). */
+function MousePointer({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <path
+        d="M0 0 L0 17.5 L4.6 13.6 L7.6 20.4 L10.6 19.1 L7.6 12.4 L13.4 12.4 Z"
+        fill="#fff"
+        stroke="#0b1220"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </g>
   );
 }
 
