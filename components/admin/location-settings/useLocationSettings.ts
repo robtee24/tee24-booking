@@ -39,6 +39,7 @@ export type LocationSettings = {
   bayAppUnlockMinutes?: number | null;
   bayAppWarningMinutes?: number | null;
   bayAppAutoCancelOnTimeout?: boolean | null;
+  bayAppGuestEnforcement?: boolean | null;
   updatedAt?: string | null;
 };
 

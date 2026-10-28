@@ -17,8 +17,12 @@ export const dynamic = 'force-dynamic';
  */
 async function bookingForDevice(deviceId: string, bookingId: string) {
   const prisma = getPrisma();
-  const reg = await prisma.bayAppRegistration.findUnique({ where: { deviceId }, select: { locationId: true, bayNumber: true } });
+  const reg = await prisma.bayAppRegistration.findUnique({
+    where: { deviceId },
+    select: { locationId: true, bayNumber: true, location: { select: { bayAppGuestEnforcement: true } } },
+  });
   if (!reg) throw new BayPlayersError(404, 'DEVICE_NOT_REGISTERED', 'Device not registered');
+  if (!reg.location.bayAppGuestEnforcement) throw new BayPlayersError(409, 'ENFORCEMENT_OFF', 'Guest enforcement is turned off for this location');
   const booking = await prisma.booking.findFirst({ where: { id: bookingId, locationId: reg.locationId, bayNumber: reg.bayNumber }, select: { id: true } });
   if (!booking) throw new BayPlayersError(403, 'BOOKING_MISMATCH', 'Booking does not match this bay');
   return booking.id;

@@ -46,6 +46,7 @@ export async function GET(req: Request) {
             bayAppUnlockMinutes: true,
             bayAppWarningMinutes: true,
             bayAppAutoCancelOnTimeout: true,
+            bayAppGuestEnforcement: true,
             passAccessUrl: true,
           },
         },
@@ -87,9 +88,11 @@ export async function GET(req: Request) {
     ]);
 
     // Player allowance (member + guests) so the kiosk can compare against the
-    // players GSPro shows. Never let a failure here break the poll.
+    // players GSPro shows. Never let a failure here break the poll. When the
+    // location has guest enforcement off we send no allowance at all — the kiosk
+    // treats a missing allowance as "not enforced" and never shows the players modal.
     let players: Awaited<ReturnType<typeof getPlayerAllowance>> | null = null;
-    if (currentBooking) {
+    if (currentBooking && location.bayAppGuestEnforcement) {
       try {
         players = await getPlayerAllowance(currentBooking.id);
       } catch (e) {
@@ -111,6 +114,7 @@ export async function GET(req: Request) {
         bayAppUnlockMinutes: location.bayAppUnlockMinutes,
         bayAppWarningMinutes: location.bayAppWarningMinutes,
         bayAppAutoCancelOnTimeout: location.bayAppAutoCancelOnTimeout,
+        bayAppGuestEnforcement: location.bayAppGuestEnforcement,
         passAccessUrl: location.passAccessUrl,
       },
       bay: bay

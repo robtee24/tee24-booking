@@ -101,6 +101,8 @@ export interface StatusResponse {
     bayAppUnlockMinutes: number;
     bayAppWarningMinutes: number;
     bayAppAutoCancelOnTimeout: boolean;
+    /** Server-side switch; when false the status carries no player allowance and the kiosk never shows the players modal. */
+    bayAppGuestEnforcement?: boolean;
     passAccessUrl: string | null;
   };
   bay: {

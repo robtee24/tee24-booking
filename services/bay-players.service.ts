@@ -126,9 +126,11 @@ export async function recordGuestViolation(input: {
   const prisma = getPrisma();
   const reg = await prisma.bayAppRegistration.findUnique({
     where: { deviceId: input.deviceId },
-    select: { locationId: true, bayNumber: true, location: { select: { slug: true, name: true, organizationId: true, timezone: true } } },
+    select: { locationId: true, bayNumber: true, location: { select: { slug: true, name: true, organizationId: true, timezone: true, bayAppGuestEnforcement: true } } },
   });
   if (!reg) throw new BayPlayersError(404, "DEVICE_NOT_REGISTERED", "Device not registered");
+  // No charges or alerts while the location has enforcement switched off (e.g. a kiosk on an older build).
+  if (!reg.location.bayAppGuestEnforcement) throw new BayPlayersError(409, "ENFORCEMENT_OFF", "Guest enforcement is turned off for this location");
 
   let booking: { id: string; memberId: string | null; firstName: string; lastName: string } | null = null;
   if (input.bookingId) {
