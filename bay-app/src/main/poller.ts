@@ -90,9 +90,18 @@ function idleWarnSeconds(limitSec: number) {
   return Math.min(60, Math.max(10, Math.floor(limitSec / 2)));
 }
 let idleClosing = false;
+/**
+ * Last moment a reservation prompt (unlock / upcoming / players) covered the
+ * screen. Those prompts block GSPro, so the people at the bay cannot generate
+ * input even if they want to keep playing; counting that time as "idle" would
+ * close GSPro the instant the unlock window expires (both default to 10 min).
+ * Idle is therefore measured from whichever is later: the last real input or
+ * the moment the prompt went away.
+ */
+let promptBlockedAt = 0;
 
 /** Returns an 'idle' overlay if the session is about to be closed for inactivity, else null. */
-function evaluateIdle(): KioskState['overlay'] | null {
+function evaluateIdle(promptShowing: boolean): KioskState['overlay'] | null {
   const { idleCloseMinutes } = getSettings();
   const launcher = getLauncherState();
   if (!launcher.running || !launcher.gsproPid) {
@@ -100,10 +109,15 @@ function evaluateIdle(): KioskState['overlay'] | null {
     idleClosing = false;
     return null;
   }
+  if (promptShowing) {
+    promptBlockedAt = Date.now();
+    return null;
+  }
   if (!idleCloseMinutes || idleCloseMinutes <= 0 || idleClosing) return null;
 
   const limit = idleCloseMinutes * 60;
-  const idle = powerMonitor.getSystemIdleTime();
+  const sincePrompt = promptBlockedAt ? Math.floor((Date.now() - promptBlockedAt) / 1000) : Number.POSITIVE_INFINITY;
+  const idle = Math.min(powerMonitor.getSystemIdleTime(), sincePrompt);
   if (idle >= limit) {
     // Stays set until the watcher reports the session gone, so a slow force-kill
     // doesn't trigger a second close.
@@ -411,8 +425,9 @@ function evaluate() {
   if (alert || (playersState.done && overlay.mode !== 'unlock')) overlay = { mode: 'players', booking: st?.currentBooking ?? null, deadline: null };
 
   // Inactivity warning wins over everything: it is the last thing the player
-  // can still react to before GSPro is closed.
-  const idle = evaluateIdle();
+  // can still react to before GSPro is closed. It never counts down while a
+  // reservation prompt is covering GSPro (see promptBlockedAt).
+  const idle = evaluateIdle(overlay.mode === 'unlock' || overlay.mode === 'upcoming' || overlay.mode === 'players');
   if (idle) overlay = idle;
 
   // Maintenance restart countdown beats everything (the PC is going down).
