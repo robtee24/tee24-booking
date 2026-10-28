@@ -78,6 +78,10 @@ export interface KioskSettings {
   openAtLogin: boolean;
   /** Close GSPro (and the launch-monitor programs) after this many minutes with no mouse/keyboard input. 0 = never. */
   idleCloseMinutes: number;
+  /** Restart Windows every Nth inactivity close (keeps GSPro/IDRA fresh). 0 = never. */
+  restartEveryIdleCloses: number;
+  /** Inactivity closes since the last maintenance restart (persisted so it survives kiosk restarts) */
+  idleCloseCount: number;
   /** Exe path the Windows logon task was last registered with (null = not registered) */
   autostartTaskExe: string | null;
   /** Set once the first-run wizard has been completed */
@@ -100,6 +104,8 @@ const DEFAULTS: KioskSettings = {
   remoteAgentInstalledAt: null,
   openAtLogin: true,
   idleCloseMinutes: 10,
+  restartEveryIdleCloses: 4,
+  idleCloseCount: 0,
   autostartTaskExe: null,
   setupCompletedAt: null,
 };

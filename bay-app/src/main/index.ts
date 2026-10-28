@@ -138,6 +138,7 @@ function registerIpc() {
   handle('kiosk:playersSnooze', () => poller.playersSnooze());
   handle('kiosk:playersDismiss', () => poller.playersDismiss());
   handle('kiosk:playersExitGame', () => poller.playersExitGame());
+  handle('kiosk:cancelRestart', () => poller.cancelRestart());
 
   // ---- Admin ----
   handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));
@@ -203,12 +204,17 @@ function registerIpc() {
   });
   handle('admin:saveLocal', (patch: Record<string, unknown>) => {
     requireAdmin();
-    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin', 'idleCloseMinutes'] as const;
+    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin', 'idleCloseMinutes', 'restartEveryIdleCloses'] as const;
     const clean: Record<string, unknown> = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
     if ('idleCloseMinutes' in clean) {
       const n = Number(clean.idleCloseMinutes);
       clean.idleCloseMinutes = Number.isFinite(n) && n >= 0 ? Math.min(240, Math.round(n)) : 10;
+    }
+    if ('restartEveryIdleCloses' in clean) {
+      const n = Number(clean.restartEveryIdleCloses);
+      clean.restartEveryIdleCloses = Number.isFinite(n) && n >= 0 ? Math.min(100, Math.round(n)) : 4;
+      clean.idleCloseCount = 0;
     }
     const s = updateSettings(clean);
     applyAutostart();

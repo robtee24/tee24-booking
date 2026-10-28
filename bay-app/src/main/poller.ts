@@ -1,4 +1,5 @@
 import { app, powerMonitor } from 'electron';
+import { execFile } from 'child_process';
 import log from 'electron-log';
 import { getStatus, cancelTimeout, type StatusResponse, type Booking } from './api';
 import { getSettings, isRegistered, updateSettings, type KioskSettings } from './store';
@@ -24,7 +25,7 @@ import * as players from './players';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle' | 'players';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle' | 'players' | 'restart';
 
 export interface KioskState {
   version: string;
@@ -67,7 +68,7 @@ let state: KioskState = {
 const acceptedUpcoming = new Set<string>();
 const dismissedUnlock = new Set<string>();
 const cancelRequested = new Set<string>();
-type UserMode = Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle' | 'players'>;
+type UserMode = Exclude<OverlayMode, 'unlock' | 'upcoming' | 'idle' | 'players' | 'restart'>;
 let userMode: UserMode = 'none';
 
 // ---------- Idle timeout ----------
@@ -101,7 +102,7 @@ function evaluateIdle(): KioskState['overlay'] | null {
     // doesn't trigger a second close.
     idleClosing = true;
     log.info(`[idle] no input for ${idle}s (limit ${limit}s); closing the session`);
-    void closeSession(`idle ${idleCloseMinutes} min`);
+    void closeSession(`idle ${idleCloseMinutes} min`).then(() => afterIdleClose());
     return null;
   }
   const warn = idleWarnSeconds(limit);
@@ -110,6 +111,57 @@ function evaluateIdle(): KioskState['overlay'] | null {
     return { mode: 'idle', booking: null, deadline };
   }
   return null;
+}
+
+// ---------- Maintenance restart ----------
+
+const RESTART_COUNTDOWN_S = 30;
+let restartAt: string | null = null;
+
+/**
+ * Every Nth inactivity close restarts Windows (GSPro, IDRA and the GolfIn
+ * launcher all leak over a day of sessions). Idle means nobody is at the bay,
+ * so this is the least disruptive moment. The kiosk comes back through its
+ * logon task, which needs Windows auto sign-in on the bay PC.
+ */
+function afterIdleClose() {
+  const s = getSettings();
+  const count = (s.idleCloseCount ?? 0) + 1;
+  const every = s.restartEveryIdleCloses ?? 0;
+  if (every > 0 && count >= every) {
+    updateSettings({ idleCloseCount: 0 });
+    scheduleRestart(`${count} inactivity closes`);
+  } else {
+    updateSettings({ idleCloseCount: count });
+    log.info(`[idle] close ${count}${every > 0 ? ` of ${every} before a maintenance restart` : ''}`);
+  }
+  publish();
+}
+
+function scheduleRestart(reason: string) {
+  if (restartAt) return;
+  restartAt = new Date(Date.now() + RESTART_COUNTDOWN_S * 1000).toISOString();
+  log.warn(`[restart] restarting Windows in ${RESTART_COUNTDOWN_S}s (${reason})`);
+  // Hand the restart to Windows now so it happens even if the kiosk dies first.
+  execFile('shutdown.exe', ['/r', '/f', '/t', String(RESTART_COUNTDOWN_S), '/c', 'Tee24 bay maintenance restart'], { windowsHide: true }, (err) => {
+    if (err) {
+      log.error('[restart] shutdown.exe failed', err.message);
+      restartAt = null;
+      publish();
+    }
+  });
+  evaluate();
+  publish();
+}
+
+/** Staff pressed "Cancel" on the restart notice. */
+export function cancelRestart() {
+  if (!restartAt) return;
+  execFile('shutdown.exe', ['/a'], { windowsHide: true }, () => {});
+  log.info('[restart] cancelled by staff');
+  restartAt = null;
+  evaluate();
+  publish();
 }
 
 let pollTimer: NodeJS.Timeout | null = null;
@@ -296,6 +348,9 @@ function evaluate() {
   // can still react to before GSPro is closed.
   const idle = evaluateIdle();
   if (idle) overlay = idle;
+
+  // Maintenance restart countdown beats everything (the PC is going down).
+  if (restartAt) overlay = { mode: 'restart', booking: null, deadline: restartAt };
 
   const changed =
     overlay.mode !== state.overlay.mode ||

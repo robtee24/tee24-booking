@@ -39,6 +39,7 @@ export function App() {
         </Modal>
       )}
       {mode === 'idle' && deadline && <IdleWarning deadline={deadline} minutes={state.settings.idleCloseMinutes} />}
+      {mode === 'restart' && deadline && <RestartNotice deadline={deadline} />}
       {mode === 'players' && (state.players.alert || state.players.done) && (
         <PlayersFlow
           alert={(state.players.alert ?? state.players.done)!}
@@ -74,6 +75,35 @@ function IdleWarning({ deadline, minutes }: { deadline: string; minutes: number 
       <div className="modal-foot" style={{ justifyContent: 'center' }}>
         <button className="btn btn-primary btn-lg" onClick={() => kiosk.openOverlay('none')}>
           Keep playing
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Restart: maintenance reboot after every Nth inactivity close ----------
+
+function RestartNotice({ deadline }: { deadline: string }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  const left = Math.max(0, new Date(deadline).getTime() - now);
+  return (
+    <div className="modal" style={{ textAlign: 'center' }}>
+      <div className="modal-head" style={{ textAlign: 'center' }}>
+        <div className="eyebrow">Bay maintenance</div>
+        <h1>This computer is restarting</h1>
+        <p>A quick restart keeps the simulator running smoothly. The bay will be back on this screen in about a minute.</p>
+      </div>
+      <div className="modal-body" style={{ textAlign: 'center' }}>
+        <div className={`countdown-big ${left < 10_000 ? 'bad' : 'warn'}`}>{formatCountdown(left)}</div>
+        <div className="tiny" style={{ marginTop: 6 }}>until Windows restarts</div>
+      </div>
+      <div className="modal-foot" style={{ justifyContent: 'center' }}>
+        <button className="btn btn-lg" onClick={() => kiosk.cancelRestart()}>
+          Cancel — I’m about to play
         </button>
       </div>
     </div>

@@ -2,6 +2,13 @@ import { useState } from 'react';
 import type { KioskState } from '../shared/types';
 import { TroubleshootFlow, labelLM } from '../shared/TroubleshootFlow';
 import { BackIcon } from '../shared/Icons';
+import { TimerArt, ProjectorArt, PlayArt, ModesArt, MatArt } from './GuideArt';
+
+/** "6155551234" / "+16155551234" → "(615) 555-1234"; anything else is shown as-is. */
+function formatPhoneDisplay(raw: string): string {
+  const d = raw.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : raw;
+}
 
 type Tab = 'walkthrough' | 'troubleshoot';
 
@@ -10,6 +17,7 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
   const [tab, setTab] = useState<Tab>('walkthrough');
   const lm = state.status?.bay.launchMonitor ?? state.settings.launchMonitor ?? 'OTHER';
   const notes = state.status?.bay.setupNotes;
+  const phone = state.status?.location.phone ?? null;
 
   return (
     <div className="page">
@@ -23,27 +31,44 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
       </div>
       <div className="page-body">
         {tab === 'walkthrough' ? (
-          <div className="grid-2">
-            <div className="card">
-              <div className="card-title">Getting the bay ready · {labelLM(lm)}</div>
-              <div className="card-sub" style={{ marginBottom: 18 }}>Follow these in order. If anything doesn’t look right, open the troubleshooting guide.</div>
-              <ol className="steps">
-                {walkthroughFor(lm).map((s, i) => (
-                  <li key={i}>
-                    <strong>{s.title}</strong>
-                    <p>{s.body}</p>
-                  </li>
-                ))}
-              </ol>
+          <div className="stack">
+            <div className="guide-grid">
+              {GUIDE_STEPS.map((s, i) => (
+                <div key={i} className="card guide-step">
+                  {s.art}
+                  <div className="guide-step-body">
+                    <div className="guide-step-num">{i + 1}</div>
+                    <div>
+                      <div className="card-title">{s.title}</div>
+                      <div className="card-sub" style={{ fontSize: 16 }}>{s.body}</div>
+                      {s.note && <div className="guide-note">{s.note}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="stack">
+            <div className="card guide-callout">
+              <div className="guide-callout-icon"><MatArt /></div>
+              <div>
+                <div className="card-title">Hit from the back 2/3 of the mat</div>
+                <div className="card-sub" style={{ fontSize: 16 }}>
+                  Keep the mat and the area right around it clear of golf balls and anything else white — stray white objects confuse the cameras.
+                </div>
+              </div>
+            </div>
+            <div className="grid-2">
               <div className="card">
-                <div className="card-title">Notes for this bay</div>
+                <div className="card-title">Notes for this bay · {labelLM(lm)}</div>
                 {notes ? <div className="notes" style={{ marginTop: 10 }}>{notes}</div> : <div className="card-sub">No bay-specific notes yet. Admins can add them under Settings → Bay details.</div>}
               </div>
               <div className="card">
-                <div className="card-title">Still stuck?</div>
-                <div className="card-sub">Use the Help button (also floating on the right while GSPro is open) for step-by-step fixes, or text the Tee24 number on your confirmation message.</div>
+                <div className="card-title">Need a hand?</div>
+                <div className="card-sub" style={{ fontSize: 16 }}>
+                  If you haven’t been able to fix the issue, or need help getting started, call{' '}
+                  {phone ? <b className="guide-phone">{formatPhoneDisplay(phone)}</b> : <b>the Tee24 number on your confirmation message</b>}
+                  {' '}and press <b>extension 1</b> for immediate help.
+                </div>
+                <div className="card-sub" style={{ marginTop: 8 }}>The Help button (also floating on the right while GSPro is open) has step-by-step fixes for common problems.</div>
               </div>
             </div>
           </div>
@@ -57,31 +82,26 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
   );
 }
 
-function walkthroughFor(lm: string): { title: string; body: string }[] {
-  const common = [
-    { title: 'Power', body: 'Projector, PC, and launch monitor all on. The projector input should show the Windows desktop (this screen).' },
-    { title: 'Tee up in the hitting zone', body: 'Place the ball on the marked spot. Most “no shot read” problems are a ball outside the sensor zone.' },
-  ];
-  const byLm: Record<string, { title: string; body: string }[]> = {
-    IDRA: [
-      { title: 'Launch monitor connected', body: 'The IDRA II should be powered and plugged into the PC. If its light is blinking, wait 30 seconds for it to finish booting.' },
-      { title: 'Press Play', body: 'Play starts the IDRA software, which opens GSPro itself. Wait for the orange IDRA badge at the top of the GSPro screen — that means the launch monitor is connected.' },
-      { title: 'Calibration', body: 'If shots fly oddly, run IDRA Auto-Calibration from the Windows Start menu. Keep your hands clear of the sensor during it.' },
-    ],
-    SKYTRAK: [
-      { title: 'SkyTrak awake', body: 'Tap the power button once; the light turns green when it’s ready. Red means it’s charging/asleep.' },
-      { title: 'Press Play', body: 'Play opens the SkyTrak app and GSPro. Wait for GSPro to say “Connected”.' },
-      { title: 'Alignment', body: 'The red laser dot should sit right beside the ball. Move the ball, not the unit.' },
-    ],
-    PROTEE_VX: [
-      { title: 'ProTee VX ready', body: 'Camera status lights on the VX should be solid green.' },
-      { title: 'Press Play', body: 'Play opens the ProTee interface and GSPro. Wait for GSPro to say “Connected”.' },
-      { title: 'Lighting', body: 'Avoid pointing bright lights at the cameras; dim overheads if the VX stops tracking.' },
-    ],
-    OTHER: [
-      { title: 'Launch monitor ready', body: 'Make sure the launch monitor shows as ready and is pointed at the hitting zone.' },
-      { title: 'Press Play', body: 'Play opens the launch monitor software and GSPro. Wait for GSPro to say “Connected”.' },
-    ],
-  };
-  return [...common, ...(byLm[lm] ?? byLm.OTHER), { title: 'Choose a course and play', body: 'In GSPro pick Local Play (or your event), set tees, and hit away. When your time is almost up the kiosk will let you know.' }];
-}
+const GUIDE_STEPS: { title: string; body: string; note?: string; art: React.ReactNode }[] = [
+  {
+    title: 'Start the simulator timer',
+    body: 'The timer switch is mounted upright on the wall near the monitor in every bay. Select the amount of time you want (5 minutes up to 4 hours) and the simulator powers on.',
+    art: <TimerArt />,
+  },
+  {
+    title: 'Turn on the projector',
+    body: 'Point the remote at the projector and press the green ON button. The projector is at the front of the bay, right where you first walk in. Give it a few seconds to warm up.',
+    art: <ProjectorArt />,
+  },
+  {
+    title: 'Click Play on this screen',
+    body: 'Clicking Play starts the launch monitor software and GSPro together. Wait for the GSPro welcome screen; this screen will switch over on its own.',
+    art: <PlayArt />,
+  },
+  {
+    title: 'Pick what to play in GSPro',
+    body: 'Practice for the driving range · Local Match for a round of golf · Challenges for game-improvement contests.',
+    note: 'Sim Golf Tournaments need your own GSPro account. Online Match is for linking multiple bays together.',
+    art: <ModesArt />,
+  },
+];

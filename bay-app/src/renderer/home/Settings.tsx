@@ -171,6 +171,7 @@ function LaunchPaths({ state }: { state: KioskState }) {
   const [lmPath, setLmPath] = useState(state.settings.launchMonitorPath);
   const [gsPath, setGsPath] = useState(state.settings.gsproPath);
   const [idleMin, setIdleMin] = useState(String(state.settings.idleCloseMinutes ?? 10));
+  const [restartEvery, setRestartEvery] = useState(String(state.settings.restartEveryIdleCloses ?? 4));
   const [exists, setExists] = useState<{ launchMonitor: boolean; gspro: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -180,7 +181,10 @@ function LaunchPaths({ state }: { state: KioskState }) {
   useEffect(() => { refresh(); }, []);
 
   async function save() {
-    const r = await kiosk.adminSaveLocal({ launchMonitorPath: lmPath.trim(), gsproPath: gsPath.trim(), idleCloseMinutes: Number(idleMin) || 0 });
+    const patch: Record<string, unknown> = { launchMonitorPath: lmPath.trim(), gsproPath: gsPath.trim(), idleCloseMinutes: Number(idleMin) || 0 };
+    // Only send when changed: saving it resets the "closes since last restart" counter.
+    if ((Number(restartEvery) || 0) !== (state.settings.restartEveryIdleCloses ?? 4)) patch.restartEveryIdleCloses = Number(restartEvery) || 0;
+    const r = await kiosk.adminSaveLocal(patch);
     if (isErr(r)) return setMsg(r.error);
     setMsg('Saved.');
     refresh();
@@ -228,6 +232,16 @@ function LaunchPaths({ state }: { state: KioskState }) {
           <span className="muted">minutes without any mouse or keyboard input (0 = never)</span>
         </div>
         <div className="hint">A “Still playing?” countdown shows first; any tap cancels it. Closes GSPro, the IDRA software and the GolfIn Launcher.</div>
+      </div>
+      <div className="field">
+        <label className="label">Restart the PC every</label>
+        <div className="row">
+          <input className="input" style={{ maxWidth: 120 }} inputMode="numeric" value={restartEvery} onChange={(e) => setRestartEvery(e.target.value.replace(/\D/g, ''))} />
+          <span className="muted">inactivity closes (0 = never) · {state.settings.idleCloseCount ?? 0} since the last restart</span>
+        </div>
+        <div className="hint">
+          Keeps GSPro and the launch-monitor software fresh. A 30-second notice shows first and staff can cancel it. Windows must be set to sign in automatically or the kiosk will wait at the lock screen.
+        </div>
       </div>
       {msg && <div className="success">{msg}</div>}
       <div className="row" style={{ justifyContent: 'flex-end' }}>

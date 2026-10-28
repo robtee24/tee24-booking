@@ -95,6 +95,8 @@ export interface StatusResponse {
     name: string;
     slug: string;
     timezone: string;
+    /** Front-desk / support number shown in Setup Help (location.phone); null until an admin sets it. */
+    phone?: string | null;
     bayAppEnabled: boolean;
     bayAppUnlockMinutes: number;
     bayAppWarningMinutes: number;

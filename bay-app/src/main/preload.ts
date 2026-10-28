@@ -39,6 +39,7 @@ const api = {
   playersSnooze: () => ipcRenderer.invoke('kiosk:playersSnooze'),
   playersDismiss: () => ipcRenderer.invoke('kiosk:playersDismiss'),
   playersExitGame: () => ipcRenderer.invoke('kiosk:playersExitGame'),
+  cancelRestart: () => ipcRenderer.invoke('kiosk:cancelRestart'),
 
   // Admin (Quo SMS sign-in)
   adminSendOtp: (phone: string) => ipcRenderer.invoke('admin:sendOtp', phone),
