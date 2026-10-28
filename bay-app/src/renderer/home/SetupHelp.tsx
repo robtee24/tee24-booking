@@ -31,7 +31,7 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
       </div>
       <div className="page-body">
         {tab === 'walkthrough' ? (
-          <div className="stack">
+          <div className="guide">
             <div className="guide-grid">
               {GUIDE_STEPS.map((s, i) => (
                 <div key={i} className="card guide-step">
@@ -40,7 +40,7 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
                     <div className="guide-step-num">{i + 1}</div>
                     <div>
                       <div className="card-title">{s.title}</div>
-                      <div className="card-sub" style={{ fontSize: 16 }}>{s.body}</div>
+                      <div className="card-sub">{s.body}</div>
                       {s.note && <div className="guide-note">{s.note}</div>}
                     </div>
                   </div>
@@ -51,24 +51,24 @@ export function SetupHelp({ state, onClose }: { state: KioskState; onClose: () =
               <div className="guide-callout-icon"><MatArt /></div>
               <div>
                 <div className="card-title">Hit from the back 2/3 of the mat</div>
-                <div className="card-sub" style={{ fontSize: 16 }}>
+                <div className="card-sub">
                   Keep the mat and the area right around it clear of golf balls and anything else white — stray white objects confuse the cameras.
                 </div>
               </div>
             </div>
-            <div className="grid-2">
+            <div className="guide-bottom">
               <div className="card">
                 <div className="card-title">Notes for this bay · {labelLM(lm)}</div>
                 {notes ? <div className="notes" style={{ marginTop: 10 }}>{notes}</div> : <div className="card-sub">No bay-specific notes yet. Admins can add them under Settings → Bay details.</div>}
               </div>
               <div className="card">
                 <div className="card-title">Need a hand?</div>
-                <div className="card-sub" style={{ fontSize: 16 }}>
+                <div className="card-sub">
                   If you haven’t been able to fix the issue, or need help getting started, call{' '}
                   {phone ? <b className="guide-phone">{formatPhoneDisplay(phone)}</b> : <b>the Tee24 number on your confirmation message</b>}
                   {' '}and press <b>extension 1</b> for immediate help.
                 </div>
-                <div className="card-sub" style={{ marginTop: 8 }}>The Help button (also floating on the right while GSPro is open) has step-by-step fixes for common problems.</div>
+                <div className="card-sub" style={{ marginTop: 6 }}>The Help button (also floating on the right while GSPro is open) has step-by-step fixes for common problems.</div>
               </div>
             </div>
           </div>

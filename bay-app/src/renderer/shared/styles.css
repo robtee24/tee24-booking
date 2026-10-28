@@ -488,10 +488,24 @@ a {
   font-size: 16px;
 }
 /* Illustrated startup guide (Setup Help) */
+/* Setup walkthrough: fills the page height, no scrolling. The four step cards
+   share the leftover height (2×2 grid); the illustrations size themselves off
+   the row height so the layout holds at 1536×960 (125 % DPI) and 1920×1200. */
+.guide {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.4vh, 16px);
+  --guide-text: clamp(13px, 1.5vh, 16px);
+  --guide-pad: clamp(12px, 1.8vh, 22px);
+}
 .guide-grid {
+  flex: 1 1 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 1.6vh, 20px);
 }
 .guide-step {
   padding: 0;
@@ -499,70 +513,106 @@ a {
   display: flex;
   flex-direction: row;
   align-items: stretch;
+  min-height: 0;
 }
 .guide-art {
   display: block;
-  flex: 0 0 380px;
-  width: 380px;
-  height: auto;
-  align-self: center;
+  flex: 0 0 auto;
+  height: 100%;
+  width: auto;
+  max-width: 48%;
   aspect-ratio: 400 / 240;
   border-right: 1px solid var(--border);
 }
 .guide-step-body {
   display: flex;
-  gap: 16px;
-  padding: 22px 24px;
+  gap: 14px;
+  padding: var(--guide-pad) clamp(14px, 1.6vw, 24px);
   align-items: flex-start;
   min-width: 0;
+  overflow: hidden;
+}
+.guide-step-body .card-title {
+  font-size: clamp(16px, 2vh, 20px);
+}
+.guide-step-body .card-sub {
+  font-size: var(--guide-text);
 }
 .guide-step-num {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: clamp(32px, 4vh, 40px);
+  height: clamp(32px, 4vh, 40px);
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: var(--green);
   color: #052e16;
   font-weight: 800;
-  font-size: 20px;
+  font-size: clamp(16px, 2vh, 20px);
 }
 .guide-callout {
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  gap: 24px;
+  align-items: stretch;
+  gap: 20px;
   padding: 0;
   overflow: hidden;
   border-color: rgba(34, 197, 94, 0.35);
 }
 .guide-callout > div:last-child {
-  padding: 22px 24px;
+  padding: var(--guide-pad) 24px;
   min-width: 0;
+  align-self: center;
+}
+.guide-callout .card-sub {
+  font-size: var(--guide-text);
 }
 .guide-callout-icon {
-  flex: 0 0 300px;
+  flex: 0 0 auto;
   display: flex;
 }
 .guide-art-sm {
-  width: 300px;
-  flex-basis: 300px;
-  align-self: stretch;
+  display: block;
+  height: clamp(96px, 13vh, 150px);
+  width: auto;
+  aspect-ratio: 400 / 200;
   border-right: 1px solid var(--border);
+}
+.guide-bottom {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 1.6vh, 20px);
+}
+.guide-bottom .card {
+  padding: var(--guide-pad) 24px;
+}
+.guide-bottom .card-title {
+  font-size: clamp(16px, 2vh, 20px);
+}
+.guide-bottom .card-sub {
+  font-size: var(--guide-text);
+}
+.guide-bottom .notes {
+  font-size: var(--guide-text);
+  padding: 10px 12px;
+  margin-top: 6px !important;
+  max-height: 12vh;
+  overflow: auto;
 }
 .guide-phone {
   color: var(--green);
-  font-size: 20px;
+  font-size: 1.25em;
   white-space: nowrap;
 }
 .guide-note {
-  margin-top: 10px;
-  padding: 10px 14px;
+  margin-top: 8px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: rgba(56, 189, 248, 0.1);
   border: 1px solid rgba(56, 189, 248, 0.3);
   color: #bae6fd;
-  font-size: 15px;
+  font-size: var(--guide-text);
 }
 
 .kv {

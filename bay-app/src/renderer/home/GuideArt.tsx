@@ -191,46 +191,49 @@ export function ModesArt() {
   );
 }
 
-/** Callout: top-down hitting mat in portrait, like the real mat. The screen is at the top (arrow),
- *  the back two-thirds (lower part) is the hitting zone, and crossed-out balls / white objects sit
- *  beside the mat. */
+/** Callout: top-down hitting mat, wider than tall like the real one. The screen
+ *  is "up" (arrow at the top); the front third nearest the screen is dimmed and
+ *  the back two-thirds is the hitting zone. Crossed-out balls sit beside the mat.
+ *  400×200 canvas. */
 export function MatArt() {
-  const mx = 150, my = 44, mw = 100, mh = 178;
+  const mx = 110, my = 42, mw = 180, mh = 128;
   const frontH = mh / 3;
-  const zoneTop = my + frontH;
-  const zoneMidY = zoneTop + (mh - frontH) / 2;
+  const zoneTop = my + 6 + frontH;
+  const zoneH = mh - 12 - frontH;
+  const label = (x: number, y: number, size: number, text: string, fill = 'var(--text-2)', weight = 400) => (
+    <text x={x} y={y} textAnchor="middle" fontSize={size} fontWeight={weight} fill={fill} style={{ fontFamily: 'var(--font)' }}>{text}</text>
+  );
   return (
-    <svg className="guide-art guide-art-sm" viewBox="0 0 400 240" role="img" aria-hidden>
-      <rect width="400" height="240" rx="16" fill={WALL} />
+    <svg className="guide-art-sm" viewBox="0 0 400 200" role="img" aria-hidden>
+      <rect width="400" height="200" rx="16" fill={WALL} />
       {/* screen direction: up */}
-      <path d="M200 36 L200 12" stroke="var(--text-2)" strokeWidth="3" strokeLinecap="round" />
+      <path d="M200 34 L200 12" stroke="var(--text-2)" strokeWidth="3" strokeLinecap="round" />
       <path d="M190 22 L200 10 L210 22" fill="none" stroke="var(--text-2)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <text x="216" y="26" fontSize="11" fill="var(--text-2)" style={{ fontFamily: 'var(--font)' }}>screen</text>
+      {label(230, 26, 11, 'screen')}
       {/* mat */}
       <rect x={mx} y={my} width={mw} height={mh} rx="10" fill="#2f6b3a" />
       <rect x={mx + 6} y={my + 6} width={mw - 12} height={mh - 12} rx="7" fill="#3f8a4c" />
       {/* front third (toward the screen), dimmed */}
-      <rect x={mx + 6} y={my + 6} width={mw - 12} height={frontH - 6} rx="7" fill="#1b2742" opacity="0.45" />
+      <rect x={mx + 6} y={my + 6} width={mw - 12} height={frontH} rx="7" fill="#1b2742" opacity="0.45" />
       {/* back 2/3 highlight */}
-      <rect x={mx + 6} y={zoneTop} width={mw - 12} height={mh - frontH - 6} rx="7" fill="none" stroke="var(--green)" strokeWidth="4" strokeDasharray="10 7" />
-      <text x={mx + mw / 2} y={zoneMidY - 10} textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff" style={{ fontFamily: 'var(--font)' }}>HIT FROM</text>
-      <text x={mx + mw / 2} y={zoneMidY + 6} textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff" style={{ fontFamily: 'var(--font)' }}>HERE</text>
-      <text x={mx + mw / 2} y={zoneMidY + 24} textAnchor="middle" fontSize="10" fill="#d1fae5" style={{ fontFamily: 'var(--font)' }}>back 2/3</text>
+      <rect x={mx + 6} y={zoneTop} width={mw - 12} height={zoneH} rx="7" fill="none" stroke="var(--green)" strokeWidth="4" strokeDasharray="10 7" />
+      {label(mx + mw / 2, zoneTop + zoneH / 2 - 2, 15, 'HIT FROM HERE', '#fff', 800)}
+      {label(mx + mw / 2, zoneTop + zoneH / 2 + 16, 11, 'back 2/3 of the mat', '#d1fae5')}
       {/* ball teed up in the hitting zone */}
-      <circle cx={mx + mw / 2} cy={my + mh - 24} r="7" fill="#fff" />
+      <circle cx={mx + mw / 2} cy={my + mh - 18} r="6" fill="#fff" />
       {/* stray balls / white objects beside the mat, crossed out */}
-      {[[292, 90], [310, 140], [290, 190]].map(([cx, cy]) => (
+      {[[326, 80], [344, 128], [322, 160]].map(([cx, cy]) => (
         <g key={cx}>
-          <circle cx={cx} cy={cy} r="9" fill="#fff" />
-          <circle cx={cx} cy={cy} r="16" fill="none" stroke="#f87171" strokeWidth="3" />
-          <path d={`M${cx - 11} ${cy - 11} L${cx + 11} ${cy + 11}`} stroke="#f87171" strokeWidth="3" strokeLinecap="round" />
+          <circle cx={cx} cy={cy} r="8" fill="#fff" />
+          <circle cx={cx} cy={cy} r="14" fill="none" stroke="#f87171" strokeWidth="3" />
+          <path d={`M${cx - 10} ${cy - 10} L${cx + 10} ${cy + 10}`} stroke="#f87171" strokeWidth="3" strokeLinecap="round" />
         </g>
       ))}
       {/* caption, left of the mat */}
-      <text x="72" y="120" textAnchor="middle" fontSize="12" fill="var(--text-2)" style={{ fontFamily: 'var(--font)' }}>No balls or</text>
-      <text x="72" y="136" textAnchor="middle" fontSize="12" fill="var(--text-2)" style={{ fontFamily: 'var(--font)' }}>white objects</text>
-      <text x="72" y="152" textAnchor="middle" fontSize="12" fill="var(--text-2)" style={{ fontFamily: 'var(--font)' }}>on or around</text>
-      <text x="72" y="168" textAnchor="middle" fontSize="12" fill="var(--text-2)" style={{ fontFamily: 'var(--font)' }}>the mat</text>
+      {label(55, 90, 12, 'No balls or')}
+      {label(55, 106, 12, 'white objects')}
+      {label(55, 122, 12, 'on or around')}
+      {label(55, 138, 12, 'the mat')}
     </svg>
   );
 }
