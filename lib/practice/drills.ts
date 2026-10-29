@@ -24,6 +24,47 @@ export type FocusAreaKey =
 
 export type DrillLevel = "all" | "beginner" | "intermediate" | "advanced";
 
+/**
+ * Ball-flight / game patterns a member can report in the survey (issues +
+ * misses) or that swing data can detect. Drills declare which patterns they
+ * FIX and which they would make WORSE so the plan never hands a hooker an
+ * anti-slice drill.
+ */
+export type PatternKey =
+  | "slice"
+  | "fade"
+  | "hook"
+  | "pull"
+  | "push"
+  | "fat"
+  | "thin"
+  | "short"
+  | "contact"
+  | "distance_control"
+  | "short_game"
+  | "putting"
+  | "driver"
+  | "course_management"
+  | "nerves";
+
+export const PATTERN_LABEL: Record<PatternKey, string> = {
+  slice: "slice",
+  fade: "weak fade",
+  hook: "hook",
+  pull: "pull",
+  push: "push",
+  fat: "fat shots",
+  thin: "thin shots",
+  short: "distance",
+  contact: "inconsistent contact",
+  distance_control: "distance control",
+  short_game: "short game",
+  putting: "putting",
+  driver: "driver",
+  course_management: "course management",
+  nerves: "pressure",
+};
+
 export type Drill = {
   key: string;
   title: string;
@@ -40,6 +81,10 @@ export type Drill = {
   successMetric: string;
   /** Short coaching cue */
   cue: string;
+  /** Patterns this drill directly addresses (boosted when the member reports them). */
+  fixes?: PatternKey[];
+  /** Patterns this drill would aggravate — never prescribed to members who report them. */
+  avoidFor?: PatternKey[];
 };
 
 export const FOCUS_AREAS: Record<FocusAreaKey, { label: string; blurb: string }> = {
@@ -70,6 +115,7 @@ export const DRILLS: Drill[] = [
     steps: ["Make 5 slow half-speed swings without a ball, missing both gate tees.", "Hit 10 drives at 80% speed. If you clip a gate tee, note which side.", "Finish with 5 full-speed drives through the gate."],
     successMetric: "Launch Direction within ±4° on 7 of 10 shots; Offline under 20 yd.",
     cue: "Swing the center of the face through the gate — not the ball.",
+    fixes: ["driver", "slice", "hook", "pull", "push"],
   },
   {
     key: "nine_windows",
@@ -84,6 +130,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 9 shots, one per window, in order (low-left → high-right).", "Score 1 point for a shot that flies in the called window.", "Repeat the grid once; try to beat your first score."],
     successMetric: "6+ of 9 windows hit. Launch Direction matches the call within 5°.",
     cue: "Face sends it, path bends it — set the face first.",
+    fixes: ["pull", "push", "slice", "hook"],
   },
   {
     key: "face_to_path_ladder",
@@ -98,6 +145,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 5 shots trying to produce a slight DRAW: face 1–2° closed to path.", "Hit 5 shots trying to produce a slight FADE: face 1–2° open to path.", "Hit 5 straight shots: Face to Path inside ±1.5°.", "Note which shape felt most natural — that's your stock shot."],
     successMetric: "Spin Axis inside ±6° on the straight set; Offline < 15 yd.",
     cue: "Feel the face, don't steer the path.",
+    fixes: ["slice", "fade", "hook", "pull", "push"],
   },
   {
     key: "anti_slice_towel",
@@ -112,6 +160,8 @@ export const DRILLS: Drill[] = [
     steps: ["10 three-quarter 7-irons keeping the towel pinned.", "10 three-quarter drivers — towel pinned, feel the club approach from the inside.", "10 full drivers without the towel, keeping the same connected feel."],
     successMetric: "Club Path moves toward neutral/in-to-out; Spin Axis drops below +8°.",
     cue: "Arms stay in front of your chest; turn through, don't throw.",
+    fixes: ["slice", "fade", "push"],
+    avoidFor: ["hook", "pull"],
   },
   {
     key: "split_hand_release",
@@ -126,6 +176,8 @@ export const DRILLS: Drill[] = [
     steps: ["Make 10 slow swings feeling the trail hand roll over the lead hand after impact.", "Hit 10 soft 8-irons with the split grip.", "Return to your normal grip and hit 10 more, keeping the release feel."],
     successMetric: "Face Angle at impact closes toward 0° or slightly closed; side spin drops.",
     cue: "Let the toe pass the heel through the ball.",
+    fixes: ["slice", "fade", "push"],
+    avoidFor: ["hook", "pull"],
   },
 
   // ───────────────────────── Distance & speed ─────────────────────────
@@ -142,6 +194,7 @@ export const DRILLS: Drill[] = [
     steps: ["Set 1: 5 drives at a comfortable 80% — record average club speed.", "Set 2: 5 drives at 95% — swing hard but keep balance in the finish.", "Set 3: 5 drives at 100%+ — reckless speed, don't care where it goes.", "Set 4: 5 drives at 90% — notice the speed carried over."],
     successMetric: "Set 4 club speed is 2+ mph faster than Set 1; Smash Factor stays above 1.42.",
     cue: "Speed first, then aim. Finish in balance every swing.",
+    fixes: ["short"],
   },
   {
     key: "tee_height_launch",
@@ -156,6 +209,7 @@ export const DRILLS: Drill[] = [
     steps: ["5 drives with the ball teed so half of it sits above the crown.", "5 drives teed slightly higher, ball a half-ball further forward.", "5 drives feeling the club sweep up through the ball (tilt trail shoulder slightly down at address).", "Find the combination that launches 12–15° with 2,000–2,800 rpm."],
     successMetric: "Launch Angle 12–15°, Back Spin 2,000–2,800 rpm, Attack Angle ≥ 0°.",
     cue: "Hit up on it — the tee is there for a reason.",
+    fixes: ["short", "driver"],
   },
   {
     key: "smash_center_strike",
@@ -170,6 +224,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 10 shots at 75% speed focusing only on center contact.", "Hit 10 shots at 90% — same contact goal.", "Compare Smash Factor between sets; speed only counts if the number holds."],
     successMetric: "Driver Smash ≥ 1.45 (irons ≥ 1.33) on 7 of 10 shots.",
     cue: "Center face beats fast face.",
+    fixes: ["short", "driver", "contact"],
   },
 
   // ───────────────────────── Iron contact ─────────────────────────
@@ -186,6 +241,7 @@ export const DRILLS: Drill[] = [
     steps: ["10 half-swings with a 9-iron, missing the towel and brushing the mat after the ball.", "10 three-quarter 7-irons with the same goal.", "10 full 7-irons; remove the towel for the last 5 and keep the feel."],
     successMetric: "Attack Angle between -2° and -5°; Smash ≥ 1.30; carry spread under 8 yd.",
     cue: "Weight left, hands lead, chest over the ball.",
+    fixes: ["fat", "thin", "contact"],
   },
   {
     key: "feet_together_tempo",
@@ -200,6 +256,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 10 smooth 8-irons at 60% — if you lose balance, you swung too hard.", "Widen to a normal stance and hit 10 more at the same tempo.", "Watch Ball Speed: it should barely drop from normal stance at full speed."],
     successMetric: "Smash Factor within 0.03 of your best set; Offline < 12 yd.",
     cue: "Tempo you can balance is tempo you can repeat.",
+    fixes: ["contact", "nerves"],
   },
   {
     key: "trail_foot_back",
@@ -214,6 +271,8 @@ export const DRILLS: Drill[] = [
     steps: ["10 three-quarter shots staying on the lead side the whole swing.", "10 normal-stance shots keeping the same forward-pressure feel."],
     successMetric: "Divot (mat brush) after the ball; Attack Angle stays negative; Dynamic Loft drops 2–3°.",
     cue: "Stay on your front side — turn, don't sway.",
+    fixes: ["fat", "thin", "slice"],
+    avoidFor: ["hook"],
   },
   {
     key: "ladder_contact_half_full",
@@ -228,6 +287,7 @@ export const DRILLS: Drill[] = [
     steps: ["3 half swings, 3 three-quarter, 3 full — record carry for each length.", "Repeat with the next club.", "Write down your three numbers per club — these are your in-between yardages."],
     successMetric: "Each swing length produces a carry band no wider than 7 yd.",
     cue: "Same tempo, different length.",
+    fixes: ["contact", "fat", "thin", "distance_control"],
   },
 
   // ───────────────────────── Distance control ─────────────────────────
@@ -244,6 +304,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 5 shots at each clock position with your sand wedge; log average carry for each.", "Repeat with your gap wedge and pitching wedge.", "Build a 9-number chart (3 wedges × 3 lengths). Save it in Settings notes."],
     successMetric: "Carry at each position repeats within ±5 yd on 4 of 5 shots.",
     cue: "Rhythm stays the same; only the backswing length changes.",
+    fixes: ["distance_control", "short_game"],
   },
   {
     key: "random_yardage",
@@ -258,6 +319,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 12 shots, never the same yardage twice in a row.", "Score: 3 points inside 5 yd of the number, 1 point inside 10 yd.", "Beat 20 points to graduate."],
     successMetric: "Average carry miss under 7 yd across the 12 shots.",
     cue: "Commit to a club and a swing length before you step in.",
+    fixes: ["distance_control"],
   },
   {
     key: "gapping_session",
@@ -272,6 +334,7 @@ export const DRILLS: Drill[] = [
     steps: ["Record the median carry of the 5 good shots for each club.", "Look for gaps smaller than 8 yd or larger than 18 yd between adjacent clubs.", "Export the GSPro shot data and import it into the app to update your plan."],
     successMetric: "Even 10–15 yd gaps through the bag; wedge gaps 10–12 yd.",
     cue: "Your stock yardage is the median, not the hero shot.",
+    fixes: ["distance_control", "short"],
   },
 
   // ───────────────────────── Short game ─────────────────────────
@@ -287,6 +350,7 @@ export const DRILLS: Drill[] = [
     steps: ["10 chips with a 9-iron landing on the towel — watch how far it rolls.", "10 with a PW, 10 with a SW — same landing spot.", "Note roll-out for each club: that's your chipping ratio."],
     successMetric: "7 of 10 land on or within a club-length of the towel.",
     cue: "Pick the landing spot first, then the club that rolls the rest.",
+    fixes: ["short_game"],
   },
   {
     key: "hinge_hold_pitch",
@@ -301,6 +365,7 @@ export const DRILLS: Drill[] = [
     steps: ["10 pitches to 30 yd — hinge early, hold the angle, rotate through.", "10 pitches to 45 yd, 10 to 60 yd.", "Record carry; the body turn (not the hands) should control distance."],
     successMetric: "Launch Angle stays 28–35°; carry within ±4 yd of target.",
     cue: "Chest controls distance, hands stay quiet.",
+    fixes: ["short_game", "fat", "thin"],
   },
   {
     key: "up_and_down_challenge",
@@ -315,6 +380,7 @@ export const DRILLS: Drill[] = [
     steps: ["Play 9 'holes': chip/pitch on, then putt out.", "Track how many you get up-and-down in 2.", "Any hole you take 4+ shots, replay it once."],
     successMetric: "4+ of 9 up-and-downs; no three-putts.",
     cue: "Get it on the green and give the putt a chance.",
+    fixes: ["short_game", "nerves"],
   },
 
   // ───────────────────────── Putting ─────────────────────────
@@ -330,6 +396,7 @@ export const DRILLS: Drill[] = [
     steps: ["Putt 3 balls to each distance; goal is finishing within 3 ft past the hole.", "Then alternate 10 → 30 → 20 → 10 ft without looking at the previous result.", "Count balls that finish inside the 3-ft circle."],
     successMetric: "7 of 9 lag putts finish inside 3 ft.",
     cue: "Eyes on the hole for the practice stroke; feel the distance, don't measure it.",
+    fixes: ["putting"],
   },
   {
     key: "gate_putting_start_line",
@@ -344,6 +411,7 @@ export const DRILLS: Drill[] = [
     steps: ["Roll 15 putts through the gate from 6 ft.", "Any putt that clips a tee, hit 2 more before moving on.", "Finish with 5 putts without the gate."],
     successMetric: "12 of 15 clean through the gate; 6-footers made 8 of 10.",
     cue: "Face square at impact — the gate only cares about the face.",
+    fixes: ["putting", "pull", "push"],
   },
   {
     key: "around_the_world_putting",
@@ -357,6 +425,7 @@ export const DRILLS: Drill[] = [
     steps: ["Make all four 3-footers in a row. Miss one, start over.", "Then all four 6-footers in a row.", "Max 10 minutes — note how many full laps you completed."],
     successMetric: "Complete both laps within 10 minutes.",
     cue: "Same routine, same tempo, every putt.",
+    fixes: ["putting", "nerves"],
   },
 
   // ───────────────────────── Consistency / transfer ─────────────────────────
@@ -373,6 +442,7 @@ export const DRILLS: Drill[] = [
     steps: ["Before each shot say the target and the shot shape out loud.", "Aim at the fat side of every green; never short-side yourself.", "After the round, note the 3 shots that cost you the most strokes — those feed your next plan."],
     successMetric: "No penalty strokes; fewer than 2 three-putts; hit your scoring goal for 9.",
     cue: "Practice like you play, so you can play like you practice.",
+    fixes: ["course_management", "nerves"],
   },
   {
     key: "two_club_challenge",
@@ -387,6 +457,7 @@ export const DRILLS: Drill[] = [
     steps: ["Plan each hole backwards from the green.", "Use swing-length ladders (half/three-quarter/full) to hit odd yardages.", "Compare your score to your normal full-bag score on the same holes."],
     successMetric: "Within 3 shots of your full-bag score.",
     cue: "Creativity beats brute force.",
+    fixes: ["course_management"],
   },
   {
     key: "pressure_streak",
@@ -401,6 +472,7 @@ export const DRILLS: Drill[] = [
     steps: ["Build the longest streak of successful shots you can in 10 minutes.", "A miss resets the streak to zero.", "Log your best streak — try to beat it next session."],
     successMetric: "Streak of 5+ with driver, 6+ with 7-iron.",
     cue: "One shot at a time. The streak is just the scoreboard.",
+    fixes: ["nerves", "contact"],
   },
   {
     key: "warmup_sequence",
@@ -428,6 +500,7 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 5 stock 7-irons; compute spin loft from the numbers.", "Hit 5 'flighted' shots: ball back a half-ball, hands forward, abbreviated finish.", "Hit 5 high shots: ball forward, full finish. Compare Back Spin and Apex."],
     successMetric: "Stock 7-iron Back Spin 6,000–7,500 rpm; Apex 28–35 yd; Descent Angle 45°+.",
     cue: "Shaft lean controls loft; loft controls spin.",
+    fixes: ["short", "distance_control"],
   },
   {
     key: "driver_spin_window",
@@ -442,6 +515,86 @@ export const DRILLS: Drill[] = [
     steps: ["Hit 5 drives and note which side of the window you miss (too much spin? too low?).", "Too much spin: tee higher, ball forward, feel level/upward strike.", "Too little spin / too low: ball back a half-ball, slightly more loft on the face.", "Hit 10 more; count shots inside the window."],
     successMetric: "6 of 10 inside the window; carry up 5+ yd versus the first set.",
     cue: "Optimize the window, then add speed.",
+    fixes: ["driver", "short"],
+  },
+
+  // ───────────────────────── Anti-hook / face control ─────────────────────────
+  {
+    key: "anti_hook_hold_off",
+    title: "Hold-off finish (anti-hook)",
+    area: "driver_accuracy",
+    also: ["start_line"],
+    level: "all",
+    minutes: 12,
+    clubs: "7-iron, then driver",
+    equipment: "None",
+    setup: "Normal address. The goal is a finish where the clubface still looks at the target (toe pointing up) when the shaft is waist-high after impact — no rolling of the forearms.",
+    steps: ["10 half-swings with a 7-iron, stopping waist-high: toe of the club points at the sky, logo on your glove faces the target.", "10 three-quarter 7-irons holding that same finish — let your chest keep turning so the body squares the face.", "10 drivers at 85% with the hold-off feel. Watch Face to Path: you want 0° to slightly open, not closed."],
+    successMetric: "Face to Path between -1° and +2°; Spin Axis above -6° (RH) on 7 of 10 drives; Offline under 20 yd.",
+    cue: "Quiet hands, busy chest — the turn squares the face, not the wrists.",
+    fixes: ["hook", "pull"],
+    avoidFor: ["slice", "fade"],
+  },
+  {
+    key: "rotate_through_chest",
+    title: "Chest to target (stop the flip)",
+    area: "driver_accuracy",
+    also: ["consistency", "start_line"],
+    level: "intermediate",
+    minutes: 12,
+    clubs: "7-iron, then driver",
+    equipment: "Alignment stick (optional)",
+    setup: "Hold a stick across your chest with arms crossed and rehearse 5 turns where your chest faces the target at the finish — the hips lead, the arms follow.",
+    steps: ["10 punch 7-irons with a shortened finish: your chest beats your hands to the target and the club stays low and left (RH) after impact.", "10 full 7-irons keeping the chest rotating through — no stall-and-flip.", "10 drivers at 85%. Club Path should drift from strongly in-to-out toward 0° to +2°."],
+    successMetric: "Club Path within 0° to +3° (RH); Spin Axis stabilizes between -5° and +3°.",
+    cue: "Turn your belt buckle past the ball before the club gets there.",
+    fixes: ["hook", "pull"],
+    avoidFor: ["slice", "fade"],
+  },
+  {
+    key: "grip_neutral_check",
+    title: "Neutral grip check",
+    area: "start_line",
+    also: ["driver_accuracy", "consistency"],
+    level: "beginner",
+    minutes: 8,
+    clubs: "8-iron",
+    equipment: "Phone camera or mirror",
+    setup: "Address the ball and look down: you should see 2 knuckles on your lead hand and the V of each hand pointing between your chin and trail shoulder. Hookers usually see 3–4 knuckles (too strong); slicers see 0–1 (too weak).",
+    steps: ["Re-set the grip 5 times toward neutral, checking with the camera each time. Grip pressure 4 out of 10.", "Hit 10 soft 8-irons at 60% with the new grip — it will feel strange; trust the monitor, not the feel.", "Hit 10 at full speed. Watch Face Angle at impact settle near 0°."],
+    successMetric: "Face Angle within ±2° on 7 of 10 shots; Spin Axis within ±5°.",
+    cue: "Hold a bird: firm enough it can't fly, soft enough it lives.",
+    fixes: ["hook", "slice", "pull", "push"],
+  },
+  {
+    key: "start_line_stick",
+    title: "Start-line stick gate",
+    area: "start_line",
+    also: ["driver_accuracy", "course_management"],
+    level: "all",
+    minutes: 10,
+    clubs: "8-iron, then driver",
+    equipment: "Alignment stick + 2 tees",
+    setup: "Lay the stick on the mat pointing at your target. Push two tees into the mat 6 ft ahead of the ball, a clubhead-width either side of the stick's line — that's your gate.",
+    steps: ["Hit 10 8-irons starting the ball through the gate. Call 'left' or 'right' before you look at the monitor.", "Hit 10 drivers through the same gate at 85%.", "Count the gate hits. Launch Direction tells you the truth."],
+    successMetric: "Launch Direction within ±3° on 7 of 10; Offline under 15 yd with the 8-iron.",
+    cue: "Where the face points at impact is where it starts — aim the face, then swing.",
+    fixes: ["pull", "push", "slice", "hook"],
+  },
+  {
+    key: "weight_forward_strike",
+    title: "Lead-side pressure (fat & thin fix)",
+    area: "iron_contact",
+    also: ["consistency"],
+    level: "all",
+    minutes: 10,
+    clubs: "9-iron",
+    equipment: "None",
+    setup: "Ball slightly back of center. Before you swing, press 60–70% of your weight into your lead foot and keep it there — no shifting back.",
+    steps: ["10 half-swings holding the lead-side pressure; the club should brush the mat just in front of the ball.", "10 three-quarter swings, same feel, letting the chest cover the ball at impact.", "10 full swings with a normal start position, stepping into the lead side on the way down."],
+    successMetric: "Attack Angle -2° to -5°; Smash Factor ≥ 1.30; no fat or thin on 8 of 10.",
+    cue: "Lead side is a wall — hit into it.",
+    fixes: ["fat", "thin", "contact"],
   },
 ];
 
