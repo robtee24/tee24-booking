@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { otpService } from "@/services/otp.service";
 import { toE164 } from "@/lib/phone";
+import { isAppReviewPhone } from "@/lib/app-review";
 import { clientIp, otpSendAllowed } from "@/lib/otp-throttle";
 import { fail, handleError, ok, readJson } from "../../_shared";
 import { findMemberByPhone } from "@/services/mobile-auth.service";
@@ -24,6 +25,9 @@ export async function POST(req: NextRequest) {
     }
     const gate = await otpSendAllowed(e164, clientIp(req.headers));
     if (!gate.ok) return fail(`Please wait ${gate.retryInSeconds}s before requesting another code.`, 429, "RATE_LIMITED", { retryInSeconds: gate.retryInSeconds });
+
+    // App Store review account: fixed code, no SMS.
+    if (isAppReviewPhone(e164)) return ok({ phone: e164 });
 
     const member = await findMemberByPhone(e164);
     if (member) await otpService.requestOtp(e164, "mobile_login");

@@ -7,8 +7,9 @@
 import { NextRequest } from "next/server";
 import { otpService } from "@/services/otp.service";
 import { toE164 } from "@/lib/phone";
+import { isAppReviewCode, isAppReviewPhone } from "@/lib/app-review";
 import { issuePhoneVerificationToken, MOBILE_TRANSFER_AUDIENCE } from "@/lib/phone-verification";
-import { cleanDevice, completeSignIn, findMemberByPhone } from "@/services/mobile-auth.service";
+import { cleanDevice, completeSignIn, findMemberByPhone, unlockMemberDevice } from "@/services/mobile-auth.service";
 import { clientIp, fail, handleError, ok, readJson } from "../../_shared";
 import { getMemberHome } from "@/services/mobile-member.service";
 
@@ -30,7 +31,10 @@ export async function POST(req: NextRequest) {
       return fail("Enter a valid 10-digit mobile number.", 400, "PHONE_INVALID");
     }
 
-    const result = await otpService.verifyOtp(e164, code);
+    // App Store review account: fixed code instead of a texted OTP, and never
+    // pinned to one device so any reviewer's phone can sign in.
+    const review = isAppReviewPhone(e164);
+    const result = review ? ({ ok: isAppReviewCode(e164, code), reason: "INVALID" } as const) : await otpService.verifyOtp(e164, code);
     if (!result.ok) {
       return fail(
         result.reason === "EXPIRED" ? "That code expired — request a new one." : "That code isn't right. Check the text and try again.",
@@ -45,6 +49,7 @@ export async function POST(req: NextRequest) {
       return fail("This membership is cancelled. Rejoin at tee24.golf or text us at (502) 410-2382.", 403, "MEMBERSHIP_CANCELLED");
     }
 
+    if (review) await unlockMemberDevice(member.id, null, "member_signout");
     const signIn = await completeSignIn(member.id, device, clientIp(req));
     if (!signIn.ok) {
       const verificationToken = await issuePhoneVerificationToken(e164, MOBILE_TRANSFER_AUDIENCE);
