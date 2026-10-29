@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Mail, MessageSquare } from "lucide-react";
+import { AlertTriangle, BellRing, Mail, MessageSquare } from "lucide-react";
 import { Button, Card, CardHeader, Input, Select, Textarea, useToast } from "@/components/ui";
 import { Toggle } from "@/components/admin/location-settings/SettingsSection";
 
@@ -17,6 +17,7 @@ export type OrgDTO = {
   defaultTimezone: string;
   emailEnabled: boolean;
   smsEnabled: boolean;
+  pushEnabled: boolean;
   bccEmail: string | null;
   replyToEmail: string | null;
   emailFooter: string | null;
@@ -46,6 +47,7 @@ export function OrgSettingsForm({ org }: { org: OrgDTO }) {
     defaultTimezone: org.defaultTimezone,
     emailEnabled: org.emailEnabled,
     smsEnabled: org.smsEnabled,
+    pushEnabled: org.pushEnabled,
     bccEmail: org.bccEmail ?? "",
     replyToEmail: org.replyToEmail ?? "",
     emailFooter: org.emailFooter ?? "",
@@ -72,9 +74,9 @@ export function OrgSettingsForm({ org }: { org: OrgDTO }) {
     }
   }
 
-  async function toggleChannel(key: "emailEnabled" | "smsEnabled", value: boolean) {
+  async function toggleChannel(key: "emailEnabled" | "smsEnabled" | "pushEnabled", value: boolean) {
     set(key, value);
-    await patch({ [key]: value }, key === "emailEnabled" ? "Email switch" : "SMS switch");
+    await patch({ [key]: value }, key === "emailEnabled" ? "Email switch" : key === "smsEnabled" ? "SMS switch" : "Push switch");
   }
 
   return (
@@ -91,7 +93,7 @@ export function OrgSettingsForm({ org }: { org: OrgDTO }) {
 
       <Card>
         <CardHeader title="Delivery switches" subtitle="Global kill switches. Flip off during an incident, a provider outage, or a bulk-import to avoid accidental sends." />
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <div className="rounded-apple-sm border border-apple-border p-4">
             <div className="mb-3 flex items-center gap-2 text-apple-sm font-semibold text-apple-text">
               <Mail className="h-4 w-4 text-apple-blue" /> Email
@@ -103,6 +105,12 @@ export function OrgSettingsForm({ org }: { org: OrgDTO }) {
               <MessageSquare className="h-4 w-4 text-apple-green" /> SMS
             </div>
             <Toggle checked={d.smsEnabled} onChange={(v) => void toggleChannel("smsEnabled", v)} label={d.smsEnabled ? "SMS sending is ON" : "SMS sending is OFF"} hint="Admin login codes are always delivered." />
+          </div>
+          <div className="rounded-apple-sm border border-apple-border p-4">
+            <div className="mb-3 flex items-center gap-2 text-apple-sm font-semibold text-apple-text">
+              <BellRing className="h-4 w-4 text-apple-orange" /> App push
+            </div>
+            <Toggle checked={d.pushEnabled} onChange={(v) => void toggleChannel("pushEnabled", v)} label={d.pushEnabled ? "Push is ON (preferred over SMS)" : "Push is OFF (everyone gets SMS)"} hint="Members with the Tee24 app and notifications on receive texts as push notifications instead." />
           </div>
         </div>
       </Card>

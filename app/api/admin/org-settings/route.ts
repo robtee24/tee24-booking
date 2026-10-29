@@ -11,6 +11,7 @@ import { assertCan, ForbiddenError } from "@/lib/permissions";
 import { getPrisma } from "@/lib/db";
 import { audit, diff } from "@/lib/audit";
 import { getOrCreateOrg, invalidateCommsStatus, isValidTimezone, ORG_SETTINGS_SELECT as SELECT } from "@/services/location.service";
+import { invalidateCommsSettingsCache } from "@/lib/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,12 +65,14 @@ export async function PATCH(req: NextRequest) {
     }
     if (body.emailEnabled !== undefined) data.emailEnabled = Boolean(body.emailEnabled);
     if (body.smsEnabled !== undefined) data.smsEnabled = Boolean(body.smsEnabled);
+    if (body.pushEnabled !== undefined) data.pushEnabled = Boolean(body.pushEnabled);
     if (body.bccEmail !== undefined) data.bccEmail = optionalEmail(body.bccEmail, "BCC email");
     if (body.replyToEmail !== undefined) data.replyToEmail = optionalEmail(body.replyToEmail, "Reply-to email");
     if (body.emailFooter !== undefined) data.emailFooter = String(body.emailFooter ?? "").trim().slice(0, 4000) || null;
 
     const org = await getPrisma().organization.update({ where: { id: before.id }, data, select: SELECT });
     invalidateCommsStatus();
+    invalidateCommsSettingsCache();
 
     const d = diff(before as Record<string, unknown>, org as Record<string, unknown>);
     void audit({

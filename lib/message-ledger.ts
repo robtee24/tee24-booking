@@ -15,7 +15,7 @@
  */
 import { getPrisma } from "@/lib/db";
 
-export type LedgerChannel = "EMAIL" | "SMS";
+export type LedgerChannel = "EMAIL" | "SMS" | "PUSH";
 export type LedgerCategory = "TRANSACTIONAL" | "MARKETING" | "SYSTEM";
 
 export type LedgerHint = {
@@ -91,13 +91,13 @@ export async function recordOutbound(input: RecordOutboundInput): Promise<string
     let memberId = hint.memberId ?? null;
     let locationId = hint.locationId ?? null;
 
-    if (!memberId) {
+    if (!memberId && input.channel !== "PUSH") {
       const m = await resolveMemberByAddress(input.channel, input.to, locationId);
       if (m) {
         memberId = m.id;
         locationId = locationId ?? m.locationId;
       }
-    } else if (!locationId) {
+    } else if (!locationId && memberId) {
       const m = await prisma.member.findUnique({ where: { id: memberId }, select: { locationId: true } });
       locationId = m?.locationId ?? null;
     }
@@ -122,7 +122,7 @@ export async function recordOutbound(input: RecordOutboundInput): Promise<string
         direction: "OUTBOUND",
         status: input.ok ? "SENT" : "FAILED",
         category: hint.category ?? "TRANSACTIONAL",
-        subject: input.channel === "EMAIL" ? input.subject ?? null : null,
+        subject: input.channel === "SMS" ? null : input.subject ?? null,
         body: hint.bodyOverride ?? input.body,
         toAddress: input.to,
         providerId: input.providerId ?? null,

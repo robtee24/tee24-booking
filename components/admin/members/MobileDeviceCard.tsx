@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Smartphone, Unlock } from "lucide-react";
+import { BellOff, BellRing, Smartphone, Unlock } from "lucide-react";
 import { Badge, Button, Modal, useToast } from "@/components/ui";
 import { adminRoutes } from "@/lib/admin/routes";
 import { api, errMsg } from "./shared";
@@ -17,6 +17,8 @@ export type DeviceInfo = {
   appVersion: string | null;
   boundAt: string;
   lastSeenAt: string | null;
+  pushEnabled?: boolean;
+  pushPermission?: string | null;
 };
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
@@ -48,6 +50,9 @@ export function MobileDeviceCard({ memberId, firstName, device, pendingRequests,
           <Smartphone className="h-4 w-4 text-apple-text-tertiary" />
           Not signed in to the app yet.
         </div>
+        <div className="mt-1 flex items-center gap-2 text-apple-xs text-apple-text-tertiary">
+          <BellOff className="h-3.5 w-3.5" /> Notifications reach {firstName} by text message.
+        </div>
         {pendingRequests > 0 && (
           <Link href={adminRoutes.mobileApp()} className="mt-2 inline-block text-apple-blue hover:underline">
             {pendingRequests} pending new-phone request →
@@ -74,8 +79,23 @@ export function MobileDeviceCard({ memberId, firstName, device, pendingRequests,
           <div className="mt-1 text-apple-xs text-apple-text-tertiary">
             Bound {fmt(device.boundAt)} · last seen {fmt(device.lastSeenAt)}
           </div>
+          <div className="mt-1 flex items-center gap-1.5 text-apple-xs text-apple-text-secondary">
+            {device.pushEnabled ? (
+              <>
+                <BellRing className="h-3.5 w-3.5 text-apple-green" /> Push notifications on — texts are delivered as app notifications.
+              </>
+            ) : (
+              <>
+                <BellOff className="h-3.5 w-3.5 text-apple-text-tertiary" />
+                {device.pushPermission === "denied" ? "Push notifications declined — falls back to text message." : "Push not set up yet — falls back to text message."}
+              </>
+            )}
+          </div>
         </div>
-        <Badge tone={liveSessions > 0 ? "success" : "muted"} size="sm">{liveSessions > 0 ? "Signed in" : "Signed out"}</Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge tone={liveSessions > 0 ? "success" : "muted"} size="sm">{liveSessions > 0 ? "Signed in" : "Signed out"}</Badge>
+          <Badge tone={device.pushEnabled ? "info" : "muted"} size="sm">{device.pushEnabled ? "Push" : "SMS"}</Badge>
+        </div>
       </div>
       {pendingRequests > 0 && (
         <Link href={adminRoutes.mobileApp()} className="mt-2 inline-block text-apple-xs text-apple-blue hover:underline">

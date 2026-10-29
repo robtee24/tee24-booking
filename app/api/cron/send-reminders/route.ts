@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
-import { sendSms } from "@/lib/sendSms";
+import { deliverMemberMessage } from "@/lib/notify";
 import { renderTemplate } from "@/lib/template";
 import { buildTemplateVars, BookingContext } from "@/lib/template-vars";
 
@@ -171,6 +171,7 @@ async function sendAllUnsent(): Promise<Array<{
         email: true,
         phone: true,
         managementToken: true,
+        memberId: true,
         locationId: true,
         Location: {
           select: { slug: true, name: true },
@@ -312,14 +313,22 @@ async function sendAllUnsent(): Promise<Array<{
       }
 
       try {
-        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
-        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(n.template ?? "", vars);
-        await sendSms({ from: smsFrom, to: [normalized], content: text, ledger: { locationId: b.locationId, source: "booking.reminder" } });
+        const res = await deliverMemberMessage({
+          memberId: b.memberId ?? null,
+          phone: normalized,
+          text,
+          title: `Reminder — ${vars.locationName}`,
+          data: { type: "booking", bookingId: b.id, url: `/book/${b.id}` },
+          category: "TRANSACTIONAL",
+          locationId: b.locationId,
+          ledger: { locationId: b.locationId, source: "booking.reminder" },
+        });
+        if (!res.ok && !res.deferredUntil) throw new Error(res.error || `${res.channel ?? "message"} send failed`);
 
         await getPrisma().notificationLog.update({
           where: { id: log.id },
-          data: { status: "SENT", providerId: null, error: null },
+          data: { status: "SENT", providerId: res.providerId ?? null, error: null },
         });
         attempts.push({
           bookingId: b.id,

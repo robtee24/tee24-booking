@@ -20,7 +20,7 @@
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { adminNotify } from "@/lib/admin-notify";
-import { deliverEmail, deliverSms } from "@/lib/notify";
+import { deliverEmail, deliverMemberMessage, memberHasPush } from "@/lib/notify";
 import type { MemberEventKind } from "@/lib/events";
 import { addMemberTag, removeMemberTag, updateMember } from "./member.service";
 import { mergeFields } from "./marketing.service";
@@ -442,7 +442,10 @@ async function runOneStep(enrollment: any) {
       break;
     }
     case "SEND_SMS": {
-      if (!member.optInSmsMarketing || !member.phone) break; // honour opt-out
+      // "Text" steps reach the member as an app push when they have the app
+      // with notifications on, otherwise as SMS.
+      if (!member.optInSmsMarketing) break; // honour opt-out
+      if (!member.phone && !(await memberHasPush(member.id))) break;
       let body = cfg.body ?? "";
       if (cfg.templateId) {
         const t = await prisma.messageTemplate.findUnique({ where: { id: cfg.templateId } });
@@ -452,13 +455,14 @@ async function runOneStep(enrollment: any) {
       const msg = await prisma.message.create({
         data: { memberId: member.id, channel: "SMS", direction: "OUTBOUND", status: "QUEUED", category: "MARKETING", body, toAddress: member.phone, templateId: cfg.templateId ?? null, sentByAutomationId: automation.id },
       });
-      const res = await deliverSms({ to: member.phone, text: body, category: "MARKETING", organizationId: member.organizationId, timeZone: member.location?.timezone, ledger: false });
+      const res = await deliverMemberMessage({ memberId: member.id, phone: member.phone, text: body, category: "MARKETING", organizationId: member.organizationId, timeZone: member.location?.timezone, ledger: false });
+      const channelPatch = res.channel === "PUSH" ? { channel: "PUSH", toAddress: "app" } : {};
       if (res.deferredUntil) {
         // Quiet hours: re-run this same step when the window opens.
-        await prisma.message.update({ where: { id: msg.id }, data: { scheduledFor: res.deferredUntil } });
+        await prisma.message.update({ where: { id: msg.id }, data: { ...channelPatch, scheduledFor: res.deferredUntil } });
         await prisma.automationEvent.create({ data: { enrollmentId: enrollment.id, step: step.order, kind: "STEP_COMPLETED", detail: { deferredUntil: res.deferredUntil } } });
       } else {
-        await prisma.message.update({ where: { id: msg.id }, data: { status: res.ok ? "SENT" : res.skipped ? "QUEUED" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null } });
+        await prisma.message.update({ where: { id: msg.id }, data: { ...channelPatch, status: res.ok ? "SENT" : res.skipped === "org-disabled" ? "QUEUED" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null } });
       }
       break;
     }

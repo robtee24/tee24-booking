@@ -4,7 +4,7 @@
  */
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { deliverEmail, deliverSms, isQuietHours, nextQuietHoursEnd } from "@/lib/notify";
+import { deliverEmail, deliverMemberMessage, deliverSms, isQuietHours, nextQuietHoursEnd, previewMemberChannels, type DeliverResult } from "@/lib/notify";
 import type { EmailAttachment } from "@/lib/sendEmail";
 import { renderSystemTemplate } from "@/lib/system-templates";
 import { buildMemberVars } from "./system-messages.service";
@@ -60,6 +60,11 @@ export async function computeAudience(filter: AudienceFilter): Promise<string[]>
   // Channel opt-in
   if (filter.channel === "EMAIL") where.optInEmailMarketing = true;
   if (filter.channel === "SMS") where.optInSmsMarketing = true;
+  // PUSH = app push with SMS fallback: anyone with the app + notifications on,
+  // or anyone who has opted in to texts.
+  if (filter.channel === "PUSH") {
+    where.OR = [{ devices: { some: { revokedAt: null, pushEnabled: true, pushToken: { not: null } } } }, { optInSmsMarketing: true }];
+  }
 
   // Age range — derive DOB cutoffs
   if (filter.ageMin != null || filter.ageMax != null) {
@@ -113,6 +118,11 @@ export async function computeAudience(filter: AudienceFilter): Promise<string[]>
       return true;
     })
     .map((m: any) => m.id as string);
+}
+
+/** How a PUSH-channel audience would split between app push and SMS. */
+export async function audienceChannelPreview(memberIds: string[]) {
+  return previewMemberChannels(memberIds);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,9 +273,12 @@ export async function duplicateTemplate(id: string, actorId?: string) {
 // Bulk send
 // ---------------------------------------------------------------------------
 
+/** Outbound channels. PUSH = app push, falling back to SMS for members without the app. */
+export type SendChannel = "EMAIL" | "SMS" | "PUSH";
+
 export type SendBulkInput = {
   audience: AudienceFilter;
-  channel: "EMAIL" | "SMS";
+  channel: SendChannel;
   templateId?: string;
   subject?: string;
   body?: string;
@@ -306,7 +319,7 @@ export async function sendBulk(input: SendBulkInput) {
 
   if (input.saveAsTemplateName && input.body) {
     await createTemplate(
-      { organizationId: input.organizationId ?? null, name: input.saveAsTemplateName, channel: input.channel, subject: input.subject, body: input.body },
+      { organizationId: input.organizationId ?? null, name: input.saveAsTemplateName, channel: input.channel === "EMAIL" ? "EMAIL" : "SMS", subject: input.subject, body: input.body },
       input.actorId,
     ).catch((e) => console.warn("[marketing] save-as-template failed", e));
   }
@@ -317,7 +330,8 @@ export async function sendBulk(input: SendBulkInput) {
   // Duplicate-recipient removal (same email / phone → send once)
   const seen = new Set<string>();
   const members = membersRaw.filter((m) => {
-    const addr = (input.channel === "EMAIL" ? m.email : m.phone)?.trim().toLowerCase();
+    // PUSH recipients are keyed by member (a member may have the app but no phone on file).
+    const addr = input.channel === "PUSH" ? m.phone?.trim().toLowerCase() || `member:${m.id}` : (input.channel === "EMAIL" ? m.email : m.phone)?.trim().toLowerCase();
     if (!addr) return false;
     if (seen.has(addr)) return false;
     seen.add(addr);
@@ -336,6 +350,8 @@ export async function sendBulk(input: SendBulkInput) {
   let sent = 0;
   let failed = 0;
   let queued = 0;
+  let viaPush = 0;
+  let viaSms = 0;
   const now = new Date();
   const isScheduled = !!input.scheduledFor && input.scheduledFor > now;
 
@@ -347,9 +363,9 @@ export async function sendBulk(input: SendBulkInput) {
       const body = mergeFields(rawBody, m);
       const to = input.channel === "EMAIL" ? m.email : m.phone;
 
-      // Quiet hours for marketing SMS: queue to next morning instead of sending.
+      // Quiet hours for marketing texts/pushes: queue to next morning instead of sending.
       let scheduledFor = isScheduled ? input.scheduledFor! : null;
-      if (!scheduledFor && input.channel === "SMS" && isQuietHours(now, m.location?.timezone)) {
+      if (!scheduledFor && input.channel !== "EMAIL" && isQuietHours(now, m.location?.timezone)) {
         scheduledFor = nextQuietHoursEnd(now, m.location?.timezone);
       }
 
@@ -374,19 +390,28 @@ export async function sendBulk(input: SendBulkInput) {
         continue; // picked up by sendDueScheduledMessages()
       }
 
-      const res =
-        input.channel === "EMAIL"
-          ? await deliverEmail({ to, subject: subject ?? "", html: body, category: "MARKETING", organizationId: m.organizationId, attachments, ledger: false })
-          : await deliverSms({ to, text: body, category: "MARKETING", organizationId: m.organizationId, timeZone: m.location?.timezone, ledger: false });
+      let res: DeliverResult;
+      let channelPatch: { channel?: string; toAddress?: string | null } = {};
+      if (input.channel === "EMAIL") {
+        res = await deliverEmail({ to, subject: subject ?? "", html: body, category: "MARKETING", organizationId: m.organizationId, attachments, ledger: false });
+      } else if (input.channel === "PUSH") {
+        const r = await deliverMemberMessage({ memberId: m.id, phone: m.phone, text: body, title: subject, category: "MARKETING", organizationId: m.organizationId, timeZone: m.location?.timezone, ledger: false });
+        res = r;
+        channelPatch = r.channel === "SMS" ? { channel: "SMS" } : { toAddress: "app" };
+        if (r.channel === "PUSH") viaPush++;
+        else if (r.channel === "SMS") viaSms++;
+      } else {
+        res = await deliverSms({ to, text: body, category: "MARKETING", organizationId: m.organizationId, timeZone: m.location?.timezone, ledger: false });
+      }
 
       if (res.deferredUntil) {
-        await prisma.message.update({ where: { id: msg.id }, data: { scheduledFor: res.deferredUntil } });
+        await prisma.message.update({ where: { id: msg.id }, data: { ...channelPatch, scheduledFor: res.deferredUntil } });
         queued++;
         continue;
       }
       await prisma.message.update({
         where: { id: msg.id },
-        data: { status: res.ok ? "SENT" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null },
+        data: { ...channelPatch, status: res.ok ? "SENT" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null },
       });
       if (res.ok) sent++;
       else failed++;
@@ -402,10 +427,10 @@ export async function sendBulk(input: SendBulkInput) {
     action: "message.bulk-send",
     entityType: "Audience",
     entityId: `bulk_${Date.now()}`,
-    after: { audienceSize: memberIds.length, sent, failed, queued, deduped, channel: input.channel, scheduledFor: input.scheduledFor ?? null },
+    after: { audienceSize: memberIds.length, sent, failed, queued, deduped, viaPush, viaSms, channel: input.channel, scheduledFor: input.scheduledFor ?? null },
   });
 
-  return { audienceSize: memberIds.length, sent, failed, queued, deduped };
+  return { audienceSize: memberIds.length, sent, failed, queued, deduped, viaPush, viaSms };
 }
 
 /**
@@ -413,7 +438,7 @@ export async function sendBulk(input: SendBulkInput) {
  * the audience (or sample data) so merge fields look real.
  */
 export async function sendTestToSelf(input: {
-  channel: "EMAIL" | "SMS";
+  channel: SendChannel;
   subject?: string | null;
   body: string;
   templateId?: string;
@@ -455,6 +480,11 @@ export async function sendTestToSelf(input: {
     return { ok: res.ok, error: res.error, to: input.adminEmail, dryRun: res.dryRun };
   }
   if (!input.adminPhone) return { ok: false, error: "Your admin profile has no phone number" };
+  if (input.channel === "PUSH") {
+    // Push to the admin's own member record (matched by phone) when they have the app; text otherwise.
+    const res = await deliverMemberMessage({ phone: input.adminPhone, text: `[TEST] ${rendered}`, title: subject ? mergeFields(subject, member) : null, category: "MARKETING", organizationId: input.organizationId, force: true, ledger: false });
+    return { ok: res.ok, error: res.error, to: res.channel === "PUSH" ? "your app" : input.adminPhone, dryRun: res.dryRun, channel: res.channel };
+  }
   const res = await deliverSms({ to: input.adminPhone, text: `[TEST] ${rendered}`, category: "MARKETING", organizationId: input.organizationId, force: true, ledger: false });
   return { ok: res.ok, error: res.error, to: input.adminPhone, dryRun: res.dryRun };
 }
@@ -466,7 +496,7 @@ export async function sendTestToSelf(input: {
 export async function sendDueScheduledMessages(now = new Date()): Promise<number> {
   const prisma = getPrisma();
   const due = await prisma.message.findMany({
-    where: { status: "QUEUED", direction: "OUTBOUND", scheduledFor: { lte: now }, channel: { in: ["EMAIL", "SMS"] } },
+    where: { status: "QUEUED", direction: "OUTBOUND", scheduledFor: { lte: now }, channel: { in: ["EMAIL", "SMS", "PUSH"] } },
     orderBy: { scheduledFor: "asc" },
     take: 200,
     include: { member: { select: { id: true, organizationId: true, optInEmailMarketing: true, optInSmsMarketing: true, location: { select: { timezone: true } } } } },
@@ -496,20 +526,28 @@ export async function sendDueScheduledMessages(now = new Date()): Promise<number
         body = body.replace(am[0], "").trim();
       }
       const orgId = m.member?.organizationId ?? null;
-      const res =
-        m.channel === "EMAIL"
-          ? await deliverEmail({ to, subject: m.subject ?? "", html: body, category, organizationId: orgId, attachments, ledger: false })
-          : await deliverSms({ to, text: body, category, organizationId: orgId, timeZone: m.member?.location?.timezone, ledger: false });
+      let res: DeliverResult;
+      let channelPatch: { channel?: string; toAddress?: string | null } = {};
+      if (m.channel === "EMAIL") {
+        res = await deliverEmail({ to, subject: m.subject ?? "", html: body, category, organizationId: orgId, attachments, ledger: false });
+      } else if (m.member) {
+        // Text-type message to a known member: push if they have the app now, else SMS.
+        const r = await deliverMemberMessage({ memberId: m.member.id, phone: to === "app" ? null : to, title: m.subject, text: body, category, organizationId: orgId, timeZone: m.member.location?.timezone, ledger: false });
+        res = r;
+        if (r.channel && r.channel !== m.channel) channelPatch = { channel: r.channel, toAddress: r.channel === "PUSH" ? "app" : to };
+      } else {
+        res = await deliverSms({ to, text: body, category, organizationId: orgId, ledger: false });
+      }
 
       if (res.deferredUntil) {
-        await prisma.message.update({ where: { id: m.id }, data: { scheduledFor: res.deferredUntil } });
+        await prisma.message.update({ where: { id: m.id }, data: { ...channelPatch, scheduledFor: res.deferredUntil } });
       } else if (res.skipped === "org-disabled") {
         // Leave queued; will retry when org re-enables the channel. Push out 1h to avoid hot loop.
         await prisma.message.update({ where: { id: m.id }, data: { scheduledFor: new Date(now.getTime() + 3_600_000), providerError: res.error ?? null } });
       } else {
         await prisma.message.update({
           where: { id: m.id },
-          data: { status: res.ok ? "SENT" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null, scheduledFor: null },
+          data: { ...channelPatch, status: res.ok ? "SENT" : "FAILED", providerId: res.providerId ?? null, providerError: res.ok ? null : res.error ?? null, scheduledFor: null },
         });
       }
       processed++;
@@ -522,7 +560,7 @@ export async function sendDueScheduledMessages(now = new Date()): Promise<number
 }
 
 /** Message history for a location, per channel, with open/click stats. */
-export async function messageHistory(opts: { locationId: string; channel?: "EMAIL" | "SMS"; category?: string; take?: number }) {
+export async function messageHistory(opts: { locationId: string; channel?: SendChannel; category?: string; take?: number }) {
   const prisma = getPrisma();
   const where: any = { member: { locationId: opts.locationId }, direction: "OUTBOUND" };
   if (opts.channel) where.channel = opts.channel;

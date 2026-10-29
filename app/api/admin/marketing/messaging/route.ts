@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, guardMarketing, readJson } from "../_shared";
-import { sendBulk, computeAudience } from "@/services/marketing.service";
+import { sendBulk, computeAudience, audienceChannelPreview } from "@/services/marketing.service";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,8 @@ export async function GET(req: NextRequest) {
     const filter = JSON.parse(audienceJson);
     filter.locationId = g.location.id; // never let the client widen scope
     const ids = await computeAudience(filter);
-    return NextResponse.json({ size: ids.length, sampleMemberId: ids[0] ?? null });
+    const channels = filter.channel === "PUSH" ? await audienceChannelPreview(ids) : undefined;
+    return NextResponse.json({ size: ids.length, sampleMemberId: ids[0] ?? null, channels });
   } catch (e) {
     return apiError(e);
   }

@@ -80,7 +80,7 @@ export default async function MessagingPage({ params }: { params: Promise<{ slug
     <div className="space-y-6">
       <PageHeader
         title="Messaging"
-        description="Bulk emails (Resend) and SMS (Quo). All sends honor opt-out preferences."
+        description="Broadcasts by app push, SMS (Quo) or email (Resend). Push goes to members with the app; everyone else gets a text. All sends honor opt-out preferences."
         actions={
           <Link href={adminRoutes.loc.marketing.compose(slug)}>
             <Button iconLeft={<Send className="h-4 w-4" />}>New broadcast</Button>

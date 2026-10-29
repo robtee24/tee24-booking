@@ -3,7 +3,7 @@ import { getPrisma } from "@/lib/db";
 import crypto from "crypto";
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { sendEmail } from "@/lib/sendEmail";
-import { sendSms } from "@/lib/sendSms";
+import { deliverMemberMessage } from "@/lib/notify";
 import { renderTemplate, formatDate, formatTime } from "@/lib/template";
 import { getAvailableBaysAtExactWindow, isSpecificBayAvailableAtExactWindow } from "./availability.service";
 import {
@@ -610,10 +610,8 @@ async function sendConfirmations({
 
     if (phones.length > 0) {
       try {
-        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
-        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({ from: smsFrom, to: phones, content: text, ledger: { locationId: booking.locationId ?? null, source: "booking.confirmation" } });
+        await sendBookingText({ booking, phones, text, title: `Reservation confirmed — ${locationName}`, source: "booking.confirmation" });
       } catch (e) {
         console.error("SMS failed:", e);
       }
@@ -673,14 +671,53 @@ async function sendChangeNotifications({
 
     if (phones.length > 0) {
       try {
-        const smsFrom = process.env.OPENPHONE_NUMBER || process.env.OPENPHONE_FROM;
-        if (!smsFrom) throw new Error("OPENPHONE_NUMBER env var is not set");
         const text = renderTemplate(smsTemplate, vars);
-        await sendSms({ from: smsFrom, to: phones, content: text, ledger: { locationId: booking.locationId ?? null, source: "booking.updated" } });
+        await sendBookingText({ booking, phones, text, title: `Reservation updated — ${locationName}`, source: "booking.updated" });
       } catch (e) {
         console.error("Change notification SMS failed:", e);
       }
     }
+  }
+}
+
+/**
+ * Text every phone on the booking. The primary phone goes through the
+ * push-or-SMS router (members with the app get a push instead of a text);
+ * extra comma-separated phones are plain SMS.
+ */
+async function sendBookingText({
+  booking,
+  phones,
+  text,
+  title,
+  source,
+}: {
+  booking: { id: string; memberId?: string | null; locationId?: string | null };
+  phones: string[];
+  text: string;
+  title: string;
+  source: "booking.confirmation" | "booking.updated" | "booking.reminder";
+}) {
+  const [primary, ...others] = phones;
+  const data = { type: "booking", bookingId: booking.id, url: `/book/${booking.id}` };
+  const results = await Promise.allSettled([
+    deliverMemberMessage({
+      memberId: booking.memberId ?? null,
+      phone: primary,
+      text,
+      title,
+      data,
+      category: "TRANSACTIONAL",
+      locationId: booking.locationId ?? null,
+      ledger: { locationId: booking.locationId ?? null, source },
+    }),
+    ...others.map((phone) =>
+      deliverMemberMessage({ phone, text, title, data, category: "TRANSACTIONAL", locationId: booking.locationId ?? null, channels: ["SMS"], ledger: { locationId: booking.locationId ?? null, source } }),
+    ),
+  ]);
+  for (const r of results) {
+    if (r.status === "rejected") console.error(`[booking] ${source} send threw:`, r.reason);
+    else if (!r.value.ok && !r.value.deferredUntil) console.warn(`[booking] ${source} not delivered:`, r.value.error);
   }
 }
 

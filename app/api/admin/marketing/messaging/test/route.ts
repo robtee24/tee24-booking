@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   const body = await readJson(req);
   const g = await guardMarketing(req, ["marketing.send-bulk", "member.bulk-message"], { body });
   if (!g.ok) return g.response;
-  if (body.channel !== "EMAIL" && body.channel !== "SMS") return NextResponse.json({ error: "channel must be EMAIL or SMS" }, { status: 400 });
+  if (body.channel !== "EMAIL" && body.channel !== "SMS" && body.channel !== "PUSH") return NextResponse.json({ error: "channel must be EMAIL, SMS or PUSH" }, { status: 400 });
   try {
     const res = await sendTestToSelf({
       channel: body.channel,

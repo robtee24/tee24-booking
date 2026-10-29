@@ -168,7 +168,7 @@ export async function getMemberHome(memberId: string) {
     bookingAccess,
     locations,
     device: device
-      ? { id: device.id, name: device.name, model: device.model, platform: device.platform, boundAt: device.boundAt.toISOString(), lastSeenAt: device.lastSeenAt?.toISOString() ?? null }
+      ? { id: device.id, name: device.name, model: device.model, platform: device.platform, boundAt: device.boundAt.toISOString(), lastSeenAt: device.lastSeenAt?.toISOString() ?? null, pushEnabled: device.pushEnabled, pushPermission: device.pushPermission }
       : null,
     nextBooking: nextBooking
       ? { id: nextBooking.id, start: nextBooking.start.toISOString(), end: nextBooking.end.toISOString(), bayNumber: nextBooking.bayNumber, location: nextBooking.Location }

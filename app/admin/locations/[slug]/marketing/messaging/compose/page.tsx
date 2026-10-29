@@ -49,7 +49,7 @@ export default async function ComposePage({ params, searchParams }: { params: Pr
       templates={templates}
       mergeFields={MARKETING_MERGE_FIELDS}
       admin={{ email: admin?.email ?? null, phone: admin?.phone ?? null }}
-      comms={{ emailEnabled: comms.emailEnabled, smsEnabled: comms.smsEnabled }}
+      comms={{ emailEnabled: comms.emailEnabled, smsEnabled: comms.smsEnabled, pushEnabled: comms.pushEnabled }}
       initialTemplateId={template ?? null}
     />
   );

@@ -414,6 +414,7 @@ export const ORG_SETTINGS_SELECT = {
   defaultTimezone: true,
   emailEnabled: true,
   smsEnabled: true,
+  pushEnabled: true,
   bccEmail: true,
   replyToEmail: true,
   emailFooter: true,

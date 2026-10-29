@@ -11,7 +11,7 @@
  * are NOT consulted here — system/transactional messages always go out.
  */
 import { getPrisma } from "@/lib/db";
-import { appBaseUrl, deliverEmail, deliverSms } from "@/lib/notify";
+import { appBaseUrl, deliverEmail, deliverMemberMessage, deliverSms, memberHasPush, type DeliverResult } from "@/lib/notify";
 import {
   NON_MEMBER_FACING_EVENTS,
   SAMPLE_MEMBER_VARS,
@@ -237,14 +237,16 @@ export async function sendSystemMessage(
     });
   }
 
+  // Text channel: delivered as an app push when the member has the app with
+  // notifications on, otherwise as SMS (see deliverMemberMessage).
   const smsActive = smsTpl ? smsTpl.active : def.sms.defaultOn;
-  if (smsActive && member.phone) {
+  if (smsActive && (member.phone || (await memberHasPush(memberId)))) {
     const text = renderSystemTemplate(smsTpl?.body ?? def.sms.body, merged);
     result.sms = await logAndDeliver({
       channel: "SMS",
       memberId,
       organizationId,
-      to: member.phone,
+      to: member.phone ?? "",
       subject: null,
       body: text,
       templateId: smsTpl?.id ?? null,
@@ -276,19 +278,32 @@ async function logAndDeliver(input: {
       category: "SYSTEM",
       subject: input.subject,
       body: input.body,
-      toAddress: input.to,
+      toAddress: input.to || null,
       templateId: input.templateId,
       sentByAdminId: input.actorAdminId,
     },
   });
-  const res =
-    input.channel === "EMAIL"
-      ? await deliverEmail({ to: input.to, subject: input.subject ?? "", html: input.body, category: "SYSTEM", organizationId: input.organizationId, ledger: false })
-      : await deliverSms({ to: input.to, text: input.body, category: "SYSTEM", organizationId: input.organizationId, timeZone: input.timeZone, ledger: false });
+  let channel: string = input.channel;
+  let toAddress: string | null = input.to || null;
+  let res: DeliverResult;
+  if (input.channel === "EMAIL") {
+    res = await deliverEmail({ to: input.to, subject: input.subject ?? "", html: input.body, category: "SYSTEM", organizationId: input.organizationId, ledger: false });
+  } else if (input.memberId) {
+    const r = await deliverMemberMessage({ memberId: input.memberId, phone: input.to || null, text: input.body, category: "SYSTEM", organizationId: input.organizationId, timeZone: input.timeZone, ledger: false });
+    res = r;
+    if (r.channel === "PUSH") {
+      channel = "PUSH";
+      toAddress = "app";
+    }
+  } else {
+    res = await deliverSms({ to: input.to, text: input.body, category: "SYSTEM", organizationId: input.organizationId, timeZone: input.timeZone, ledger: false });
+  }
   await prisma.message.update({
     where: { id: msg.id },
     data: {
-      status: res.ok ? "SENT" : res.skipped ? "QUEUED" : "FAILED",
+      channel,
+      toAddress,
+      status: res.ok ? "SENT" : res.skipped === "org-disabled" ? "QUEUED" : "FAILED",
       providerId: res.providerId ?? null,
       providerError: res.ok ? null : res.error ?? null,
     },

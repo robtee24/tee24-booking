@@ -23,8 +23,9 @@ export type HistoryRow = {
 
 const TABS = [
   { key: "ALL", label: "All" },
-  { key: "EMAIL", label: "Email" },
+  { key: "PUSH", label: "Push" },
   { key: "SMS", label: "SMS" },
+  { key: "EMAIL", label: "Email" },
   { key: "SCHEDULED", label: "Scheduled" },
 ] as const;
 
@@ -39,7 +40,7 @@ export function MessageHistory({ rows }: { rows: HistoryRow[] }) {
     if (category && r.category !== category) return false;
     return true;
   });
-  const counts = { ALL: rows.length, EMAIL: rows.filter((r) => r.channel === "EMAIL").length, SMS: rows.filter((r) => r.channel === "SMS").length, SCHEDULED: rows.filter((r) => r.status === "QUEUED" && r.scheduledFor).length };
+  const counts = { ALL: rows.length, PUSH: rows.filter((r) => r.channel === "PUSH").length, EMAIL: rows.filter((r) => r.channel === "EMAIL").length, SMS: rows.filter((r) => r.channel === "SMS").length, SCHEDULED: rows.filter((r) => r.status === "QUEUED" && r.scheduledFor).length };
 
   return (
     <Card padded={false}>

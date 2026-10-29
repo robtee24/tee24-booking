@@ -29,6 +29,8 @@ export type DeviceDTO = {
   appVersion: string | null;
   boundAt: string;
   lastSeenAt: string | null;
+  pushEnabled?: boolean;
+  pushPermission?: string | null;
   member: MemberLite;
 };
 
@@ -162,6 +164,7 @@ export function MobileAppClient({ pending, recent, devices: initialDevices, high
                   <th className="pb-2 pr-4 font-medium">Member</th>
                   <th className="pb-2 pr-4 font-medium">Device</th>
                   <th className="pb-2 pr-4 font-medium">App</th>
+                  <th className="pb-2 pr-4 font-medium">Push</th>
                   <th className="pb-2 pr-4 font-medium">Bound</th>
                   <th className="pb-2 pr-4 font-medium">Last seen</th>
                   <th className="pb-2 font-medium" />
@@ -185,6 +188,15 @@ export function MobileAppClient({ pending, recent, devices: initialDevices, high
                       </div>
                     </td>
                     <td className="py-2.5 pr-4 text-apple-text-secondary">{d.appVersion ?? "—"}</td>
+                    <td className="py-2.5 pr-4">
+                      {d.pushEnabled ? (
+                        <Badge tone="success" size="sm">On</Badge>
+                      ) : d.pushPermission === "denied" ? (
+                        <Badge tone="warn" size="sm">Denied → SMS</Badge>
+                      ) : (
+                        <Badge tone="muted" size="sm">Off → SMS</Badge>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-4 text-apple-text-secondary">{fmt(d.boundAt)}</td>
                     <td className="py-2.5 pr-4 text-apple-text-secondary">{fmt(d.lastSeenAt)}</td>
                     <td className="py-2.5 text-right">

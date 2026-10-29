@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/sendEmail";
-import { sendSms } from "@/lib/sendSms";
+import { deliverMemberMessage } from "@/lib/notify";
 import { renderTemplate } from "@/lib/template";
 import { buildTemplateVars, MERGE_FIELDS, BookingContext } from "@/lib/template-vars";
 
@@ -39,10 +39,6 @@ function normalizePhoneE164(raw: string | null | undefined): string | null {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length >= 11 && digits[0] === "1") return `+${digits}`;
   return null;
-}
-
-function getSmsFrom(): string | undefined {
-  return process.env.OPENPHONE_NUMBER || process.env.SMS_FROM || process.env.DEFAULT_FROM || undefined;
 }
 
 export async function POST(req: NextRequest) {
@@ -141,16 +137,21 @@ export async function POST(req: NextRequest) {
         // no-op: empty template
       } else {
         const text = ensureManageLinkInText(rawText, manageUrl);
-        const from = getSmsFrom();
-        if (!from) {
-          smsError = "Missing SMS 'from' number in environment configuration";
-        } else {
-          try {
-            await sendSms({ from, to: [normalized], content: text, ledger: { locationId: booking.locationId, source: "booking.confirmation" } });
-            sms = true;
-          } catch (e: any) {
-            smsError = e?.message || "SMS send failed";
-          }
+        try {
+          const res = await deliverMemberMessage({
+            memberId: (booking as { memberId?: string | null }).memberId ?? null,
+            phone: normalized,
+            text,
+            title: `Reservation confirmed — ${booking.Location.name}`,
+            data: { type: "booking", bookingId: booking.id, url: `/book/${booking.id}` },
+            category: "TRANSACTIONAL",
+            locationId: booking.locationId,
+            ledger: { locationId: booking.locationId, source: "booking.confirmation" },
+          });
+          sms = res.ok;
+          if (!res.ok) smsError = res.error || `${res.channel ?? "SMS"} send failed`;
+        } catch (e: any) {
+          smsError = e?.message || "SMS send failed";
         }
       }
     }

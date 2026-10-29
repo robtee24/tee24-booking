@@ -56,6 +56,8 @@ model Organization {
   // Comms settings
   emailEnabled     Boolean  @default(true)
   smsEnabled       Boolean  @default(true)
+  /// Prefer app push notifications over SMS for members with the app installed
+  pushEnabled      Boolean  @default(true)
   bccEmail         String?
   replyToEmail     String?
   emailFooter      String?
@@ -1948,6 +1950,11 @@ model MemberDevice {
   osVersion     String?
   appVersion    String?
   pushToken     String?
+  /// OS permission granted and the app has a live Expo push token
+  pushEnabled    Boolean   @default(false)
+  /// granted | denied | undetermined | provisional (as reported by the app)
+  pushPermission String?
+  pushUpdatedAt  DateTime?
   boundAt       DateTime  @default(now())
   lastSeenAt    DateTime?
   revokedAt     DateTime?

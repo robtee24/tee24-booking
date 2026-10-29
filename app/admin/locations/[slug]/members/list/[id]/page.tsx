@@ -154,6 +154,8 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
                         appVersion: deviceSummary.active.appVersion,
                         boundAt: deviceSummary.active.boundAt.toISOString(),
                         lastSeenAt: deviceSummary.active.lastSeenAt?.toISOString() ?? null,
+                        pushEnabled: deviceSummary.active.pushEnabled,
+                        pushPermission: deviceSummary.active.pushPermission,
                       }
                     : null
                 }

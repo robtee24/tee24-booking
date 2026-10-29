@@ -390,6 +390,9 @@ export default function NotificationsPage() {
       <header>
         <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Notifications</h1>
         <p className="mt-1 text-apple-base text-apple-text-secondary">{locationName}</p>
+        <p className="mt-2 max-w-2xl text-apple-sm text-apple-text-tertiary">
+          Text templates reach members with the Tee24 app (notifications on) as a push notification, and everyone else as an SMS. Delivery is logged under Marketing → Messaging.
+        </p>
       </header>
 
       {error && (
@@ -431,7 +434,7 @@ export default function NotificationsPage() {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-apple-sm font-semibold text-apple-text">Text Message</label>
+              <label className="text-apple-sm font-semibold text-apple-text">Text Message <span className="font-normal text-apple-text-tertiary">· app push when installed</span></label>
               <ToggleSwitch checked={confirmSmsEnabled} onChange={setConfirmSmsEnabled} />
             </div>
             <SmsTextArea value={confirmSmsTpl} onChange={setConfirmSmsTpl} />
@@ -467,7 +470,7 @@ export default function NotificationsPage() {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-apple-sm font-semibold text-apple-text">Text Message</label>
+              <label className="text-apple-sm font-semibold text-apple-text">Text Message <span className="font-normal text-apple-text-tertiary">· app push when installed</span></label>
               <ToggleSwitch checked={changeSmsEnabled} onChange={setChangeSmsEnabled} />
             </div>
             <SmsTextArea value={changeSmsTpl} onChange={setChangeSmsTpl} />
@@ -523,7 +526,7 @@ export default function NotificationsPage() {
 
           <div>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-apple-sm font-semibold text-apple-text">Text Reminders</h3>
+              <h3 className="text-apple-sm font-semibold text-apple-text">Text Reminders <span className="font-normal text-apple-text-tertiary">· app push when installed</span></h3>
               <button
                 onClick={addText}
                 className="btn-secondary !px-3 !py-1.5 text-apple-xs"

@@ -18,9 +18,12 @@ type Props = {
   templates: Template[];
   mergeFields: readonly string[];
   admin: { email: string | null; phone: string | null };
-  comms: { emailEnabled: boolean; smsEnabled: boolean };
+  comms: { emailEnabled: boolean; smsEnabled: boolean; pushEnabled?: boolean };
   initialTemplateId?: string | null;
 };
+
+type Channel = "EMAIL" | "SMS" | "PUSH";
+type ChannelSplit = { push: number; sms: number; unreachable: number };
 
 const STATUS_OPTIONS = [
   { value: "ACTIVE", label: "Active members" },
@@ -38,7 +41,7 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const initialTemplate = initialTemplateId ? templates.find((t) => t.id === initialTemplateId) : undefined;
 
-  const [channel, setChannel] = useState<"EMAIL" | "SMS">(initialTemplate ? (initialTemplate.channel as "EMAIL" | "SMS") : comms.emailEnabled || !comms.smsEnabled ? "EMAIL" : "SMS");
+  const [channel, setChannel] = useState<Channel>(initialTemplate ? (initialTemplate.channel as Channel) : comms.emailEnabled || !comms.smsEnabled ? "EMAIL" : "PUSH");
   const [statuses, setStatuses] = useState<string[]>(["ACTIVE"]);
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [planIds, setPlanIds] = useState<string[]>([]);
@@ -53,7 +56,7 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
   const [saveAsName, setSaveAsName] = useState("");
   const [schedule, setSchedule] = useState(false);
   const [scheduledFor, setScheduledFor] = useState("");
-  const [audience, setAudienceInfo] = useState<{ size: number; sampleMemberId: string | null } | null>(null);
+  const [audience, setAudienceInfo] = useState<{ size: number; sampleMemberId: string | null; channels?: ChannelSplit } | null>(null);
   const [busy, setBusy] = useState<"send" | "test" | null>(null);
 
   const audienceFilter = {
@@ -71,7 +74,7 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        const res = await api<{ size: number; sampleMemberId: string | null }>(`/api/admin/marketing/messaging?audience=${encodeURIComponent(audienceKey)}`);
+        const res = await api<{ size: number; sampleMemberId: string | null; channels?: ChannelSplit }>(`/api/admin/marketing/messaging?audience=${encodeURIComponent(audienceKey)}`);
         setAudienceInfo(res);
       } catch {
         /* ignore */
@@ -103,8 +106,10 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
     setAttachmentDraft("");
   }
 
-  const canSend = !!body.trim() && (channel === "SMS" || !!subject.trim()) && (!schedule || !!scheduledFor) && (!saveAs || !!saveAsName.trim());
-  const channelDisabled = channel === "EMAIL" ? !comms.emailEnabled : !comms.smsEnabled;
+  const isText = channel !== "EMAIL";
+  const canSend = !!body.trim() && (isText || !!subject.trim()) && (!schedule || !!scheduledFor) && (!saveAs || !!saveAsName.trim());
+  const channelDisabled = channel === "EMAIL" ? !comms.emailEnabled : channel === "SMS" ? !comms.smsEnabled : !comms.smsEnabled && comms.pushEnabled === false;
+  const channelNoun = channel === "EMAIL" ? "email" : channel === "SMS" ? "text" : "notification";
 
   async function sendTest() {
     setBusy("test");
@@ -113,7 +118,7 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
         method: "POST",
         json: { channel, subject, body, templateId: templateId || undefined, attachmentUrls: channel === "EMAIL" ? attachments : undefined, sampleMemberId: audience?.sampleMemberId ?? null },
       });
-      toast({ tone: res.ok ? "success" : "error", title: res.ok ? `Test ${res.dryRun ? "logged (dry run)" : "sent"} to you` : "Test failed", description: res.error ?? (channel === "EMAIL" ? admin.email ?? undefined : admin.phone ?? undefined) });
+      toast({ tone: res.ok ? "success" : "error", title: res.ok ? `Test ${res.dryRun ? "logged (dry run)" : "sent"} to you` : "Test failed", description: res.error ?? res.to ?? (channel === "EMAIL" ? admin.email ?? undefined : admin.phone ?? undefined) });
     } catch (e) {
       onError(e, "Test failed");
     } finally {
@@ -124,10 +129,11 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
   async function send() {
     const size = audience?.size ?? 0;
     const when = schedule && scheduledFor ? ` on ${new Date(scheduledFor).toLocaleString()}` : " now";
-    if (!confirm(`${schedule ? "Schedule" : "Send"} this ${channel === "EMAIL" ? "email" : "text"} to ${size} recipient${size === 1 ? "" : "s"}${when}?`)) return;
+    const split = channel === "PUSH" && audience?.channels ? ` (${audience.channels.push} by app push, ${audience.channels.sms} by text)` : "";
+    if (!confirm(`${schedule ? "Schedule" : "Send"} this ${channelNoun} to ${size} recipient${size === 1 ? "" : "s"}${split}${when}?`)) return;
     setBusy("send");
     try {
-      const res = await api<{ audienceSize: number; sent: number; failed: number; queued: number; deduped: number }>("/api/admin/marketing/messaging", {
+      const res = await api<{ audienceSize: number; sent: number; failed: number; queued: number; deduped: number; viaPush?: number; viaSms?: number }>("/api/admin/marketing/messaging", {
         method: "POST",
         json: {
           audience: audienceFilter,
@@ -140,7 +146,13 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
           saveAsTemplateName: saveAs && saveAsName.trim() ? saveAsName.trim() : undefined,
         },
       });
-      const parts = [res.sent ? `${res.sent} sent` : null, res.queued ? `${res.queued} scheduled` : null, res.failed ? `${res.failed} failed` : null, res.deduped ? `${res.deduped} duplicate address${res.deduped === 1 ? "" : "es"} skipped` : null].filter(Boolean);
+      const parts = [
+        res.sent ? `${res.sent} sent` : null,
+        channel === "PUSH" && (res.viaPush || res.viaSms) ? `${res.viaPush ?? 0} push · ${res.viaSms ?? 0} text` : null,
+        res.queued ? `${res.queued} scheduled` : null,
+        res.failed ? `${res.failed} failed` : null,
+        res.deduped ? `${res.deduped} duplicate address${res.deduped === 1 ? "" : "es"} skipped` : null,
+      ].filter(Boolean);
       toast({ tone: res.failed && !res.sent && !res.queued ? "error" : "success", title: `Broadcast ${schedule ? "scheduled" : "sent"}`, description: `${parts.join(" · ")} (audience ${res.audienceSize})` });
       router.push(adminRoutes.loc.marketing.messaging(location.slug));
     } catch (e) {
@@ -154,22 +166,23 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Compose broadcast" description={`To members of ${location.name}. Opt-outs, duplicates and quiet hours (9pm–9am for SMS) are handled automatically.`} />
+      <PageHeader title="Compose broadcast" description={`To members of ${location.name}. Opt-outs, duplicates and quiet hours (9pm–9am for texts and push) are handled automatically.`} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Message" />
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Select label="Channel" value={channel} onChange={(e) => setChannel(e.target.value as "EMAIL" | "SMS")}>
+            <Select label="Channel" value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
+              <option value="PUSH">App push (text fallback){comms.pushEnabled === false ? " — push off in org" : ""}</option>
+              <option value="SMS">SMS only{comms.smsEnabled ? "" : " (disabled in org)"}</option>
               <option value="EMAIL">Email{comms.emailEnabled ? "" : " (disabled in org)"}</option>
-              <option value="SMS">SMS{comms.smsEnabled ? "" : " (disabled in org)"}</option>
             </Select>
             <div className="sm:col-span-2">
               <Select label="Start from template (optional)" value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
                 <option value="">— None —</option>
                 {templates
-                  .filter((t) => t.channel === channel)
+                  .filter((t) => (channel === "EMAIL" ? t.channel === "EMAIL" : t.channel === "SMS"))
                   .map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -182,23 +195,33 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
               {channel === "EMAIL" ? "Email" : "SMS"} is turned off for this organization. Messages will be skipped until it is re-enabled in Settings → Communications.
             </p>
           )}
+          {channel === "PUSH" && (
+            <p className="mt-3 rounded-apple-sm bg-apple-fill-secondary p-2 text-apple-xs text-apple-text-secondary">
+              Members who have the Tee24 app with notifications on get a push notification; everyone else gets this as a text message. Keep it short — it is one message either way.
+            </p>
+          )}
 
           {channel === "EMAIL" && (
             <div className="mt-4">
               <Input label="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
             </div>
           )}
+          {channel === "PUSH" && (
+            <div className="mt-4">
+              <Input label="Notification title (optional)" placeholder={location.name} value={subject} onChange={(e) => setSubject(e.target.value)} hint="Shown as the push title. Not included in the text-message fallback." />
+            </div>
+          )}
           <div className="mt-4">
             <Textarea
               ref={bodyRef}
-              label={channel === "EMAIL" ? "Body (HTML or plain text)" : "Text message"}
+              label={channel === "EMAIL" ? "Body (HTML or plain text)" : channel === "PUSH" ? "Message" : "Text message"}
               rows={channel === "EMAIL" ? 10 : 5}
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <MergeFieldChips fields={mergeFields.map((k) => ({ key: k }))} targetRef={bodyRef} onInsert={(tok) => setBody((b) => b + tok)} />
-              {channel === "SMS" && <SegmentCounter text={body} />}
+              {isText && <SegmentCounter text={body} />}
             </div>
           </div>
 
@@ -241,6 +264,13 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <div className="text-apple-sm text-apple-text-secondary">
               Sending to <strong>{audience?.size ?? "—"}</strong> recipient{audience?.size === 1 ? "" : "s"}
+              {channel === "PUSH" && audience?.channels && (
+                <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+                  <Badge tone="info" size="sm">{audience.channels.push} app push</Badge>
+                  <Badge tone="muted" size="sm">{audience.channels.sms} text</Badge>
+                  {audience.channels.unreachable > 0 && <Badge tone="warn" size="sm">{audience.channels.unreachable} no phone</Badge>}
+                </span>
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" iconLeft={<FlaskConical className="h-4 w-4" />} onClick={sendTest} loading={busy === "test"} disabled={!body.trim() || (channel === "EMAIL" ? !admin.email : !admin.phone)}>
@@ -270,7 +300,7 @@ export function ComposeClient({ location, tags, plans, templates, mergeFields, a
             <div className="flex flex-wrap gap-1 pt-2">
               <Badge tone="muted" size="sm">Opted-out excluded</Badge>
               <Badge tone="muted" size="sm">Merged members excluded</Badge>
-              <Badge tone="muted" size="sm">One per {channel === "EMAIL" ? "email" : "phone"}</Badge>
+              <Badge tone="muted" size="sm">One per {channel === "EMAIL" ? "email" : channel === "SMS" ? "phone" : "member"}</Badge>
             </div>
           </div>
         </Card>
