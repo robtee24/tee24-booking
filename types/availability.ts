@@ -26,4 +26,6 @@ export type AvailabilityRequest = {
   hand?: "RH" | "LH";
   includeSlots?: boolean;
   includeFreeBays?: boolean;
+  /** When set, these lengths are offered instead of the location's step/min/max. */
+  durations?: number[];
 };

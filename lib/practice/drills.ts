@@ -623,6 +623,14 @@ const CORE_DRILLS: Drill[] = [
   },
 ];
 
+/**
+ * Our launch monitors do not report Angle of Attack. A drill that can only be
+ * scored by reading that number is not offered.
+ */
+function requiresAttackAngle(d: Drill): boolean {
+  return /attack angle/i.test(d.successMetric) || /attack angle/i.test(d.equipment) || /attack-angle/i.test(d.source) || d.steps.some((s) => /attack angle/i.test(s));
+}
+
 export const DRILLS: Drill[] = [
   ...CORE_DRILLS,
   ...FUNDAMENTALS_DRILLS,
@@ -633,6 +641,6 @@ export const DRILLS: Drill[] = [
   ...SHORT_GAME_DRILLS,
   ...PUTTING_DRILLS,
   ...GAME_DRILLS,
-];
+].filter((d) => !requiresAttackAngle(d));
 
 export const DRILL_BY_KEY: Record<string, Drill> = Object.fromEntries(DRILLS.map((d) => [d.key, d]));

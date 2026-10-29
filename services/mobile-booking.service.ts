@@ -66,11 +66,14 @@ export async function listMemberBookings(memberId: string) {
   };
 }
 
+/** Member app session lengths: six tiles from 30 minutes through 3 hours. */
+export const MEMBER_DURATIONS = [30, 60, 90, 120, 150, 180] as const;
+
 export async function getMobileAvailability(input: { locationSlug: string; date: string; kind: "SINGLE" | "GROUP"; hand?: "RH" | "LH" }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new MobileError("Invalid date", 400, "BAD_REQUEST");
-  const result = await getAvailability({ ...input, includeSlots: true });
-  const location = await getPrisma().location.findUnique({ where: { slug: input.locationSlug }, select: { timezone: true, minBookingMinutes: true, maxBookingMinutes: true } });
-  return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: location?.minBookingMinutes ?? 60, maxBookingMinutes: location?.maxBookingMinutes ?? 180 };
+  const result = await getAvailability({ ...input, includeSlots: true, durations: [...MEMBER_DURATIONS] });
+  const location = await getPrisma().location.findUnique({ where: { slug: input.locationSlug }, select: { timezone: true } });
+  return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: MEMBER_DURATIONS[0], maxBookingMinutes: MEMBER_DURATIONS[MEMBER_DURATIONS.length - 1] };
 }
 
 export type CreateMemberBookingInput = { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH"; guests?: number };
@@ -107,6 +110,7 @@ export async function createMemberBooking(memberId: string, input: CreateMemberB
       handedness: input.handedness ?? "RH",
       source: "PUBLIC",
       memberId,
+      durationBounds: { min: MEMBER_DURATIONS[0], max: MEMBER_DURATIONS[MEMBER_DURATIONS.length - 1] },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Couldn't create the reservation";

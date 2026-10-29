@@ -13,7 +13,7 @@ import { addHours, addMinutes, subMinutes } from "date-fns";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
-import { kisiConfigured, kisiUnlockLock } from "@/lib/kisi";
+import { kisiConfigured, kisiGetLock, kisiUnlockLock } from "@/lib/kisi";
 import { isMigrationFrozen } from "@/lib/migration-freeze";
 import { MobileError } from "@/services/mobile-auth.service";
 import { getVisitAllowance } from "@/services/visit-allowance.service";
@@ -44,7 +44,7 @@ export type DoorStatus = {
   location: { id: string; slug: string; name: string; timezone: string; latitude: number | null; longitude: number | null; unlockRadiusMeters: number };
   distanceMeters: number | null;
   inRange: boolean;
-  doors: { id: string; name: string; online: boolean | null }[];
+  doors: { id: string; name: string; online: boolean | null; unlocked: boolean | null; open: boolean | null; lockedDown: boolean | null; statusAt: string | null }[];
   allowance: Awaited<ReturnType<typeof getVisitAllowance>>;
   canUnlock: boolean;
   blockedCode: string | null;
@@ -97,6 +97,27 @@ function geofence(loc: { latitude: number | null; longitude: number | null; unlo
   };
 }
 
+/** Live Kisi lock state. `null` means we could not read it — callers must not invent a locked/unlocked guess. */
+async function liveLock(kisiLockId: number): Promise<{ unlocked: boolean; open: boolean | null; lockedDown: boolean; online: boolean | null; statusAt: string } | null> {
+  if (!kisiConfigured()) return null;
+  try {
+    const lock = await Promise.race([
+      kisiGetLock(kisiLockId),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("kisi lock timeout")), 4000)),
+    ]);
+    return {
+      unlocked: lock.unlocked === true,
+      open: typeof lock.open === "boolean" ? lock.open : null,
+      lockedDown: lock.locked_down === true,
+      online: lock.online ?? null,
+      statusAt: lock.updated_at ?? new Date().toISOString(),
+    };
+  } catch (err) {
+    console.warn("[mobile-door] live lock status failed", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 function formatDistance(m: number) {
   if (m < 1000) return `${Math.round(m)} m`;
   const miles = m / 1609.344;
@@ -127,7 +148,12 @@ async function membershipGate(memberId: string) {
 export async function getDoorStatus(memberId: string, input: { locationId?: string | null; geo: GeoFix | null }): Promise<DoorStatus> {
   const loc = await resolveLocation(memberId, input.locationId ?? null, input.geo);
   const fence = geofence(loc, input.geo);
-  const [gate, allowance] = await Promise.all([membershipGate(memberId), getVisitAllowance(memberId, { timezone: loc.timezone })]);
+  const [gate, allowance, locks] = await Promise.all([
+    membershipGate(memberId),
+    getVisitAllowance(memberId, { timezone: loc.timezone }),
+    Promise.all(loc.doors.map(async (d) => ({ id: d.id, live: d.kisiLockId ? await liveLock(d.kisiLockId) : null }))),
+  ]);
+  const liveById = new Map(locks.map((l) => [l.id, l.live]));
 
   let blockedCode: string | null = null;
   let blockedReason: string | null = null;
@@ -149,7 +175,18 @@ export async function getDoorStatus(memberId: string, input: { locationId?: stri
     location: { id: loc.id, slug: loc.slug, name: loc.name, timezone: loc.timezone, latitude: loc.latitude, longitude: loc.longitude, unlockRadiusMeters: loc.unlockRadiusMeters },
     distanceMeters: fence.distance,
     inRange: fence.inRange,
-    doors: loc.doors.map((d) => ({ id: d.id, name: d.name, online: d.online })),
+    doors: loc.doors.map((d) => {
+      const live = liveById.get(d.id);
+      return {
+        id: d.id,
+        name: d.name,
+        online: live ? live.online : d.online,
+        unlocked: live ? live.unlocked : null,
+        open: live ? live.open : null,
+        lockedDown: live ? live.lockedDown : null,
+        statusAt: live ? live.statusAt : null,
+      };
+    }),
     allowance,
     canUnlock: blockedCode == null,
     blockedCode,
@@ -172,6 +209,9 @@ export async function unlockDoorForMember(memberId: string, input: { locationId?
   });
   if (!door) throw new MobileError("Door not found", 404, "NO_DOORS");
 
+  const before = await liveLock(door.kisiLockId);
+  if (before?.lockedDown) throw new MobileError("This door is locked down. Contact the club and we'll open it from here.", 403, "LOCKED_DOWN");
+
   const now = new Date();
   let kisiMessage = "";
   try {
@@ -181,7 +221,8 @@ export async function unlockDoorForMember(memberId: string, input: { locationId?
     console.error("[mobile-door] kisi unlock failed", err);
     throw new MobileError("The door didn't respond. Try again in a moment, or use the Kisi app.", 502, "KISI_UNLOCK_FAILED");
   }
-  await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: now, unlocked: true, lastStatusAt: now } }).catch(() => {});
+  const live = (await liveLock(door.kisiLockId)) ?? before;
+  await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: now, unlocked: live ? live.unlocked : true, lastStatusAt: now, online: live?.online ?? undefined } }).catch(() => {});
 
   // ── Visit bookkeeping (same dedupe rules as Kisi ingestion) ──
   const loc = await prisma.location.findUnique({ where: { id: status.location.id }, select: { attendanceDedupeHours: true, reservationMatchBufferMin: true } });
@@ -245,5 +286,13 @@ export async function unlockDoorForMember(memberId: string, input: { locationId?
   void audit({ actorId: memberId, actorRole: "MEMBER", action: "door.mobile-unlock", entityType: "Door", entityId: door.id, after: { kisi: kisiMessage, visitId }, metadata: { locationId: status.location.id, distanceMeters: status.distanceMeters, newVisit } });
 
   const allowance = await getVisitAllowance(memberId, { timezone: status.location.timezone });
-  return { door: { id: door.id, name: door.name }, location: status.location, visitId, newVisit, allowance, message: kisiMessage };
+  return {
+    door: { id: door.id, name: door.name },
+    location: status.location,
+    visitId,
+    newVisit,
+    allowance,
+    message: kisiMessage,
+    lock: live,
+  };
 }

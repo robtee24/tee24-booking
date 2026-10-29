@@ -171,11 +171,13 @@ export async function getAvailability(
   if (!location || !location.timezone) throw new Error("Location not found or missing timezone");
 
   const tz = location.timezone;
-  const durations = bookingDurationOptions(
-    location.minBookingMinutes ?? 60,
-    location.maxBookingMinutes ?? 180,
-    location.bookingDurationStepMinutes ?? 60,
-  );
+  const durations = (req.durations?.filter((d) => Number.isFinite(d) && d >= 15 && d <= 360) ?? []).length
+    ? [...new Set(req.durations!.filter((d) => Number.isFinite(d) && d >= 15 && d <= 360))].sort((a, b) => a - b)
+    : bookingDurationOptions(
+        location.minBookingMinutes ?? 60,
+        location.maxBookingMinutes ?? 180,
+        location.bookingDurationStepMinutes ?? 60,
+      );
 
   // Local midnight UTC timestamp
   const localMidnightLocal = parse(`${dateStr} 00:00:00`, "yyyy-MM-dd HH:mm:ss", new Date());

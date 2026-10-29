@@ -257,6 +257,31 @@ export async function getAnalysis(memberId: string, id: string) {
   return { analysis: present(fresh) };
 }
 
+/** Re-run you-vs-pro on the stored clip against a different reference. */
+export async function recompareAnalysis(memberId: string, id: string, proId: string) {
+  const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
+  if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
+  if (a.status !== "DONE" || !a.jobId) throw new MobileError("This clip isn't ready to compare yet", 409, "NOT_READY");
+  if (!swinglabConfig().enabled) throw new MobileError("Swing analysis is offline right now", 503, "SWINGLAB_OFFLINE");
+  const clean = proId.trim();
+  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(clean)) throw new MobileError("Choose a pro", 400, "BAD_REQUEST");
+  const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === clean);
+  if (!known) throw new MobileError("That pro isn't in the library", 404, "UNKNOWN_PRO");
+  try {
+    await swinglab.recompare(a.jobId, clean);
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    const message = err instanceof Error ? err.message : "Couldn't start the comparison";
+    if (status === 409) throw new MobileError("The original clip is no longer available, so it can't be compared again.", 409, "CLIP_GONE");
+    throw new MobileError(message.replace(/^swinglab \d+: /, ""), status && status >= 400 && status < 600 ? status : 502, "RECOMPARE_FAILED");
+  }
+  const updated = await prisma.swingAnalysis.update({
+    where: { id: a.id },
+    data: { status: "UPLOADED", proId: clean, error: null, completedAt: null },
+  });
+  return { analysis: present(updated) };
+}
+
 export async function deleteAnalysis(memberId: string, id: string) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");

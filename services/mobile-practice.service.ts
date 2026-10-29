@@ -84,6 +84,17 @@ export async function getPracticeProfile(memberId: string) {
   return { profile, ...getSurveyOptions() };
 }
 
+/** Remember which hand the member plays, without requiring the rest of the survey. */
+export async function saveHandedness(memberId: string, handedness: "RH" | "LH") {
+  const existing = await prisma.practiceProfile.findUnique({ where: { memberId } });
+  if (!existing) {
+    return prisma.practiceProfile.create({
+      data: { memberId, handedness, goals: [], issues: [], weakClubs: [], misses: [] },
+    });
+  }
+  return prisma.practiceProfile.update({ where: { memberId }, data: { handedness } });
+}
+
 /** Save survey and (re)generate the plan. */
 export async function savePracticeProfile(memberId: string, input: ProfileInput) {
   const data = cleanProfile(input);

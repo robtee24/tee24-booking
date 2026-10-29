@@ -34,6 +34,8 @@ export type CreateBookingInput = {
   source: "PUBLIC" | "ADMIN";
   /** Member who made the booking (member app / portal). */
   memberId?: string | null;
+  /** Member app offers 30 minutes through 3 hours even when a club's admin step is coarser. */
+  durationBounds?: { min: number; max: number };
 };
 
 export async function createBooking(input: CreateBookingInput) {
@@ -52,6 +54,7 @@ export async function createBooking(input: CreateBookingInput) {
     handedness,
     source,
     memberId,
+    durationBounds,
   } = input;
 
   // 1. Parse local times
@@ -99,8 +102,8 @@ export async function createBooking(input: CreateBookingInput) {
   const startUTC = fromZonedTime(localStart, location.timezone);
   const endUTC = fromZonedTime(localEnd, location.timezone);
   const durationMin = Math.round((endUTC.getTime() - startUTC.getTime()) / 60_000);
-  const minMin = location.minBookingMinutes ?? 60;
-  const maxMin = location.maxBookingMinutes ?? 180;
+  const minMin = durationBounds?.min ?? location.minBookingMinutes ?? 60;
+  const maxMin = durationBounds?.max ?? location.maxBookingMinutes ?? 180;
   if (source !== "ADMIN" && (durationMin < minMin || durationMin > maxMin)) {
     throw new Error(durationOutOfRangeMessage(minMin, maxMin));
   }

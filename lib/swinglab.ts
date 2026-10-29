@@ -167,5 +167,12 @@ export const swinglab = {
     return call<{ pros: SwinglabPro[]; players: string[] }>(`/pros${qs ? `?${qs}` : ""}`);
   },
   getJob: (jobId: string) => call<SwinglabJob>(`/jobs/${encodeURIComponent(jobId)}`),
+  recompare: (jobId: string, proId: string) =>
+    call<{ job_id: string; status: string }>(`/jobs/${encodeURIComponent(jobId)}/recompare`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ pro_id: proId }).toString(),
+      timeoutMs: 20_000,
+    }),
   deleteJob: (jobId: string) => call<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }).catch(() => ({ ok: false })),
 };
