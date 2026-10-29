@@ -77,7 +77,7 @@ export type SwinglabReport = {
     summary: { name: string; value: number | null; unit: string; reliable: boolean; note: string }[];
   };
   comparison: unknown;
-  pro_reference: unknown;
+  pro_reference: SwinglabProReference | null;
   feedback: {
     rule: string;
     kind: string;
@@ -118,8 +118,54 @@ async function call<T>(path: string, init: RequestInit & { timeoutMs?: number } 
   }
 }
 
+/** Signed URL for a pro-bank thumbnail (`GET /pros/{id}/thumb?exp=&sig=`). */
+export function signProThumbUrl(swingId: string, ttlS = FILE_URL_TTL_S) {
+  const { publicBase, apiKey } = swinglabConfig();
+  const exp = Math.floor(Date.now() / 1000) + ttlS;
+  const s = sig(apiKey, `pros/${swingId}/thumb.${exp}`);
+  return `${publicBase}/pros/${encodeURIComponent(swingId)}/thumb?exp=${exp}&sig=${s}`;
+}
+
+export type SwinglabPro = {
+  swing_id: string;
+  player: string;
+  view: "face_on" | "down_the_line" | string;
+  handedness: "right" | "left" | string;
+  club: string;
+  /** True when the clip will be flipped left<->right to match the requested handedness. */
+  mirrored: boolean;
+  source_url: string;
+  source_title: string;
+  fps: number;
+  width: number;
+  height: number;
+  event_frames: number[];
+  has_video: boolean;
+  has_thumb: boolean;
+  thumb: string | null;
+  tempo: number;
+};
+
+export type SwinglabProReference = {
+  swing_id: string;
+  player: string;
+  club: string;
+  view: string;
+  handedness: string;
+  mirrored: boolean;
+  source_url?: string;
+  source_title?: string;
+};
+
 export const swinglab = {
-  health: () => call<{ status: string; version: string; auth: boolean; pro_compare: boolean; pro_reference?: string }>("/health"),
+  health: () => call<{ status: string; version: string; auth: boolean; pro_compare: boolean; pro_reference?: string; pro_bank_size?: number }>("/health"),
+  listPros: (params: { view?: string | null; handedness?: string | null } = {}) => {
+    const q = new URLSearchParams();
+    if (params.view) q.set("view", params.view);
+    if (params.handedness) q.set("handedness", params.handedness);
+    const qs = q.toString();
+    return call<{ pros: SwinglabPro[]; players: string[] }>(`/pros${qs ? `?${qs}` : ""}`);
+  },
   getJob: (jobId: string) => call<SwinglabJob>(`/jobs/${encodeURIComponent(jobId)}`),
   deleteJob: (jobId: string) => call<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }).catch(() => ({ ok: false })),
 };

@@ -2,7 +2,7 @@
 // resulting feedback into the member's practice plan.
 import type { Prisma, SwingAnalysis } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { mintUploadTicket, signFileUrl, swinglab, swinglabConfig, TICKET_TTL_S, type SwinglabJob, type SwinglabReport } from "@/lib/swinglab";
+import { mintUploadTicket, signFileUrl, signProThumbUrl, swinglab, swinglabConfig, TICKET_TTL_S, type SwinglabJob, type SwinglabPro, type SwinglabReport } from "@/lib/swinglab";
 import type { FocusAreaKey } from "@/lib/practice/drills";
 import type { SwingFlag } from "@/lib/practice/swing-analysis";
 import { regeneratePlan } from "@/services/mobile-practice.service";
@@ -17,6 +17,8 @@ export type CreateSwingInput = {
   handedness?: Handedness | string | null;
   view?: View | string | null;
   club?: string | null;
+  /** Pro bank swing id for the side-by-side; omit for the closest-tempo auto pick. */
+  proId?: string | null;
   title?: string | null;
   notes?: string | null;
   recordedAt?: string | null;
@@ -104,10 +106,12 @@ function cleanInput(input: CreateSwingInput) {
   const view: View = v === "face_on" || v === "down_the_line" ? v : "auto";
   const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
   if (Number.isNaN(recordedAt.getTime())) throw new MobileError("Invalid date", 400, "BAD_REQUEST");
+  const proId = String(input.proId ?? "").trim();
   return {
     handedness,
     view,
     club: input.club?.trim().slice(0, 40) || null,
+    proId: /^[A-Za-z0-9_\-]{1,80}$/.test(proId) ? proId : null,
     title: input.title?.trim().slice(0, 120) || null,
     notes: input.notes?.trim().slice(0, 2000) || null,
     recordedAt,
@@ -123,11 +127,78 @@ function requireEnabled() {
   if (!swinglabConfig().enabled) throw new MobileError("Swing analysis isn't available right now", 503, "SWING_UNAVAILABLE");
 }
 
+// ------------------------------------------------------------------ pro bank
+
+const PRO_CACHE_TTL_MS = 5 * 60 * 1000;
+let proCache: { at: number; pros: SwinglabPro[] } | null = null;
+
+/** Every usable bank entry (unfiltered, un-mirrored), cached a few minutes. */
+async function allPros(): Promise<SwinglabPro[]> {
+  if (proCache && Date.now() - proCache.at < PRO_CACHE_TTL_MS) return proCache.pros;
+  const { pros } = await swinglab.listPros();
+  proCache = { at: Date.now(), pros };
+  return pros;
+}
+
+export type ProOption = {
+  id: string;
+  player: string;
+  view: "face_on" | "down_the_line";
+  /** The pro's own handedness. */
+  handedness: "RH" | "LH";
+  /** True when the clip will be flipped so it matches the member's handedness. */
+  mirrored: boolean;
+  club: string;
+  tempo: number;
+  thumbnail: string | null;
+  source: { url: string; title: string } | null;
+};
+
+/**
+ * Pros the member can pick for the side-by-side, filtered to their camera view
+ * and annotated with whether each clip will be mirrored for their handedness.
+ */
+export async function listPros(input: { view?: string | null; handedness?: string | null }) {
+  if (!swinglabConfig().enabled) return { enabled: false, pros: [] as ProOption[], players: [] as string[] };
+  const view = input.view === "face_on" || input.view === "down_the_line" ? input.view : null;
+  const hand = String(input.handedness ?? "RH").toUpperCase();
+  const mine: Handedness = hand === "LH" || hand === "LEFT" ? "LH" : "RH";
+  const pros = (await allPros())
+    .filter((p) => p.has_video && (p.view === "face_on" || p.view === "down_the_line") && (!view || p.view === view))
+    .map<ProOption>((p) => {
+      const theirs: "RH" | "LH" = p.handedness === "left" ? "LH" : "RH";
+      return {
+        id: p.swing_id,
+        player: p.player,
+        view: p.view as "face_on" | "down_the_line",
+        handedness: theirs,
+        mirrored: theirs !== mine,
+        club: p.club,
+        tempo: p.tempo,
+        thumbnail: p.has_thumb ? signProThumbUrl(p.swing_id) : null,
+        source: p.source_url ? { url: p.source_url, title: p.source_title || p.source_url } : null,
+      };
+    })
+    .sort((a, b) => a.player.localeCompare(b.player) || a.view.localeCompare(b.view));
+  return { enabled: true, pros, players: Array.from(new Set(pros.map((p) => p.player))) };
+}
+
 /** Step 1: create the record and hand the phone an upload ticket. */
 export async function createAnalysis(memberId: string, input: CreateSwingInput) {
   requireEnabled();
   const data = cleanInput(input);
+  if (data.proId) {
+    const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === data.proId);
+    if (!known) data.proId = null;
+  }
   const analysis = await prisma.swingAnalysis.create({ data: { memberId, status: "PENDING", ...data } });
+  // The member's declared handedness is a profile fact; keep the practice
+  // profile in sync so every later upload and plan uses it.
+  if (input.handedness != null) {
+    await prisma.practiceProfile
+      .updateMany({ where: { memberId, NOT: { handedness: data.handedness } }, data: { handedness: data.handedness } })
+      .catch(() => null);
+  }
   const { ticket, expiresAt } = mintUploadTicket(analysis.id);
   const { publicBase } = swinglabConfig();
   return {
@@ -142,6 +213,7 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
         view: data.view,
         compare: "true",
         render: "true",
+        ...(data.proId ? { pro_id: data.proId } : {}),
       },
       expiresAt,
       limits: SWING_LIMITS,
@@ -319,6 +391,20 @@ function assets(a: SwingAnalysis) {
   };
 }
 
+function proReference(report: SwinglabReport | null) {
+  const r = report?.pro_reference;
+  if (!r || typeof r !== "object" || !r.swing_id) return null;
+  return {
+    id: r.swing_id,
+    player: r.player || r.swing_id,
+    view: r.view,
+    handedness: r.handedness === "left" ? ("LH" as const) : ("RH" as const),
+    mirrored: Boolean(r.mirrored),
+    club: r.club,
+    source: r.source_url ? { url: r.source_url, title: r.source_title || r.source_url } : null,
+  };
+}
+
 function base(a: SwingAnalysis) {
   const report = a.report as SwinglabReport | null;
   return {
@@ -327,6 +413,8 @@ function base(a: SwingAnalysis) {
     handedness: a.handedness,
     view: a.view,
     club: a.club,
+    proId: a.proId,
+    proReference: proReference(report),
     title: a.title,
     notes: a.notes,
     error: a.error,

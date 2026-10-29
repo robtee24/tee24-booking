@@ -2250,6 +2250,8 @@ model SwingAnalysis {
   /// face_on | down_the_line | auto
   view        String    @default("auto")
   club        String?
+  /// Pro bank swing id the member chose for the side-by-side (null = auto pick)
+  proId       String?
   title       String?
   notes       String?
   /// Compact swinglab report (metrics, phases, feedback, output names)
