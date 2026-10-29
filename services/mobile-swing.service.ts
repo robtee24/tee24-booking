@@ -235,7 +235,7 @@ export async function listAnalyses(memberId: string, limit = 30) {
   const rows = await prisma.swingAnalysis.findMany({
     where: { memberId },
     orderBy: { createdAt: "desc" },
-    take: Math.min(100, Math.max(1, limit)),
+    take: Math.min(500, Math.max(1, limit)),
   });
   // Refresh a few in-flight jobs so the list reflects progress without a per-row fetch.
   const pending = rows.filter((r) => r.status === "UPLOADED" || r.status === "PENDING").slice(0, 4);
@@ -272,7 +272,20 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
   } catch (err) {
     const status = (err as { status?: number }).status;
     const message = err instanceof Error ? err.message : "Couldn't start the comparison";
-    if (status === 409) throw new MobileError("The original clip is no longer available, so it can't be compared again.", 409, "CLIP_GONE");
+    if (status === 409) {
+      const { ticket, expiresAt } = mintUploadTicket(a.id);
+      const { publicBase } = swinglabConfig();
+      throw new MobileError("Send the clip from this phone so the new comparison can be rendered.", 409, "CLIP_GONE", {
+        upload: {
+          url: `${publicBase}/jobs/${a.jobId}/source`,
+          method: "POST",
+          field: "video",
+          fields: { ticket },
+          expiresAt: expiresAt.toISOString(),
+          limits: SWING_LIMITS,
+        },
+      });
+    }
     throw new MobileError(message.replace(/^swinglab \d+: /, ""), status && status >= 400 && status < 600 ? status : 502, "RECOMPARE_FAILED");
   }
   const updated = await prisma.swingAnalysis.update({
@@ -280,6 +293,14 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
     data: { status: "UPLOADED", proId: clean, error: null, completedAt: null },
   });
   return { analysis: present(updated) };
+}
+
+/** The phone has the videos. Remove them from the analysis machine. */
+export async function purgeAnalysisMedia(memberId: string, id: string) {
+  const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
+  if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
+  if (a.jobId && swinglabConfig().enabled) await swinglab.purgeMedia(a.jobId);
+  return { purged: true };
 }
 
 export async function deleteAnalysis(memberId: string, id: string) {

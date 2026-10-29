@@ -175,4 +175,6 @@ export const swinglab = {
       timeoutMs: 20_000,
     }),
   deleteJob: (jobId: string) => call<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }).catch(() => ({ ok: false })),
+  /** Drop rendered videos and the source clip. Pose cache and the report stay so a later pro swap can render again. */
+  purgeMedia: (jobId: string) => call<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}/media`, { method: "DELETE" }).catch(() => ({ ok: false })),
 };
