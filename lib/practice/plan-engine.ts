@@ -411,9 +411,37 @@ export function derivePatterns(survey: SurveyInput, flags: SwingFlag[]): PlayerP
     else if (f.key.startsWith("carry_cv_") || f.key.startsWith("wedge_cv_") || f.key === "wedge_gapping") bump("distance_control", sev, "data");
     else if (f.key === "down_on_driver" || f.key === "high_spin_driver" || f.key === "low_launch_driver") bump("driver", sev * 0.8, "data");
     else if (f.key.startsWith("offline_") || f.key === "start_line_global") { bump("pull", sev * 0.4, "data"); bump("push", sev * 0.4, "data"); }
+    else if (f.key.startsWith("video_")) for (const k of VIDEO_PATTERN[f.key.slice(6)] ?? []) bump(k, sev, "video");
   }
   return [...map.values()].sort((a, b) => b.strength - a.strength);
 }
+
+/** Swing-video (swinglab) rules → patterns, so body-motion drills get matched from video too. */
+const VIDEO_PATTERN: Record<string, PatternKey[]> = {
+  fast_tempo: ["tempo"],
+  slow_tempo: ["tempo"],
+  head_sway_backswing: ["sway"],
+  head_drift_backswing_cohort: ["sway"],
+  reverse_pivot_address: ["sway", "fat"],
+  head_move_impact: ["contact"],
+  head_dip_cohort: ["fat"],
+  spine_loss: ["early_extension"],
+  early_extension_cohort: ["early_extension"],
+  knee_flex_lost_abs: ["early_extension"],
+  knee_flex_lost_top: ["early_extension"],
+  casting_wrist: ["casting"],
+  wrist_hinge_lost_top: ["casting"],
+  lead_arm_collapse: ["short", "contact"],
+  lead_arm_collapse_abs: ["short", "contact"],
+  lead_arm_collapse_mid_backswing: ["short"],
+  hip_stall_at_impact: ["short"],
+  hip_rotation_lagging_downswing: ["short"],
+  low_x_factor: ["short"],
+  insufficient_x_factor: ["short"],
+  insufficient_backswing_turn: ["short"],
+  excessive_backswing_turn: ["contact"],
+  head_up_finish: ["topping"],
+};
 
 const LEFT_CURVE: PatternKey[] = ["hook", "pull"];
 const RIGHT_CURVE: PatternKey[] = ["slice", "fade", "push"];
@@ -498,7 +526,7 @@ export function modeMixFor(survey: SurveyInput, patterns: PlayerPattern[], flags
         : "A balanced split: enough technical work to change a pattern, enough variety and pressure for it to stick on the course.",
   );
 
-  const strongMechanical = patterns.some((p) => MECHANICAL.includes(p.key) && p.strength >= 1) || flags.some((f) => f.severity >= 0.5 && (["slice_driver", "hook_driver", "down_on_driver"].includes(f.key) || f.key.startsWith("up_on_") || f.key.startsWith("low_smash_")));
+  const strongMechanical = patterns.some((p) => MECHANICAL.includes(p.key) && p.strength >= 1) || flags.some((f) => (f.severity >= 0.5 && (["slice_driver", "hook_driver", "down_on_driver"].includes(f.key) || f.key.startsWith("up_on_") || f.key.startsWith("low_smash_"))) || (f.severity >= 0.6 && f.key.startsWith("video_") && (VIDEO_PATTERN[f.key.slice(6)] ?? []).some((k) => MECHANICAL.includes(k))));
   if (strongMechanical) {
     mix.technical += 0.1;
     mix.skill -= 0.05;
