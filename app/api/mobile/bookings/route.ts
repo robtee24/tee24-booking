@@ -22,6 +22,7 @@ export const POST = withMobileAuth("bookings", async (req, auth) => {
     partyKind: body.partyKind === "SINGLE" ? "SINGLE" : "GROUP",
     handedness: body.handedness === "LH" ? "LH" : "RH",
     guests: typeof body.guests === "number" ? body.guests : Number(body.guests ?? 0),
+    additionalMembers: typeof body.additionalMembers === "number" ? body.additionalMembers : Number(body.additionalMembers ?? 0),
   });
   return ok({ booking: { ...booking, start: booking.start.toISOString(), end: booking.end.toISOString() } });
 });

@@ -76,7 +76,10 @@ export async function getMobileAvailability(input: { locationSlug: string; date:
   return { ...result, timezone: location?.timezone ?? "America/New_York", minBookingMinutes: MEMBER_DURATIONS[0], maxBookingMinutes: MEMBER_DURATIONS[MEMBER_DURATIONS.length - 1] };
 }
 
-export type CreateMemberBookingInput = { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH"; guests?: number };
+/** Booker plus additional members plus non-member guests. */
+export const BAY_PARTY_LIMIT = 5;
+
+export type CreateMemberBookingInput = { locationSlug: string; startLocal: string; endLocal: string; partyKind: "SINGLE" | "GROUP"; handedness?: "RH" | "LH"; guests?: number; additionalMembers?: number };
 
 export async function createMemberBooking(memberId: string, input: CreateMemberBookingInput) {
   const prisma = getPrisma();
@@ -90,8 +93,12 @@ export async function createMemberBooking(memberId: string, input: CreateMemberB
 
   const kind = input.partyKind === "GROUP" ? "GROUP" : "SINGLE";
   const guests = Math.max(0, Math.min(20, Math.round(Number(input.guests ?? 0)) || 0));
+  const additionalMembers = Math.max(0, Math.round(Number(input.additionalMembers ?? 0)) || 0);
   const included = access.guests.included;
-  const maxTotal = included + MAX_EXTRA_GUESTS[kind];
+  const maxTotal = Math.min(included + MAX_EXTRA_GUESTS[kind], BAY_PARTY_LIMIT - 1);
+  if (1 + additionalMembers + guests > BAY_PARTY_LIMIT) {
+    throw new MobileError(`A bay holds ${BAY_PARTY_LIMIT} people, including you.`, 400, "PARTY_TOO_LARGE", { capacity: BAY_PARTY_LIMIT });
+  }
   if (guests > maxTotal) throw new MobileError(`That's more playing guests than one ${kind === "GROUP" ? "group" : "single"} bay allows (${maxTotal}).`, 400, "TOO_MANY_GUESTS", { maxGuests: maxTotal });
   const paidGuests = Math.max(0, guests - included);
   const guestFeeCents = paidGuests * GUEST_PLAY_FEE_CENTS;
