@@ -1,6 +1,7 @@
 // Game Improvement: survey → plan, GSPro imports → swing analysis → plan re-tune.
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { buildClubMap } from "@/lib/practice/club-map";
 import { parseShotCsv, type ParsedShot } from "@/lib/practice/gspro-csv";
 import { analyzeShots, mergeFlags, type SwingFlag, type SwingSummary } from "@/lib/practice/swing-analysis";
 import { generatePlan, SURVEY_OPTIONS, type SurveyInput } from "@/lib/practice/plan-engine";
@@ -403,6 +404,17 @@ export async function getProgress(memberId: string) {
     weeks,
     totals: { sessions: sessions.length, shots: sessions.reduce((a, s) => a + s.shotCount, 0), drillsLogged: logs.length, minutesLogged: logs.reduce((a, l) => a + (l.minutes ?? 0), 0) },
   };
+}
+
+/** Per-club carry from the member's GSPro exports. */
+export async function getClubMap(memberId: string) {
+  const sessions = await prisma.practiceSession.findMany({
+    where: { memberId, source: "GSPRO_CSV", shotCount: { gt: 0 } },
+    orderBy: { playedAt: "desc" },
+    take: 60,
+    select: { id: true, playedAt: true, shots: { select: { club: true, carry: true } } },
+  });
+  return buildClubMap(sessions.map((s) => ({ id: s.id, playedAt: s.playedAt.toISOString(), shots: s.shots })));
 }
 
 export function listDrills() {
