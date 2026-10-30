@@ -2252,6 +2252,8 @@ model SwingAnalysis {
   club        String?
   /// Pro bank swing id the member chose for the side-by-side (null = auto pick)
   proId       String?
+  /// Camera angle swinglab read off the clip right after upload: face_on | down_the_line | unknown
+  detectedView String?
   title       String?
   notes       String?
   /// Compact swinglab report (metrics, phases, feedback, output names)

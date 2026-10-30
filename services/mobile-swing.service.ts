@@ -213,6 +213,10 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
         view: data.view,
         compare: "true",
         render: "true",
+        // Read the camera angle up front and leave the you-vs-pro cut until
+        // last so the member can pick a pro while the analysis runs.
+        detect_view: "true",
+        defer_pro: "true",
         ...(data.proId ? { pro_id: data.proId } : {}),
       },
       expiresAt,
@@ -222,11 +226,14 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
 }
 
 /** Step 2: the phone finished the upload and has a swinglab job id. */
-export async function markUploaded(memberId: string, id: string, jobId: string | undefined) {
+export async function markUploaded(memberId: string, id: string, jobId: string | undefined, detectedView?: string | null) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
   if (!jobId || !/^[a-f0-9]{6,64}$/i.test(jobId)) throw new MobileError("Missing job id", 400, "BAD_REQUEST");
-  const updated = await prisma.swingAnalysis.update({ where: { id: a.id }, data: { status: "UPLOADED", jobId, error: null } });
+  const updated = await prisma.swingAnalysis.update({
+    where: { id: a.id },
+    data: { status: "UPLOADED", jobId, error: null, detectedView: cleanView(detectedView) },
+  });
   const fresh = await refresh(updated).catch(() => updated);
   return { analysis: present(fresh) };
 }
@@ -258,17 +265,26 @@ export async function getAnalysis(memberId: string, id: string) {
 }
 
 /** Re-run you-vs-pro on the stored clip against a different reference. */
+/**
+ * Re-run you-vs-pro on the stored clip against a different reference.
+ * Works while the analysis is still running too — swinglab queues the choice
+ * and cuts the side-by-side against it once the body tracking is done.
+ * `proId` of "auto" asks for the best match.
+ */
 export async function recompareAnalysis(memberId: string, id: string, proId: string) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
-  if (a.status !== "DONE" || !a.jobId) throw new MobileError("This clip isn't ready to compare yet", 409, "NOT_READY");
+  if ((a.status !== "DONE" && a.status !== "UPLOADED") || !a.jobId) throw new MobileError("This clip isn't ready to compare yet", 409, "NOT_READY");
   if (!swinglabConfig().enabled) throw new MobileError("Swing analysis is offline right now", 503, "SWINGLAB_OFFLINE");
   const clean = proId.trim();
-  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(clean)) throw new MobileError("Choose a pro", 400, "BAD_REQUEST");
-  const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === clean);
-  if (!known) throw new MobileError("That pro isn't in the library", 404, "UNKNOWN_PRO");
+  const auto = clean === "" || clean === "auto";
+  if (!auto && !/^[A-Za-z0-9_\-]{1,80}$/.test(clean)) throw new MobileError("Choose a pro", 400, "BAD_REQUEST");
+  if (!auto) {
+    const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === clean);
+    if (!known) throw new MobileError("That pro isn't in the library", 404, "UNKNOWN_PRO");
+  }
   try {
-    await swinglab.recompare(a.jobId, clean);
+    await swinglab.recompare(a.jobId, auto ? "auto" : clean);
   } catch (err) {
     const status = (err as { status?: number }).status;
     const message = err instanceof Error ? err.message : "Couldn't start the comparison";
@@ -290,9 +306,17 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
   }
   const updated = await prisma.swingAnalysis.update({
     where: { id: a.id },
-    data: { status: "UPLOADED", proId: clean, error: null, completedAt: null },
+    data: { status: "UPLOADED", proId: auto ? null : clean, error: null, completedAt: null },
   });
   return { analysis: present(updated) };
+}
+
+function knownView(v: string | null | undefined): string | null {
+  return v === "face_on" || v === "down_the_line" ? v : null;
+}
+
+function cleanView(v: string | null | undefined): string | null {
+  return v === "face_on" || v === "down_the_line" || v === "unknown" ? v : null;
 }
 
 /** The phone has the videos. Remove them from the analysis machine. */
@@ -337,7 +361,11 @@ async function refresh(a: SwingAnalysis): Promise<SwingAnalysis> {
     }
     throw err;
   }
-  if (job.status === "running") return a;
+  if (job.status === "running") {
+    const dv = cleanView(job.detected_view);
+    if (dv && dv !== a.detectedView) return prisma.swingAnalysis.update({ where: { id: a.id }, data: { detectedView: dv } });
+    return a;
+  }
   if (job.status === "error" || !job.report) {
     return prisma.swingAnalysis.update({
       where: { id: a.id },
@@ -470,7 +498,7 @@ function base(a: SwingAnalysis) {
     createdAt: a.createdAt,
     sessionId: a.sessionId,
     score: report ? swingScore(report) : null,
-    detectedView: report?.metrics?.view ?? report?.view ?? null,
+    detectedView: knownView(report?.metrics?.view) ?? knownView(report?.view) ?? a.detectedView ?? null,
   };
 }
 

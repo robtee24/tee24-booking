@@ -58,6 +58,13 @@ export type SwinglabJob = {
   seconds?: number;
   error?: string;
   report?: SwinglabReport;
+  /** analyzing | rendering | comparing while running */
+  stage?: string | null;
+  /** Quick-look camera angle (face_on | down_the_line | unknown) */
+  detected_view?: string | null;
+  detected_view_confidence?: number | null;
+  /** Pro queued via /recompare while the job was still running */
+  pending_pro_id?: string | null;
 };
 
 export type SwinglabReport = {
@@ -168,7 +175,7 @@ export const swinglab = {
   },
   getJob: (jobId: string) => call<SwinglabJob>(`/jobs/${encodeURIComponent(jobId)}`),
   recompare: (jobId: string, proId: string) =>
-    call<{ job_id: string; status: string }>(`/jobs/${encodeURIComponent(jobId)}/recompare`, {
+    call<{ job_id: string; status: string; queued?: boolean }>(`/jobs/${encodeURIComponent(jobId)}/recompare`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ pro_id: proId }).toString(),
