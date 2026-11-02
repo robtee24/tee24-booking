@@ -24,7 +24,7 @@ const api = {
 
   // Player actions
   play: () => ipcRenderer.invoke('kiosk:play'),
-  openOverlay: (mode: 'help' | 'schedule' | 'export' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
+  openOverlay: (mode: 'help' | 'schedule' | 'export' | 'league' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
   acceptUpcoming: (bookingId: string) => ipcRenderer.invoke('kiosk:acceptUpcoming', bookingId),
   checkIn: (bookingId: string, phone: string) => ipcRenderer.invoke('kiosk:checkIn', bookingId, phone),
   getSchedule: (dateISO?: string) => ipcRenderer.invoke('kiosk:schedule', dateISO),
@@ -40,6 +40,12 @@ const api = {
   playersDismiss: () => ipcRenderer.invoke('kiosk:playersDismiss'),
   playersExitGame: () => ipcRenderer.invoke('kiosk:playersExitGame'),
   cancelRestart: () => ipcRenderer.invoke('kiosk:cancelRestart'),
+  // League
+  leagues: (force?: boolean) => ipcRenderer.invoke('kiosk:leagues', !!force),
+  leagueLookup: (leagueId: string, phone: string, weekId?: string | null) => ipcRenderer.invoke('kiosk:leagueLookup', leagueId, phone, weekId ?? null),
+  leagueCheck: (leagueId: string) => ipcRenderer.invoke('kiosk:leagueCheck', leagueId),
+  leagueJoin: (leagueId: string, phone: string, displayName?: string | null) => ipcRenderer.invoke('kiosk:leagueJoin', leagueId, phone, displayName ?? null),
+  leagueSubmit: (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => ipcRenderer.invoke('kiosk:leagueSubmit', input),
 
   // Admin (Quo SMS sign-in)
   adminSendOtp: (phone: string) => ipcRenderer.invoke('admin:sendOtp', phone),

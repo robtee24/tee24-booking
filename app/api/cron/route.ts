@@ -17,6 +17,7 @@
  *  - generate-invoices           : daily 09:00 UTC — recurring invoices + auto-charge default cards
  *  - retry-failed-payments       : hourly — dunning retries, late fees, mark overdue
  *  - upcoming-payment-reminders  : daily — payment.upcoming (3 days ahead) + card expiry notices
+ *  - league-deadlines            : every 15 min — reveal + finalize league weeks whose Sunday deadline passed
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
@@ -31,6 +32,7 @@ import { buildMonthlyPayoutBatch } from "@/services/referral.service";
 import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
 import { syncDoorsFromKisi, syncKisiUnlockEvents } from "@/services/door.service";
 import { isMigrationFrozen, MIGRATION_FREEZE_SKIP } from "@/lib/migration-freeze";
+import { runLeagueDeadlines } from "@/services/league.service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -121,6 +123,10 @@ async function run(req: NextRequest) {
       case "upcoming-payment-reminders": {
         if (isMigrationFrozen()) return NextResponse.json({ ok: true, skipped: MIGRATION_FREEZE_SKIP });
         const r = await sendUpcomingPaymentReminders();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "league-deadlines": {
+        const r = await runLeagueDeadlines();
         return NextResponse.json({ ok: true, ...r });
       }
       default:

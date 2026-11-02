@@ -1,6 +1,8 @@
 # Tee24 Bay Kiosk screen reader.
 # Persistent worker: reads one command per line on stdin, writes one JSON line per command on stdout.
 #   scan            -> capture the primary screen, OCR it, emit { ok, w, h, ms, lines:[{text,x,y,w,h}] }
+#   capture         -> same as scan, plus png (base64 PNG of the screen, downscaled to <= 1600 px wide)
+#                      used for league scorecard submissions
 #   quit            -> exit
 # Uses the Windows built-in OCR engine (Windows.Media.Ocr); no install needed.
 
@@ -42,6 +44,20 @@ function Capture-Screen {
   return $bmp
 }
 
+function Png-Base64([System.Drawing.Bitmap]$bmp, [int]$maxW) {
+  $src = $bmp
+  if ($bmp.Width -gt $maxW) {
+    $scale = $maxW / $bmp.Width
+    $src = New-Object System.Drawing.Bitmap $bmp, ([int]($bmp.Width * $scale)), ([int]($bmp.Height * $scale))
+  }
+  $ms = New-Object System.IO.MemoryStream
+  $src.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+  $b64 = [Convert]::ToBase64String($ms.ToArray())
+  $ms.Dispose()
+  if ($src -ne $bmp) { $src.Dispose() }
+  return $b64
+}
+
 function Ocr-Bitmap([System.Drawing.Bitmap]$bmp) {
   # Downscale if larger than the engine allows (rare: >  ~10k px).
   $scale = 1.0
@@ -80,14 +96,18 @@ Write-Output '{"ok":true,"ready":true}'
 while ($true) {
   $cmd = [Console]::In.ReadLine()
   if ($null -eq $cmd -or $cmd -eq 'quit') { break }
-  if ($cmd -ne 'scan') { continue }
+  if ($cmd -ne 'scan' -and $cmd -ne 'capture') { continue }
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   try {
     $bmp = Capture-Screen
     $w = $bmp.Width; $h = $bmp.Height
+    $png = $null
+    if ($cmd -eq 'capture') { $png = Png-Base64 $bmp 1600 }
+    # Ocr-Bitmap may dispose/replace $bmp when downscaling, so the PNG is taken first.
     $lines = Ocr-Bitmap $bmp
     $bmp.Dispose()
     $out = [ordered]@{ ok = $true; w = $w; h = $h; ms = $sw.ElapsedMilliseconds; lines = $lines }
+    if ($null -ne $png) { $out.png = $png }
     Write-Output (ConvertTo-Json $out -Compress -Depth 4)
   } catch {
     Write-Output (ConvertTo-Json ([ordered]@{ ok = $false; error = $_.Exception.Message }) -Compress)

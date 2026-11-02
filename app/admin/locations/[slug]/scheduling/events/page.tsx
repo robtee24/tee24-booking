@@ -1,7 +1,6 @@
 import { getPrisma } from "@/lib/db";
 import { getCurrentAdmin, isFullAccess } from "@/lib/access";
 import { PageHeader } from "@/components/ui";
-import { leagueApi, leagueConfigured } from "@/lib/league-api";
 import { EventsClient, type EventDTO } from "./EventsClient";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +20,7 @@ export default async function EventsPage({ params }: { params: Promise<{ slug: s
       take: 200,
       include: { _count: { select: { rsvps: { where: { status: "GOING" } } } } },
     }),
-    leagueConfigured() ? leagueApi.leagues().catch(() => [] as { id: number; name: string }[]) : Promise.resolve([] as { id: number; name: string }[]),
+    prisma.league.findMany({ where: { locationId: location.id, status: { in: ["OPEN", "ACTIVE"] } }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
   ]);
 
   const events: EventDTO[] = rows.map((e) => ({
@@ -46,7 +45,7 @@ export default async function EventsPage({ params }: { params: Promise<{ slug: s
   return (
     <div className="space-y-6">
       <PageHeader title="Events" description="What members see under Events in the app — league nights, clinics, tournaments and socials." />
-      <EventsClient events={events} locationId={location.id} leagues={leagues} canCreateOrgWide={isFullAccess(admin.role)} leagueLinked={leagueConfigured()} />
+      <EventsClient events={events} locationId={location.id} leagues={leagues} canCreateOrgWide={isFullAccess(admin.role)} />
     </div>
   );
 }

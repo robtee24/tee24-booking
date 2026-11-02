@@ -46,7 +46,11 @@ export type AuditAction =
   | "device.bind" | "device.unlock" | "device.transfer-request" | "device.transfer-approve" | "device.transfer-deny"
   | "door.mobile-unlock" | "door.mobile-unlock-denied"
   // Events
-  | "event.create" | "event.update" | "event.delete";
+  | "event.create" | "event.update" | "event.delete"
+  // League
+  | "league.create" | "league.update" | "league.week-update" | "league.join" | "league.player-update"
+  | "league.entry-waive" | "league.score-submit" | "league.score-review" | "league.week-finalize"
+  | "league.teams-redraw" | "league.championship-award" | "league.payout-paid";
 
 export type AuditEntry = {
   organizationId?: string | null;

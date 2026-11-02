@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { MobileAuthError, requireMobileAuth, type MobileAuth } from "@/lib/mobile-session";
 import { MobileError } from "@/services/mobile-auth.service";
 import { PortalError } from "@/services/portal.service";
+import { LeagueError } from "@/services/league.service";
 
 export const mobileRouteConfig = { runtime: "nodejs" as const, dynamic: "force-dynamic" as const };
 
@@ -23,6 +24,7 @@ export function handleError(err: unknown, label: string) {
   if (err instanceof MobileAuthError) return fail(err.message, err.status, err.code);
   if (err instanceof MobileError) return fail(err.message, err.status, err.code, err.extra);
   if (err instanceof PortalError) return fail(err.message, err.status, "PORTAL_ERROR");
+  if (err instanceof LeagueError) return fail(err.message, err.status, err.code, err.extra);
   console.error(`[mobile/${label}]`, err);
   const msg = err instanceof Error ? err.message : "Something went wrong";
   return fail(msg, 500, "SERVER_ERROR");

@@ -34,7 +34,7 @@ export interface GsproScreen {
   unavailable: boolean;
 }
 
-interface OcrLine {
+export interface OcrLine {
   text: string;
   x: number;
   y: number;
@@ -47,6 +47,8 @@ interface ScanResult {
   h?: number;
   ms?: number;
   lines?: OcrLine[];
+  /** base64 PNG, only for the `capture` command */
+  png?: string;
   error?: string;
 }
 
@@ -54,6 +56,8 @@ const SCAN_INTERVAL_MS = 2500;
 /** Mid-round and within the allowance: nothing to catch until they leave the round. */
 const SCAN_INTERVAL_RELAXED_MS = 30_000;
 const SCAN_TIMEOUT_MS = 8000;
+/** capture = scan + PNG encode + a few MB of base64 over stdout */
+const CAPTURE_TIMEOUT_MS = 20_000;
 /** A reading must repeat this many times before it is published (dropdowns, transitions). */
 const STABLE_SCANS = 2;
 
@@ -204,6 +208,10 @@ function emit() {
 }
 
 function scan(): Promise<ScanResult> {
+  return command('scan', SCAN_TIMEOUT_MS);
+}
+
+function command(cmd: 'scan' | 'capture', timeoutMs: number): Promise<ScanResult> {
   if (!worker || !workerReady) return Promise.resolve({ ok: false, error: 'worker not ready' });
   if (pending) return Promise.resolve({ ok: false, error: 'scan in progress' });
   return new Promise((resolve) => {
@@ -214,10 +222,10 @@ function scan(): Promise<ScanResult> {
         // A hung worker is useless; restart it on the next tick.
         stopWorker();
       }
-    }, SCAN_TIMEOUT_MS);
+    }, timeoutMs);
     pending = { resolve, timer: t };
     try {
-      worker!.stdin.write('scan\n');
+      worker!.stdin.write(`${cmd}\n`);
     } catch (e) {
       clearTimeout(t);
       pending = null;
@@ -344,4 +352,20 @@ export async function scanOnce(): Promise<{ ok: boolean; kind: ScreenKind; playe
   const out = { ok: true, ...c, ms: r.ms ?? 0, sample: r.lines.slice(0, 40).map((l) => l.text) };
   if (!active) stopWorker();
   return out;
+}
+
+/**
+ * League scorecard capture: screenshot (PNG) + OCR lines of what GSPro shows
+ * right now. The caller hides the kiosk's own windows first. Waits for any
+ * in-flight background scan to finish.
+ */
+export async function captureOnce(): Promise<{ ok: true; w: number; h: number; ms: number; lines: OcrLine[]; png: string } | { ok: false; error: string }> {
+  if (process.platform !== 'win32') return { ok: false, error: 'Screen capture is only available on the Windows kiosk' };
+  const started = !!worker || (await startWorker());
+  if (!started) return { ok: false, error: 'OCR worker unavailable' };
+  for (let i = 0; i < 40 && pending; i++) await new Promise((r) => setTimeout(r, 100));
+  const r = await command('capture', CAPTURE_TIMEOUT_MS);
+  if (!active) stopWorker();
+  if (!r.ok || !r.lines || !r.w || !r.h || !r.png) return { ok: false, error: r.error ?? 'capture failed' };
+  return { ok: true, w: r.w, h: r.h, ms: r.ms ?? 0, lines: r.lines, png: r.png };
 }

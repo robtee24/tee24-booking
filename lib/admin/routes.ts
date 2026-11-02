@@ -45,6 +45,8 @@ export const adminRoutes = {
   doorAccess: () => "/admin/door-access",
   inbox: () => "/admin/inbox",
   mobileApp: () => "/admin/mobile-app",
+  league: () => "/admin/league",
+  leagueDetail: (id: string) => `/admin/league/${enc(id)}`,
   tasks: () => "/admin/tasks",
   notifications: () => "/admin/notifications",
   settings: () => "/admin/settings",
@@ -151,7 +153,7 @@ export const adminRoutes = {
 export type NavIcon =
   | "dashboard" | "calendar" | "users" | "card" | "megaphone" | "settings"
   | "building" | "map-pin" | "shield" | "app-window" | "bell" | "check-square" | "wrench"
-  | "door-open" | "log-in" | "inbox" | "smartphone";
+  | "door-open" | "log-in" | "inbox" | "smartphone" | "trophy";
 
 export type NavLeaf = {
   label: string;
@@ -296,6 +298,7 @@ export const ORG_NAV: OrgNavItem[] = [
   { label: "Door Access", href: adminRoutes.doorAccess(), icon: "door-open" },
   { label: "Inbox", href: adminRoutes.inbox(), icon: "inbox" },
   { label: "Mobile App", href: adminRoutes.mobileApp(), icon: "smartphone" },
+  { label: "League", href: adminRoutes.league(), icon: "trophy" },
   { label: "Admins", href: adminRoutes.admins(), icon: "shield" },
   { label: "Tasks", href: adminRoutes.tasks(), icon: "check-square" },
   { label: "Notifications", href: adminRoutes.notifications(), icon: "bell" },

@@ -150,6 +150,14 @@ export function hideToolbar() {
   get('toolbar')?.hide();
 }
 
+export function isOverlayVisible() {
+  return !!get('overlay')?.isVisible();
+}
+
+export function isToolbarVisible() {
+  return !!get('toolbar')?.isVisible();
+}
+
 export function showHome() {
   const w = createHome();
   if (!w.isVisible()) w.show();

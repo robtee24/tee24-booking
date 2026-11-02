@@ -195,6 +195,148 @@ export function createGuestViolation(body: {
   return request<{ id: string; extraGuests: number; feeCents: number; acknowledgedAt: string }>('POST', '/api/bay-app/guest-violation', { deviceId: s.deviceId, ...body });
 }
 
+// ---------- League ----------
+
+export interface LeagueSettings {
+  gimmeDistanceFt: number;
+  mulligans: boolean;
+  greenSpeed: string;
+  teeRules: unknown;
+  minorAge: number;
+  openingWeeks: number;
+  handicapCap: number;
+  throwOutEvery: number;
+  pointsTop5: number;
+  pointsTop10: number;
+  pointsTop15: number;
+  pointsTeamWin: number;
+  pointsTeamTie: number;
+  firstPlacePct: number;
+  firstPlaceCapCents: number;
+  secondPlacePct: number;
+  secondPlaceCapCents: number;
+  championshipTopPct: number;
+}
+
+export interface LeagueInfo {
+  id: string;
+  name: string;
+  locationName: string;
+  timezone: string;
+  weeklyFeeCents: number;
+  playerCount: number;
+  settings: LeagueSettings;
+  rulesUrl: string;
+  tutorialSteps: { title: string; body: string }[];
+  championshipAt: string | null;
+  championshipPotCents: number;
+  week: {
+    id: string;
+    weekNumber: number;
+    courseName: string | null;
+    opensAt: string;
+    deadlineAt: string;
+    deadlineLabel: string;
+    isOpen: boolean;
+    potCents: number;
+    submittedCount: number;
+  } | null;
+}
+
+export interface LeagueLookup {
+  member: { id: string; firstName: string; lastName: string; lastInitial: string };
+  inLeague: boolean;
+  player: { id: string; displayName: string | null; isMinor: boolean; winningsEligible: boolean } | null;
+  isMinor: boolean;
+  hasCard: boolean;
+  card: { last4: string | null; brand: string | null } | null;
+  feeCents: number;
+  /** Free (minor / $0 fee) or has a card on file — i.e. the submission won't be rejected for payment. */
+  canPay: boolean;
+  /** Already has a non-rejected score for the week that was looked up. */
+  alreadySubmitted: boolean;
+  weekNumber: number | null;
+}
+
+/** Pre-flight read of the screen: is a scorecard up, who is on it, do the settings pass. */
+export interface LeagueCheckResult {
+  isScorecard: boolean;
+  cardNames: string[];
+  settings: { mulligans: boolean | null; gimmeFt: number | null; greens: string | null };
+  ok: boolean;
+  hard: string[];
+  soft: string[];
+  warnings: string[];
+}
+
+export type LeagueResultCode =
+  | 'CARD_REJECTED'
+  | 'DUPLICATE_PHONE'
+  | 'ALREADY_SUBMITTED'
+  | 'NAME_NOT_ON_CARD'
+  | 'PAYMENT_REQUIRED'
+  | 'MEMBER_NOT_FOUND'
+  | 'WEEK_CLOSED'
+  | string;
+
+export interface LeagueSubmitResult {
+  ok: boolean;
+  weekNumber: number;
+  rejected: boolean;
+  rejectReasons: string[];
+  warnings: string[];
+  cardNames: string[];
+  results: {
+    phone: string;
+    name: string;
+    status: 'ACCEPTED' | 'FAILED';
+    code?: LeagueResultCode;
+    message: string;
+    gross?: number;
+    front9?: number;
+    back9?: number;
+    entry?: string;
+    feeCents?: number;
+    joined?: boolean;
+    isMinor?: boolean;
+  }[];
+}
+
+export type OcrPayload = { w: number; h: number; lines: { text: string; x: number; y: number; w: number; h: number }[] };
+
+export function getLeagues() {
+  const s = getSettings();
+  return request<{ leagues: LeagueInfo[] }>('GET', `/api/bay-app/league?deviceId=${encodeURIComponent(s.deviceId)}`);
+}
+
+export function leagueLookup(leagueId: string, phone: string, weekId?: string | null) {
+  const s = getSettings();
+  return request<LeagueLookup>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'lookup', leagueId, phone, weekId: weekId ?? null });
+}
+
+export function leagueCheck(leagueId: string, ocr: OcrPayload) {
+  const s = getSettings();
+  return request<LeagueCheckResult>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'check', leagueId, ocr }, null, 30_000);
+}
+
+export function leagueJoin(leagueId: string, phone: string, displayName?: string | null) {
+  const s = getSettings();
+  return request<LeagueLookup & { created: boolean }>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'join', leagueId, phone, displayName: displayName ?? null });
+}
+
+export function leagueSubmit(body: {
+  leagueId: string;
+  weekId: string | null;
+  imageBase64: string;
+  imageMime: string;
+  ocr: OcrPayload;
+  entries: { phone: string; name: string }[];
+}) {
+  const s = getSettings();
+  // Up to 5 Square charges + OCR parsing: allow a generous timeout.
+  return request<LeagueSubmitResult>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'submit', ...body }, null, 60_000);
+}
+
 // ---------- Admin (Quo SMS) endpoints ----------
 
 export function adminSendOtp(phone: string) {

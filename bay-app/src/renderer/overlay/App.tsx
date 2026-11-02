@@ -4,6 +4,7 @@ import type { Booking, KioskState } from '../shared/types';
 import { TroubleshootFlow } from '../shared/TroubleshootFlow';
 import { ScheduleView } from '../shared/ScheduleView';
 import { ExportFlow } from '../shared/ExportFlow';
+import { LeagueOverlay } from './LeagueOverlay';
 import { PlayersFlow } from './PlayersFlow';
 import { CloseIcon, LockIcon, DeleteIcon, CheckIcon } from '../shared/Icons';
 
@@ -38,6 +39,7 @@ export function App() {
           <ExportFlow currentBooking={state.status?.currentBooking ?? null} onClose={() => kiosk.openOverlay('none')} />
         </Modal>
       )}
+      {mode === 'league' && <LeagueOverlay onClose={() => kiosk.openOverlay('none')} />}
       {mode === 'idle' && deadline && <IdleWarning deadline={deadline} minutes={state.settings.idleCloseMinutes} />}
       {mode === 'restart' && deadline && <RestartNotice deadline={deadline} />}
       {mode === 'players' && (state.players.alert || state.players.done) && (
@@ -110,7 +112,7 @@ function RestartNotice({ deadline }: { deadline: string }) {
   );
 }
 
-function Modal({ title, eyebrow, children, onClose, wide, footer }: { title: string; eyebrow?: string; children: React.ReactNode; onClose?: () => void; wide?: boolean; footer?: React.ReactNode }) {
+export function Modal({ title, eyebrow, children, onClose, wide, footer }: { title: string; eyebrow?: string; children: React.ReactNode; onClose?: () => void; wide?: boolean; footer?: React.ReactNode }) {
   return (
     <div className={`modal ${wide ? 'modal-wide' : ''}`}>
       <div className="modal-head row between" style={{ alignItems: 'flex-start' }}>

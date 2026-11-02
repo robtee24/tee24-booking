@@ -1,5 +1,5 @@
 import { kiosk, useKioskState, useServerNow, formatCountdown } from '../shared/bridge';
-import { HelpIcon, CalendarIcon, UploadIcon } from '../shared/Icons';
+import { HelpIcon, CalendarIcon, UploadIcon, TrophyIcon } from '../shared/Icons';
 
 /** Floating Help / Schedule / Export strip shown on the right edge while GSPro runs. */
 export function App() {
@@ -19,6 +19,10 @@ export function App() {
       <button className="fab" onClick={() => kiosk.openOverlay('schedule')} title="Schedule">
         <CalendarIcon size={26} />
         Schedule
+      </button>
+      <button className="fab fab-league" onClick={() => kiosk.openOverlay('league')} title="Submit your league scorecard">
+        <TrophyIcon size={26} />
+        League
       </button>
       <button
         className="fab fab-export"

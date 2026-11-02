@@ -25,7 +25,7 @@ import * as players from './players';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'idle' | 'players' | 'restart';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'league' | 'idle' | 'players' | 'restart';
 
 export interface KioskState {
   version: string;

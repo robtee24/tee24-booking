@@ -1,3 +1,6 @@
+/* League theme fonts (Tee24 app): Inter + DM Serif Display. Falls back to system fonts offline. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap');
+
 *,
 *::before,
 *::after {
@@ -1085,4 +1088,530 @@ a {
   color: var(--text-2);
   font-size: 15px;
   padding-left: 18px;
+}
+
+/* ---------- League ---------- */
+.home-actions-3 {
+  grid-template-columns: 1.2fr 1fr 1fr;
+}
+.home-actions-3 .tile {
+  min-height: 280px;
+  padding: 30px;
+}
+.tile-league {
+  background: linear-gradient(160deg, rgba(34, 197, 94, 0.16), var(--card) 60%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.tile-league .tile-icon {
+  color: #86efac;
+}
+.fab-league {
+  color: #fde68a;
+}
+.league-page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+.league-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 26px 30px;
+  margin-bottom: 18px;
+  background: linear-gradient(160deg, rgba(34, 197, 94, 0.14), var(--card) 65%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.league-hero h2 {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 4px 0 6px;
+}
+.league-hero-stats {
+  display: flex;
+  gap: 10px;
+}
+.league-hero-stats > div {
+  min-width: 110px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-2);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.league-hero-stats span {
+  display: block;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.league-two-col {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.league-steps li + li {
+  margin-top: 10px;
+}
+.league-rules {
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.45;
+}
+.league-rules li + li {
+  margin-top: 8px;
+}
+.league-rules b {
+  color: var(--text);
+}
+.league-settings {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.league-settings.compact {
+  gap: 8px;
+}
+.league-setting {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}
+.league-settings.compact .league-setting {
+  padding: 8px 12px;
+  min-width: 96px;
+}
+.league-setting-wide {
+  grid-column: 1 / -1;
+}
+.league-setting-k {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.league-setting-v {
+  font-size: 26px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.league-settings.compact .league-setting-v {
+  font-size: 18px;
+}
+.league-setting-v.warn {
+  color: var(--orange);
+}
+.league-setting-note {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.league-tees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.league-tee {
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--card-2);
+  color: var(--text-2);
+  font-size: 15px;
+}
+.league-tee b {
+  color: var(--text);
+  margin-right: 4px;
+}
+.league-week-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.league-entry {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+}
+.league-entry-num {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--card-2);
+  font-weight: 800;
+  color: var(--text-2);
+}
+.league-entry-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.league-entry-fields .field + .field {
+  margin-top: 0;
+}
+.league-entry-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+  justify-content: flex-end;
+}
+.league-member {
+  padding: 18px 20px;
+}
+.league-done {
+  text-align: center;
+  padding: 18px 8px;
+}
+.league-done h2 {
+  font-size: 28px;
+  font-weight: 800;
+}
+.league-done p {
+  margin-top: 10px;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.league-done-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+}
+.league-done-icon.bad {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+.league-results {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+.league-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.league-result-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.league-result.ok .league-result-icon {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+.league-result.bad .league-result-icon {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+/* ───────────────────────── League theme ─────────────────────────
+   Mirrors the Tee24 mobile app design tokens (src/theme/tokens.ts) so the
+   league looks the same on the bay as on the phone. Scoped: only elements
+   inside .league-theme pick these up. Fonts fall back gracefully offline. */
+
+.league-theme {
+  --bg: #0b0f0c;
+  --bg-2: #10150f;
+  --card: #151b16;
+  --card-2: #1c241d;
+  --card-3: #243027;
+  --text: #f3f5f2;
+  --text-2: #a6b0a8;
+  --text-3: #6e7a70;
+  --border: #273029;
+  --green: #22c55e;
+  --green-hover: #16a34a;
+  --red: #f0565e;
+  --orange: #f5b544;
+  --blue: #5ea8ff;
+  --radius: 20px;
+  --radius-sm: 14px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font);
+  color: var(--text);
+}
+.league-theme .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.league-theme .card .card {
+  background: var(--card-2);
+}
+.league-theme .input {
+  background: var(--card-2);
+  border-color: var(--border);
+}
+.league-theme .btn {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+}
+.league-theme .btn-primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #06120a;
+}
+.league-theme .btn-primary:hover {
+  background: var(--green-hover);
+}
+.league-theme .btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.league-theme .badge-ok {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+}
+.league-theme .badge-warn {
+  background: rgba(245, 181, 68, 0.16);
+  color: #f5b544;
+}
+.league-theme .badge-bad {
+  background: rgba(240, 86, 94, 0.16);
+  color: #f87f85;
+}
+.league-theme .hint {
+  background: rgba(245, 181, 68, 0.1);
+  border: 1px solid rgba(245, 181, 68, 0.3);
+  color: var(--text-2);
+}
+.league-theme .error {
+  background: rgba(240, 86, 94, 0.1);
+  border: 1px solid rgba(240, 86, 94, 0.35);
+  color: #f8a3a7;
+}
+.league-theme .eyebrow {
+  color: var(--green);
+}
+.league-serif {
+  font-family: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.league-theme .league-hero {
+  background: linear-gradient(160deg, rgba(34, 197, 94, 0.14), var(--card) 65%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.league-theme .league-hero h2 {
+  font-size: 32px;
+}
+.league-theme .league-hero-stats > div {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+}
+.league-theme .league-setting {
+  background: var(--card-2);
+  border-color: var(--border);
+}
+.league-theme .league-entry-num {
+  background: var(--card-2);
+}
+.league-theme .league-tee {
+  background: var(--card-3);
+}
+.league-theme .league-result {
+  background: var(--card-2);
+  border-color: var(--border);
+}
+.league-theme .league-week-banner {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.league-note {
+  font-size: 15px;
+  line-height: 1.45;
+}
+.league-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  color: var(--green);
+  word-break: break-all;
+}
+.league-tabs .btn {
+  padding: 10px 16px;
+  font-size: 15px;
+}
+
+/* Tutorial */
+.league-tutorial {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.league-tutorial-step {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.league-tutorial-num {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--green);
+  font-weight: 800;
+  font-size: 16px;
+}
+.league-tutorial-title {
+  font-weight: 700;
+  font-size: 17px;
+}
+.league-tutorial-body {
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+.league-tutorial.compact {
+  gap: 8px;
+}
+.league-tutorial.compact .league-tutorial-body {
+  font-size: 14px;
+}
+
+/* Rules summary */
+.league-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.league-rule-card {
+  padding: 20px 22px;
+}
+.league-kv-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.league-kv {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  border: 1px solid var(--border);
+}
+.league-kv-k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.league-kv-v {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* Submit flow */
+.league-warning {
+  font-size: 15px;
+}
+.league-warning b {
+  color: var(--orange);
+}
+.league-entry {
+  grid-template-areas: 'num fields status' 'num note note';
+}
+.league-entry .league-entry-num { grid-area: num; }
+.league-entry .league-entry-fields { grid-area: fields; }
+.league-entry .league-entry-status { grid-area: status; }
+.league-entry-note {
+  grid-area: note;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--orange);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(245, 181, 68, 0.1);
+}
+.league-entry.blocked {
+  border-color: rgba(240, 86, 94, 0.4);
+}
+.league-check {
+  padding: 18px 20px;
+}
+.league-check.ok {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.league-check.bad {
+  border-color: rgba(240, 86, 94, 0.5);
+}
+.league-check-settings {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.league-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 88px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-2);
+}
+.league-pill span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.league-pill b {
+  font-size: 18px;
+}
+.league-pill.ok b { color: var(--green); }
+.league-pill.bad { border-color: rgba(240, 86, 94, 0.5); }
+.league-pill.bad b { color: var(--red); }
+.league-pill.unknown b { color: var(--text-3); }
+.league-confirm {
+  padding: 20px 22px;
+}
+.league-fix {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--orange);
+}
+.spinner-lg {
+  width: 36px;
+  height: 36px;
+  border-width: 4px;
 }

@@ -17,14 +17,14 @@ export type EventDTO = {
   imageUrl: string | null;
   ctaLabel: string | null;
   ctaUrl: string | null;
-  leagueId: number | null;
+  leagueId: string | null;
   capacity: number | null;
   published: boolean;
   featured: boolean;
   going: number;
 };
 
-type League = { id: number; name: string };
+type League = { id: string; name: string };
 
 const KINDS = [
   { key: "LEAGUE", label: "League play" },
@@ -71,7 +71,7 @@ const fmtRange = (s: string, e: string | null) => {
   return out;
 };
 
-export function EventsClient({ events, locationId, leagues, canCreateOrgWide, leagueLinked }: { events: EventDTO[]; locationId: string; leagues: League[]; canCreateOrgWide: boolean; leagueLinked: boolean }) {
+export function EventsClient({ events, locationId, leagues, canCreateOrgWide }: { events: EventDTO[]; locationId: string; leagues: League[]; canCreateOrgWide: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = React.useState<EventDTO | "new" | null>(null);
@@ -101,7 +101,7 @@ export function EventsClient({ events, locationId, leagues, canCreateOrgWide, le
       imageUrl: e.imageUrl ?? "",
       ctaLabel: e.ctaLabel ?? "",
       ctaUrl: e.ctaUrl ?? "",
-      leagueId: e.leagueId?.toString() ?? "",
+      leagueId: e.leagueId ?? "",
       capacity: e.capacity?.toString() ?? "",
       published: e.published,
       featured: e.featured,
@@ -126,7 +126,7 @@ export function EventsClient({ events, locationId, leagues, canCreateOrgWide, le
         imageUrl: draft.imageUrl.trim() || null,
         ctaLabel: draft.ctaLabel.trim() || null,
         ctaUrl: draft.ctaUrl.trim() || null,
-        leagueId: draft.kind === "LEAGUE" && draft.leagueId ? Number(draft.leagueId) : null,
+        leagueId: draft.kind === "LEAGUE" && draft.leagueId ? draft.leagueId : null,
         capacity: draft.capacity ? Number(draft.capacity) : null,
         published: draft.published,
         featured: draft.featured,
@@ -211,7 +211,7 @@ export function EventsClient({ events, locationId, leagues, canCreateOrgWide, le
                     )}
                     {!e.published && <Badge tone="muted" size="sm">Draft</Badge>}
                     {e.locationId === null && <Badge tone="info" size="sm">All locations</Badge>}
-                    {e.leagueId != null && <Badge tone="success" size="sm">Scores in app</Badge>}
+                    {e.leagueId != null && <Badge tone="success" size="sm">Linked league</Badge>}
                   </div>
                   <div className="mt-1 text-apple-sm text-apple-text-secondary">
                     {fmtRange(e.startsAt, e.endsAt)}
@@ -263,16 +263,12 @@ export function EventsClient({ events, locationId, leagues, canCreateOrgWide, le
             ))}
           </Select>
           {draft.kind === "LEAGUE" ? (
-            leagueLinked ? (
-              <Select label="League (for in-app score submission)" value={draft.leagueId} onChange={(e) => set("leagueId", e.target.value)} hint={leagues.length ? "Members on the roster can submit scores from the app." : "No leagues found in the league app."}>
-                <option value="">Not linked</option>
-                {leagues.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </Select>
-            ) : (
-              <Input label="League id" value={draft.leagueId} onChange={(e) => set("leagueId", e.target.value)} hint="Set LEAGUE_API_BASE to pick from a list." inputMode="numeric" />
-            )
+            <Select label="League" value={draft.leagueId} onChange={(e) => set("leagueId", e.target.value)} hint={leagues.length ? "Opens the league hub (leaderboard, teams, rules) from this event in the app." : "No open league at this location yet — create one under League."}>
+              <option value="">Not linked</option>
+              {leagues.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </Select>
           ) : (
             <Input label="Capacity (optional)" value={draft.capacity} onChange={(e) => set("capacity", e.target.value)} inputMode="numeric" placeholder="e.g. 16" />
           )}

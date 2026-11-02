@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell, powerSaveBl
 import log from 'electron-log';
 import * as api from './api';
 import * as exportsMod from './exports';
+import * as league from './league';
 import { ApiError } from './api';
 import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings } from './store';
 import { launchPlay, launchHelperOnly, pathsExist, startWatching } from './launcher';
@@ -121,7 +122,7 @@ function registerIpc() {
     poller.forcePublish();
     return st;
   });
-  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'export' | 'none') => poller.setUserMode(mode));
+  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'export' | 'league' | 'none') => poller.setUserMode(mode));
   handle('kiosk:acceptUpcoming', (id: string) => poller.acceptUpcoming(id));
   handle('kiosk:checkIn', async (bookingId: string, phone: string) => {
     const r = await api.checkIn(bookingId, phone);
@@ -139,6 +140,12 @@ function registerIpc() {
   handle('kiosk:playersDismiss', () => poller.playersDismiss());
   handle('kiosk:playersExitGame', () => poller.playersExitGame());
   handle('kiosk:cancelRestart', () => poller.cancelRestart());
+  // League
+  handle('kiosk:leagues', (force?: boolean) => league.getLeagues(!!force));
+  handle('kiosk:leagueLookup', (leagueId: string, phone: string, weekId?: string | null) => api.leagueLookup(leagueId, phone, weekId ?? null));
+  handle('kiosk:leagueCheck', (leagueId: string) => league.check(leagueId));
+  handle('kiosk:leagueJoin', (leagueId: string, phone: string, displayName?: string | null) => api.leagueJoin(leagueId, phone, displayName));
+  handle('kiosk:leagueSubmit', (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => league.submit(input));
 
   // ---- Admin ----
   handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));

@@ -69,9 +69,8 @@ function clean(body: Body, partial: boolean) {
     }
   }
   if ("leagueId" in body) {
-    const n = body.leagueId === null || body.leagueId === "" ? null : Number(body.leagueId);
-    if (n != null && (!Number.isInteger(n) || n <= 0)) throw new Error("leagueId is invalid");
-    data.leagueId = n;
+    const v = body.leagueId === null || body.leagueId === "" ? null : String(body.leagueId).trim();
+    data.leagueId = v || null;
   }
   if ("capacity" in body) {
     const n = body.capacity === null || body.capacity === "" ? null : Number(body.capacity);
