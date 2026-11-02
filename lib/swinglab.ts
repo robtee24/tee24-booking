@@ -1,10 +1,18 @@
 // Client for the swinglab video analysis service (swing-analyzer/).
 //
-// Flow: the backend mints a short-lived upload *ticket*; the phone POSTs the
-// video straight to swinglab (so the clip never transits Vercel's 4.5 MB body
-// limit); the backend then polls /jobs/{id} with the API key and signs asset
-// URLs for the phone. HMAC formats must match swinglab/api/server.py.
+// Two flows, chosen by whether BLOB_READ_WRITE_TOKEN is configured:
+//
+// * Blob (analyzer hosted on Vercel): the phone PUTs the clip into Vercel Blob
+//   with a presigned URL, the backend calls POST /analyze {video_url, wait}
+//   and holds the request open (Next `after()`), the analyzer publishes
+//   outputs + job.json to Blob and the phone reads them from the CDN.
+// * Ticket (analyzer on a laptop/VM): the backend mints a short-lived upload
+//   *ticket*; the phone POSTs the video straight to swinglab; the backend
+//   polls /jobs/{id} with the API key and signs asset URLs for the phone.
+//
+// HMAC formats must match swinglab/api/server.py.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { blobUrl, jobPath, swingBlobEnabled } from "@/lib/swing-blob";
 
 export const TICKET_TTL_S = 15 * 60;
 export const FILE_URL_TTL_S = 6 * 60 * 60;
@@ -41,8 +49,9 @@ export function verifyUploadTicket(ticket: string): string | null {
   return id;
 }
 
-/** Signed, phone-fetchable URL for a rendered output (`?exp=&sig=`). */
+/** Phone-fetchable URL for a rendered output: the Blob CDN, or a signed swinglab URL (`?exp=&sig=`). */
 export function signFileUrl(jobId: string, name: string, ttlS = FILE_URL_TTL_S) {
+  if (swingBlobEnabled()) return blobUrl(jobPath(jobId, name));
   const { publicBase, apiKey } = swinglabConfig();
   const exp = Math.floor(Date.now() / 1000) + ttlS;
   const s = sig(apiKey, `${jobId}/${name}.${exp}`);
@@ -125,8 +134,9 @@ async function call<T>(path: string, init: RequestInit & { timeoutMs?: number } 
   }
 }
 
-/** Signed URL for a pro-bank thumbnail (`GET /pros/{id}/thumb?exp=&sig=`). */
+/** Pro-bank thumbnail: Blob CDN, or a signed swinglab URL (`GET /pros/{id}/thumb?exp=&sig=`). */
 export function signProThumbUrl(swingId: string, ttlS = FILE_URL_TTL_S) {
+  if (swingBlobEnabled()) return blobUrl(`pros/${encodeURIComponent(swingId)}.jpg`);
   const { publicBase, apiKey } = swinglabConfig();
   const exp = Math.floor(Date.now() / 1000) + ttlS;
   const s = sig(apiKey, `pros/${swingId}/thumb.${exp}`);
@@ -164,8 +174,24 @@ export type SwinglabProReference = {
   source_title?: string;
 };
 
+/** How long the backend will hold a synchronous analyzer call open. Routes that
+ *  use it set `maxDuration = 800` (Pro plan ceiling); leave headroom for the
+ *  response to be stored. */
+export const ANALYZE_WAIT_MS = 760_000;
+
+export type AnalyzeRequest = {
+  jobId: string;
+  videoUrl: string;
+  handedness: "left" | "right";
+  view: "face_on" | "down_the_line" | "auto";
+  proId?: string | null;
+  /** Backend endpoint the analyzer reports the detected camera angle to and
+   *  asks for the member's current pro choice (`GET` → `{ pro_id }`). */
+  callbackUrl?: string | null;
+};
+
 export const swinglab = {
-  health: () => call<{ status: string; version: string; auth: boolean; pro_compare: boolean; pro_reference?: string; pro_bank_size?: number }>("/health"),
+  health: () => call<{ status: string; version: string; auth: boolean; pro_compare: boolean; pro_reference?: string; pro_bank_size?: number; blob?: boolean }>("/health"),
   listPros: (params: { view?: string | null; handedness?: string | null } = {}) => {
     const q = new URLSearchParams();
     if (params.view) q.set("view", params.view);
@@ -174,12 +200,36 @@ export const swinglab = {
     return call<{ pros: SwinglabPro[]; players: string[] }>(`/pros${qs ? `?${qs}` : ""}`);
   },
   getJob: (jobId: string) => call<SwinglabJob>(`/jobs/${encodeURIComponent(jobId)}`),
-  recompare: (jobId: string, proId: string) =>
-    call<{ job_id: string; status: string; queued?: boolean }>(`/jobs/${encodeURIComponent(jobId)}/recompare`, {
+  /**
+   * Run a full analysis on a clip the analyzer fetches by URL and wait for
+   * the finished job. Used when the analyzer is hosted on Vercel: the request
+   * is the unit of compute there, so the caller keeps it open.
+   */
+  analyzeAndWait: (req: AnalyzeRequest) =>
+    call<SwinglabJob>("/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: req.jobId,
+        video_url: req.videoUrl,
+        handedness: req.handedness,
+        view: req.view,
+        compare: "true",
+        render: "true",
+        detect_view: "true",
+        defer_pro: "true",
+        wait: "true",
+        ...(req.proId ? { pro_id: req.proId } : {}),
+        ...(req.callbackUrl ? { callback_url: req.callbackUrl } : {}),
+      }),
+      timeoutMs: ANALYZE_WAIT_MS,
+    }),
+  recompare: (jobId: string, proId: string, opts: { wait?: boolean } = {}) =>
+    call<SwinglabJob & { queued?: boolean }>(`/jobs/${encodeURIComponent(jobId)}/recompare`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ pro_id: proId }).toString(),
-      timeoutMs: 20_000,
+      body: new URLSearchParams({ pro_id: proId, wait: opts.wait ? "true" : "false" }).toString(),
+      timeoutMs: opts.wait ? ANALYZE_WAIT_MS : 20_000,
     }),
   deleteJob: (jobId: string) => call<{ ok: boolean }>(`/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }).catch(() => ({ ok: false })),
   /** Drop rendered videos and the source clip. Pose cache and the report stay so a later pro swap can render again. */

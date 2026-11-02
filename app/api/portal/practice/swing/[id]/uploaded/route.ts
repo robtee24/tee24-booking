@@ -4,6 +4,8 @@ import { ok, readJson, withPortalMember } from "../../../_shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Blob flow: the analysis runs inside `after()`, so this function must live as long as the analyzer call.
+export const maxDuration = 800;
 
 type Ctx = { params: Promise<{ id: string }> };
 

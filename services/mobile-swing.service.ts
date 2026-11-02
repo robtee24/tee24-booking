@@ -1,14 +1,27 @@
 // Video swing analysis: mint upload tickets for swinglab, track jobs, fold the
 // resulting feedback into the member's practice plan.
+import { randomBytes } from "node:crypto";
+import { after } from "next/server";
 import type { Prisma, SwingAnalysis } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { mintUploadTicket, signFileUrl, signProThumbUrl, swinglab, swinglabConfig, TICKET_TTL_S, type SwinglabJob, type SwinglabPro, type SwinglabReport } from "@/lib/swinglab";
+import { blobSize, blobUrl, deleteJob as deleteJobBlobs, jobPath, presignClipUpload, purgeJobMedia, readJobRecord, SOURCE_CLIP, swingBlobEnabled } from "@/lib/swing-blob";
 import type { FocusAreaKey } from "@/lib/practice/drills";
 import type { SwingFlag } from "@/lib/practice/swing-analysis";
 import { regeneratePlan } from "@/services/mobile-practice.service";
 import { MobileError } from "@/services/mobile-auth.service";
 
 export const SWING_LIMITS = { maxSeconds: 20, maxBytes: 120 * 1024 * 1024, ticketTtlS: TICKET_TTL_S };
+
+/** An UPLOADED row with no word from the analyzer for this long is written off. */
+const RUNNING_TIMEOUT_MS = 20 * 60 * 1000;
+
+function appBaseUrl() {
+  return (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://reservations.tee24.golf").replace(/\/$/, "");
+}
+
+/** Where the analyzer reports the camera angle and asks for the member's pro choice. */
+const callbackUrl = (jobId: string) => `${appBaseUrl()}/api/swinglab/jobs/${encodeURIComponent(jobId)}`;
 
 type Handedness = "RH" | "LH";
 type View = "face_on" | "down_the_line" | "auto";
@@ -132,10 +145,20 @@ function requireEnabled() {
 const PRO_CACHE_TTL_MS = 5 * 60 * 1000;
 let proCache: { at: number; pros: SwinglabPro[] } | null = null;
 
-/** Every usable bank entry (unfiltered, un-mirrored), cached a few minutes. */
+/** Every usable bank entry (unfiltered, un-mirrored), cached a few minutes.
+ *  With Blob configured the listing comes off the CDN (`pros/index.json`,
+ *  written by swing-analyzer/scripts/publish_bank.py) so the picker never
+ *  waits on an analyzer cold start. */
 async function allPros(): Promise<SwinglabPro[]> {
   if (proCache && Date.now() - proCache.at < PRO_CACHE_TTL_MS) return proCache.pros;
-  const { pros } = await swinglab.listPros();
+  let pros: SwinglabPro[];
+  if (swingBlobEnabled()) {
+    const res = await fetch(`${blobUrl("pros/index.json")}?t=${Math.floor(Date.now() / PRO_CACHE_TTL_MS)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`pro index ${res.status}`);
+    pros = ((await res.json()) as { pros: SwinglabPro[] }).pros;
+  } else {
+    pros = (await swinglab.listPros()).pros;
+  }
   proCache = { at: Date.now(), pros };
   return pros;
 }
@@ -191,7 +214,9 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
     const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === data.proId);
     if (!known) data.proId = null;
   }
-  const analysis = await prisma.swingAnalysis.create({ data: { memberId, status: "PENDING", ...data } });
+  // Blob flow: the job id is ours, so the clip's path is known before the upload.
+  const jobId = swingBlobEnabled() ? randomBytes(16).toString("hex") : undefined;
+  const analysis = await prisma.swingAnalysis.create({ data: { memberId, status: "PENDING", jobId, ...data } });
   // The member's declared handedness is a profile fact; keep the practice
   // profile in sync so every later upload and plan uses it.
   if (input.handedness != null) {
@@ -199,13 +224,20 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
       .updateMany({ where: { memberId, NOT: { handedness: data.handedness } }, data: { handedness: data.handedness } })
       .catch(() => null);
   }
+  if (jobId) {
+    const up = await presignClipUpload(jobId, SWING_LIMITS.maxBytes, TICKET_TTL_S);
+    return {
+      analysis: present(analysis),
+      upload: { url: up.url, method: up.method, field: "video", fields: {}, headers: up.headers, expiresAt: up.expiresAt, limits: SWING_LIMITS },
+    };
+  }
   const { ticket, expiresAt } = mintUploadTicket(analysis.id);
   const { publicBase } = swinglabConfig();
   return {
     analysis: present(analysis),
     upload: {
       url: `${publicBase}/analyze`,
-      method: "POST",
+      method: "POST" as const,
       field: "video",
       fields: {
         ticket,
@@ -219,16 +251,33 @@ export async function createAnalysis(memberId: string, input: CreateSwingInput) 
         defer_pro: "true",
         ...(data.proId ? { pro_id: data.proId } : {}),
       },
+      headers: {},
       expiresAt,
       limits: SWING_LIMITS,
     },
   };
 }
 
-/** Step 2: the phone finished the upload and has a swinglab job id. */
+/**
+ * Step 2: the phone finished the upload.
+ *
+ * Blob flow: the clip is in Blob under our job id; verify it landed, then run
+ * the analysis after the response goes out (`after()` keeps this function
+ * alive for the route's `maxDuration`). Ticket flow: the phone hands us the
+ * swinglab job id it was given.
+ */
 export async function markUploaded(memberId: string, id: string, jobId: string | undefined, detectedView?: string | null) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
+  if (swingBlobEnabled() && a.jobId) {
+    if (a.status === "UPLOADED" || a.status === "DONE") return { analysis: present(a) };
+    const size = await blobSize(jobPath(a.jobId, SOURCE_CLIP));
+    if (!size) throw new MobileError("The video didn't finish uploading. Try again.", 409, "UPLOAD_MISSING");
+    if (size > SWING_LIMITS.maxBytes) throw new MobileError("That video is too large. Trim it to one swing.", 413, "TOO_LARGE");
+    const updated = await prisma.swingAnalysis.update({ where: { id: a.id }, data: { status: "UPLOADED", error: null, completedAt: null } });
+    after(() => runAnalysis(updated.id));
+    return { analysis: present(updated) };
+  }
   if (!jobId || !/^[a-f0-9]{6,64}$/i.test(jobId)) throw new MobileError("Missing job id", 400, "BAD_REQUEST");
   const updated = await prisma.swingAnalysis.update({
     where: { id: a.id },
@@ -236,6 +285,74 @@ export async function markUploaded(memberId: string, id: string, jobId: string |
   });
   const fresh = await refresh(updated).catch(() => updated);
   return { analysis: present(fresh) };
+}
+
+/** Hosted analyzer: one synchronous call does the whole job. Runs inside `after()`. */
+async function runAnalysis(id: string) {
+  const a = await prisma.swingAnalysis.findUnique({ where: { id } });
+  if (!a?.jobId || a.status !== "UPLOADED") return;
+  try {
+    const job = await swinglab.analyzeAndWait({
+      jobId: a.jobId,
+      videoUrl: blobUrl(jobPath(a.jobId, SOURCE_CLIP)),
+      handedness: a.handedness === "LH" ? "left" : "right",
+      view: a.view === "face_on" || a.view === "down_the_line" ? a.view : "auto",
+      proId: a.proId,
+      callbackUrl: callbackUrl(a.jobId),
+    });
+    await settle(a, job);
+  } catch (err) {
+    await failed(a.id, err);
+  }
+}
+
+/** Hosted analyzer: re-cut the side-by-side against another pro. Runs inside `after()`. */
+async function runRecompare(id: string, proId: string) {
+  const a = await prisma.swingAnalysis.findUnique({ where: { id } });
+  if (!a?.jobId || a.status !== "UPLOADED") return;
+  try {
+    const job = await swinglab.recompare(a.jobId, proId, { wait: true });
+    await settle(a, job);
+  } catch (err) {
+    await failed(a.id, err);
+  }
+}
+
+async function settle(a: SwingAnalysis, job: SwinglabJob) {
+  if (job.status === "done" && job.report) {
+    await applyReport(a, job);
+    return;
+  }
+  if (job.status === "error" || job.status === "done") {
+    await prisma.swingAnalysis.updateMany({
+      where: { id: a.id, status: "UPLOADED" },
+      data: { status: "ERROR", error: friendlyError(job.error), seconds: job.seconds ?? null, completedAt: new Date() },
+    });
+  }
+  // Still "running" (analyzer answered early): refresh() picks it up from job.json.
+}
+
+async function failed(id: string, err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.warn("[swing] analysis call failed", msg);
+  const friendly = /abort|timeout|timed out/i.test(msg)
+    ? "The analysis took too long. Try a shorter clip."
+    : friendlyError(msg.replace(/^swinglab \d+: /, ""));
+  await prisma.swingAnalysis.updateMany({ where: { id, status: "UPLOADED" }, data: { status: "ERROR", error: friendly, completedAt: new Date() } });
+}
+
+/** Analyzer callback: the camera angle read off the clip right after it landed. */
+export async function recordDetectedView(jobId: string, detectedView: string | null | undefined) {
+  const dv = cleanView(detectedView);
+  if (!dv) return false;
+  const r = await prisma.swingAnalysis.updateMany({ where: { jobId, status: "UPLOADED" }, data: { detectedView: dv } });
+  return r.count > 0;
+}
+
+/** Analyzer callback: the pro the member wants right now (`""` = best match). */
+export async function currentProChoice(jobId: string) {
+  const a = await prisma.swingAnalysis.findFirst({ where: { jobId }, select: { proId: true } });
+  return a ? { pro_id: a.proId ?? "" } : null;
 }
 
 export async function listAnalyses(memberId: string, limit = 30) {
@@ -283,6 +400,26 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
     const known = (await allPros().catch(() => [] as SwinglabPro[])).some((p) => p.swing_id === clean);
     if (!known) throw new MobileError("That pro isn't in the library", 404, "UNKNOWN_PRO");
   }
+  if (swingBlobEnabled()) {
+    if (a.status === "UPLOADED") {
+      // Still running: the worker asks us for the current choice before it cuts the side-by-side.
+      const updated = await prisma.swingAnalysis.update({ where: { id: a.id }, data: { proId: auto ? null : clean } });
+      return { analysis: present(updated) };
+    }
+    if (!(await blobSize(jobPath(a.jobId, SOURCE_CLIP)))) {
+      // The member purged the server copy; the phone keeps the original.
+      const up = await presignClipUpload(a.jobId, SWING_LIMITS.maxBytes, TICKET_TTL_S);
+      throw new MobileError("Send the clip from this phone so the new comparison can be rendered.", 409, "CLIP_GONE", {
+        upload: { url: up.url, method: up.method, field: "video", fields: {}, headers: up.headers, expiresAt: up.expiresAt.toISOString(), limits: SWING_LIMITS },
+      });
+    }
+    const updated = await prisma.swingAnalysis.update({
+      where: { id: a.id },
+      data: { status: "UPLOADED", proId: auto ? null : clean, error: null, completedAt: null },
+    });
+    after(() => runRecompare(updated.id, auto ? "auto" : clean));
+    return { analysis: present(updated) };
+  }
   try {
     await swinglab.recompare(a.jobId, auto ? "auto" : clean);
   } catch (err) {
@@ -323,14 +460,16 @@ function cleanView(v: string | null | undefined): string | null {
 export async function purgeAnalysisMedia(memberId: string, id: string) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
-  if (a.jobId && swinglabConfig().enabled) await swinglab.purgeMedia(a.jobId);
+  if (a.jobId && swingBlobEnabled()) await purgeJobMedia(a.jobId).catch((err) => console.warn("[swing] purge failed", err));
+  else if (a.jobId && swinglabConfig().enabled) await swinglab.purgeMedia(a.jobId);
   return { purged: true };
 }
 
 export async function deleteAnalysis(memberId: string, id: string) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
-  if (a.jobId && swinglabConfig().enabled) await swinglab.deleteJob(a.jobId);
+  if (a.jobId && swingBlobEnabled()) await deleteJobBlobs(a.jobId).catch((err) => console.warn("[swing] delete failed", err));
+  else if (a.jobId && swinglabConfig().enabled) await swinglab.deleteJob(a.jobId);
   await prisma.$transaction(async (tx) => {
     await tx.swingAnalysis.delete({ where: { id: a.id } });
     if (a.sessionId) await tx.practiceSession.deleteMany({ where: { id: a.sessionId, memberId } });
@@ -350,6 +489,29 @@ async function refresh(a: SwingAnalysis): Promise<SwingAnalysis> {
   }
   if (a.status !== "UPLOADED" || !a.jobId) return a;
   if (!swinglabConfig().enabled) return a;
+
+  if (swingBlobEnabled()) {
+    // The `after()` worker normally lands the result. This is the backstop
+    // for a backend instance that went away mid-job: the analyzer publishes
+    // job.json to Blob regardless of who is listening.
+    const job = await readJobRecord<SwinglabJob>(a.jobId).catch(() => null);
+    if (job?.status === "done" && job.report) return applyReport(a, job);
+    if (job?.status === "error") {
+      return prisma.swingAnalysis.update({
+        where: { id: a.id },
+        data: { status: "ERROR", error: friendlyError(job.error), seconds: job.seconds ?? null, completedAt: new Date() },
+      });
+    }
+    const dv = cleanView(job?.detected_view);
+    if (dv && dv !== a.detectedView) return prisma.swingAnalysis.update({ where: { id: a.id }, data: { detectedView: dv } });
+    if (Date.now() - a.updatedAt.getTime() > RUNNING_TIMEOUT_MS) {
+      return prisma.swingAnalysis.update({
+        where: { id: a.id },
+        data: { status: "ERROR", error: "The analysis took too long. Try a shorter clip.", completedAt: new Date() },
+      });
+    }
+    return a;
+  }
 
   let job: SwinglabJob;
   try {
@@ -391,8 +553,12 @@ async function applyReport(a: SwingAnalysis, job: SwinglabJob): Promise<SwingAna
   const sessionSummary = { shots: 1, clubs: [], flags, highlights, source: "SWING_VIDEO", swingAnalysisId: a.id, score };
 
   const updated = await prisma.$transaction(async (tx) => {
-    const session = a.sessionId
-      ? await tx.practiceSession.update({ where: { id: a.sessionId }, data: { summary: sessionSummary as unknown as Prisma.InputJsonValue, shotCount: 1 } })
+    // The after() worker and a concurrent refresh() can both see "done".
+    const cur = await tx.swingAnalysis.findUnique({ where: { id: a.id } });
+    if (!cur) return a;
+    if (cur.status === "DONE" && cur.report && cur.completedAt && cur.completedAt > a.updatedAt) return cur;
+    const session = cur.sessionId
+      ? await tx.practiceSession.update({ where: { id: cur.sessionId }, data: { summary: sessionSummary as unknown as Prisma.InputJsonValue, shotCount: 1 } })
       : await tx.practiceSession.create({
           data: {
             memberId: a.memberId,

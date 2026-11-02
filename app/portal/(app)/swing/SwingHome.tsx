@@ -302,7 +302,10 @@ function ImportCsvModal({ open, onClose, onDone }: { open: boolean; onClose: () 
 
 /* ───────────────────────────── Upload video ───────────────────────────── */
 
-type CreateResp = { analysis: { id: string }; upload: { url: string; field: string; fields: Record<string, string>; limits: { maxSeconds: number; maxBytes: number } } };
+type CreateResp = {
+  analysis: { id: string };
+  upload: { url: string; method?: "POST" | "PUT"; field: string; fields: Record<string, string>; headers?: Record<string, string>; limits: { maxSeconds: number; maxBytes: number } };
+};
 
 function UploadVideoModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const [file, setFile] = React.useState<File | null>(null);
@@ -325,14 +328,26 @@ function UploadVideoModal({ open, onClose, onDone }: { open: boolean; onClose: (
       const created = await api<CreateResp>("/api/portal/practice/swing", { method: "POST", json: { handedness, view, club: club.trim() || null, title: title.trim() || null, recordedAt: new Date(file.lastModified || Date.now()).toISOString() } });
       if (file.size > created.upload.limits.maxBytes) throw new Error(`Video is too large (${Math.round(created.upload.limits.maxBytes / 1024 / 1024)} MB max). Trim it to one swing.`);
       setStage("Uploading video…");
-      const fd = new FormData();
-      for (const [k, v] of Object.entries(created.upload.fields)) fd.append(k, v);
-      fd.append(created.upload.field, file, file.name || "swing.mp4");
-      const up = await fetch(created.upload.url, { method: "POST", body: fd });
-      const upJson = (await up.json().catch(() => ({}))) as { job_id?: string; detail?: string };
-      if (!up.ok || !upJson.job_id) throw new Error(upJson.detail || `Upload failed (HTTP ${up.status})`);
+      let jobId: string | undefined;
+      if (created.upload.method === "PUT") {
+        // Straight into storage; the backend starts the analysis on /uploaded.
+        const up = await fetch(created.upload.url, {
+          method: "PUT",
+          body: file,
+          headers: { ...(created.upload.headers ?? {}), "Content-Type": file.type || "video/mp4" },
+        });
+        if (!up.ok) throw new Error(`Upload failed (HTTP ${up.status})`);
+      } else {
+        const fd = new FormData();
+        for (const [k, v] of Object.entries(created.upload.fields)) fd.append(k, v);
+        fd.append(created.upload.field, file, file.name || "swing.mp4");
+        const up = await fetch(created.upload.url, { method: "POST", body: fd });
+        const upJson = (await up.json().catch(() => ({}))) as { job_id?: string; detail?: string };
+        if (!up.ok || !upJson.job_id) throw new Error(upJson.detail || `Upload failed (HTTP ${up.status})`);
+        jobId = upJson.job_id;
+      }
       setStage("Starting analysis…");
-      await api(`/api/portal/practice/swing/${created.analysis.id}/uploaded`, { method: "POST", json: { jobId: upJson.job_id } });
+      await api(`/api/portal/practice/swing/${created.analysis.id}/uploaded`, { method: "POST", json: { jobId } });
       onDone();
     } catch (e) {
       setError(errMsg(e));

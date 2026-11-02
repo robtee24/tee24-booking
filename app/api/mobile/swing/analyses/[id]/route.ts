@@ -6,6 +6,8 @@ import { ok, readJson, withMobileAuth } from "../../../_shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// POST (pro swap) re-renders inside `after()`; the function must outlive the analyzer call.
+export const maxDuration = 800;
 
 type Ctx = { params: Promise<{ id: string }> };
 
