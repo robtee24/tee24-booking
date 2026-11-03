@@ -658,7 +658,12 @@ function assets(a: SwingAnalysis) {
   const report = a.report as SwinglabReport | null;
   if (!a.jobId || !report?.outputs || !swinglabConfig().enabled) return null;
   const o = report.outputs;
-  const str = (k: string) => (typeof o[k] === "string" ? signFileUrl(a.jobId!, o[k] as string) : null);
+  // A pro swap re-renders into the same blob paths, and those files are served
+  // with an hour of max-age. Versioning the URL by completion time means the
+  // phone (AVPlayer, expo-image, the on-device cache) sees a new URL and fetches
+  // the new render instead of replaying the old pro.
+  const versioned = (url: string) => (a.completedAt ? `${url}${url.includes("?") ? "&" : "?"}v=${a.completedAt.getTime()}` : url);
+  const str = (k: string) => (typeof o[k] === "string" ? versioned(signFileUrl(a.jobId!, o[k] as string)) : null);
   const stills = (o.stills && typeof o.stills === "object" ? o.stills : {}) as Record<string, string>;
   const video = (k: string) => (a.mediaPurgedAt ? null : str(k));
   return {
@@ -671,7 +676,7 @@ function assets(a: SwingAnalysis) {
     stills: Object.fromEntries(
       Object.entries(stills)
         .sort(([x], [y]) => PHASE_ORDER.indexOf(x) - PHASE_ORDER.indexOf(y))
-        .map(([k, v]) => [k, signFileUrl(a.jobId!, v)]),
+        .map(([k, name]) => [k, versioned(signFileUrl(a.jobId!, name))]),
     ),
   };
 }
