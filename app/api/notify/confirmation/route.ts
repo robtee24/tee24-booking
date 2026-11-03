@@ -5,19 +5,19 @@ import { sendEmail } from "@/lib/sendEmail";
 import { deliverMemberMessage } from "@/lib/notify";
 import { renderTemplate } from "@/lib/template";
 import { buildTemplateVars, MERGE_FIELDS, BookingContext } from "@/lib/template-vars";
+import { managementTokenMatches } from "@/lib/management-token";
 
 export const dynamic = "force-dynamic";
 
-// Build absolute base URL
-function getBaseUrl(req: NextRequest): string {
+// Build absolute base URL from configuration only. The request Host header is
+// attacker-controlled and this URL ends up in emails/texts, so it is never used.
+function getBaseUrl(): string {
   const envBase =
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.APP_BASE_URL ||
-    process.env.BASE_URL;
-  if (envBase) return envBase.replace(/\/+$/, "");
-  const proto = req.headers.get("x-forwarded-proto") || "http";
-  const host = req.headers.get("host") || "localhost:3000";
-  return `${proto}://${host}`;
+    process.env.BASE_URL ||
+    "http://localhost:3000";
+  return envBase.replace(/\/+$/, "");
 }
 
 function ensureManageLinkInEmail(html: string, manageUrl: string): string {
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const bookingId = String(body?.bookingId || "").trim();
+    const suppliedToken = String(body?.token || "").trim();
     if (!bookingId) {
       return NextResponse.json({ error: "bookingId is required" }, { status: 400 });
     }
@@ -67,11 +68,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (!booking || !booking.Location) {
+    // Public route: the only legitimate caller is someone holding the booking's
+    // management token (from the confirmation link). Anyone else gets a 404 so
+    // this can't be used to spam a guest or to enumerate booking ids.
+    if (!booking || !booking.Location || !managementTokenMatches(booking.managementToken, suppliedToken)) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
-    const base = getBaseUrl(req);
+    const base = getBaseUrl();
     const manageUrl = `${base}/manage/${booking.id}?token=${encodeURIComponent(booking.managementToken)}`;
 
     // Build context for template vars

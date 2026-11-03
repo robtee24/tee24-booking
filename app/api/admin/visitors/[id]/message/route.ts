@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiError, guardMarketing, readJson } from "../../../marketing/_shared";
+import { apiError, guardMarketing, readJson, requireLeadInScope } from "../../../marketing/_shared";
 import { messageLead } from "@/services/lead.service";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const body = await readJson(req);
   const g = await guardMarketing(req, ["member.bulk-message", "marketing.send-bulk"], { body });
   if (!g.ok) return g.response;
+  const scope = await requireLeadInScope(id, g);
+  if (scope) return scope;
   if (!body.body || (body.channel !== "EMAIL" && body.channel !== "SMS")) return NextResponse.json({ error: "channel and body required" }, { status: 400 });
   try {
     const res = await messageLead(id, { channel: body.channel, subject: body.subject, body: body.body }, { id: g.admin.id });

@@ -1,10 +1,13 @@
 // app/api/debug/create-test-booking/route.ts
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
+import { requireDebugAccess } from '@/lib/debug-guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
+  const denied = await requireDebugAccess();
+  if (denied) return denied;
   try {
     const url = new URL(req.url);
     const minutes = Math.max(1, Number(url.searchParams.get('minutes') ?? 60));

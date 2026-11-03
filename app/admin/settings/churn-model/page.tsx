@@ -6,10 +6,13 @@
 import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { requireFullAccessPage } from "../_full-only";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChurnModelPage() {
+  const denied = await requireFullAccessPage("Churn risk model");
+  if (denied) return denied;
   const prisma = getPrisma();
   const [labelCount, models, lastScores] = await Promise.all([
     prisma.churnLabel.count(),

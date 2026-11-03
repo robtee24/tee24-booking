@@ -18,9 +18,18 @@ const JWT_ISSUER = "tee24-admin";
 const JWT_AUDIENCE = "tee24-admin";
 
 function getSecret() {
-  const secretStr = process.env.ADMIN_JWT_SECRET || ENV.AUTH_SECRET || "dev-secret";
-  if (secretStr === "dev-secret" && process.env.NODE_ENV !== "test") {
+  const secretStr = process.env.ADMIN_JWT_SECRET || ENV.AUTH_SECRET;
+  if (!secretStr) {
+    // A missing secret would let anyone forge an admin session. Never fall
+    // back to a well-known value outside local dev/test.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("ADMIN_JWT_SECRET (or AUTH_SECRET) must be set in production");
+    }
     console.warn("Using insecure dev-secret for admin JWT. Set ADMIN_JWT_SECRET.");
+    return new TextEncoder().encode("dev-secret");
+  }
+  if (secretStr.length < 32) {
+    console.warn("[session] ADMIN_JWT_SECRET/AUTH_SECRET is shorter than 32 chars; rotate to a longer random value.");
   }
   return new TextEncoder().encode(secretStr);
 }

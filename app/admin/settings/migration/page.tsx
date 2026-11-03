@@ -5,10 +5,13 @@
 import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { requireFullAccessPage } from "../_full-only";
 
 export const dynamic = "force-dynamic";
 
 export default async function MigrationPage() {
+  const denied = await requireFullAccessPage("Migration");
+  if (denied) return denied;
   const prisma = getPrisma();
   const [members, withGymdesk, recentImports] = await Promise.all([
     prisma.member.count(),

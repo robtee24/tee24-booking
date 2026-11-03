@@ -1,6 +1,6 @@
 // services/otp.service.ts
 
-import { randomInt } from "crypto";
+import { randomInt, timingSafeEqual } from "crypto";
 import { ENV } from "@/lib/env";
 import { getPrisma } from "@/lib/db";
 import { sendSms } from "@/lib/openphone";
@@ -8,6 +8,19 @@ import { toE164 } from "@/lib/phone";
 import type { OtpPurpose, VerifyOtpResult } from "@/types/otp";
 
 const DEFAULT_TTL = ENV.OTP_TTL ?? 300;
+/**
+ * Wrong guesses allowed per code before it is burned. A 6-digit code with a
+ * 5-minute TTL is trivially brute-forceable without this; 5 tries keeps the
+ * success odds for an attacker at 0.0005% per code while leaving room for a
+ * fat-fingered legitimate user.
+ */
+const MAX_ATTEMPTS = 5;
+
+function codesMatch(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
 
 /**
  * Single source of truth for all OTP flows in the app
@@ -62,7 +75,7 @@ export class OtpService {
 
     await getPrisma().otp.upsert({
       where: { phone },
-      update: { code, expiresAt },
+      update: { code, expiresAt, attempts: 0 },
       create: { phone, code, expiresAt },
     });
 
@@ -97,15 +110,31 @@ export class OtpService {
 
     if (!record) return { ok: false, reason: "NOT_FOUND" };
     if (new Date() > record.expiresAt) {
-      await getPrisma().otp.delete({ where: { phone } });
+      await getPrisma().otp.delete({ where: { phone } }).catch(() => undefined);
       return { ok: false, reason: "EXPIRED" };
     }
-    if (record.code !== codeStr) {
+    if (record.attempts >= MAX_ATTEMPTS) {
+      await getPrisma().otp.delete({ where: { phone } }).catch(() => undefined);
+      return { ok: false, reason: "TOO_MANY_ATTEMPTS" };
+    }
+    if (!codesMatch(record.code, codeStr)) {
+      // Count the miss first so parallel guesses can't all slip under the cap.
+      const updated = await getPrisma().otp.update({
+        where: { phone },
+        data: { attempts: { increment: 1 } },
+        select: { attempts: true },
+      });
+      if (updated.attempts >= MAX_ATTEMPTS) {
+        await getPrisma().otp.delete({ where: { phone } }).catch(() => undefined);
+        return { ok: false, reason: "TOO_MANY_ATTEMPTS" };
+      }
       return { ok: false, reason: "MISMATCH" };
     }
 
-    // One-time use → delete
-    await getPrisma().otp.delete({ where: { phone } });
+    // One-time use → delete. `deleteMany` returns a count instead of throwing,
+    // so two concurrent correct submissions can't both succeed.
+    const consumed = await getPrisma().otp.deleteMany({ where: { phone, code: record.code } });
+    if (consumed.count === 0) return { ok: false, reason: "NOT_FOUND" };
     return { ok: true };
   }
 

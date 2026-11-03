@@ -30,7 +30,13 @@ type ResendEvent = {
 function verifySignature(req: NextRequest, body: string): boolean {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn("[resend webhook] RESEND_WEBHOOK_SECRET missing — accepting unverified");
+    // Unsigned events could inject inbound email into the admin inbox or spoof
+    // delivery status. Fail closed in production; dev may run without a secret.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[resend webhook] RESEND_WEBHOOK_SECRET missing — rejecting");
+      return false;
+    }
+    console.warn("[resend webhook] RESEND_WEBHOOK_SECRET missing — accepting unverified (non-production only)");
     return true;
   }
   const id = req.headers.get("svix-id") ?? req.headers.get("webhook-id");

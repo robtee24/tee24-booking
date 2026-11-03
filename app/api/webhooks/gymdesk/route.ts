@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { getPrisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 const VALID_STATUSES = ["ACTIVE", "CANCELLED", "FROZEN", "VISITOR"];
 
+function secretEquals(provided: string | null, expected: string): boolean {
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Gymdesk can only be configured with a URL, so the `?secret=` query form has
+// to stay supported; the header form is preferred where available.
 function authorize(req: NextRequest): boolean {
   const secret = process.env.GYMDESK_WEBHOOK_SECRET;
   if (!secret) return false;
-  const qs = req.nextUrl.searchParams.get("secret");
-  const header = req.headers.get("x-webhook-secret");
-  return qs === secret || header === secret;
+  return secretEquals(req.nextUrl.searchParams.get("secret"), secret) || secretEquals(req.headers.get("x-webhook-secret"), secret);
 }
 
 function findField(obj: any, ...keys: string[]): string {
@@ -77,7 +85,8 @@ async function handleRequest(req: NextRequest) {
   const allParams = Object.fromEntries(params.entries());
   const merged = { ...allParams, ...body };
 
-  console.log("[Gymdesk webhook] method=%s action=%s locationSlug=%s status=%s data=%j", req.method, action, locationSlug, statusParam, merged);
+  // Don't log the merged payload: it carries member name/phone/email.
+  console.log("[Gymdesk webhook] method=%s action=%s locationSlug=%s status=%s keys=%j", req.method, action, locationSlug, statusParam, Object.keys(merged));
 
   try {
     if (action === "new_member") {

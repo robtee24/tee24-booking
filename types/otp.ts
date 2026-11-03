@@ -9,4 +9,4 @@ export type OtpPurpose =
 
 export type VerifyOtpResult =
   | { ok: true }
-  | { ok: false; reason: "EXPIRED" | "MISMATCH" | "NOT_FOUND" | "INVALID_FORMAT" };
+  | { ok: false; reason: "EXPIRED" | "MISMATCH" | "NOT_FOUND" | "INVALID_FORMAT" | "TOO_MANY_ATTEMPTS" };

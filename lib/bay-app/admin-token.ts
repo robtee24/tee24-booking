@@ -1,7 +1,7 @@
 // lib/bay-app/admin-token.ts
 import { SignJWT, jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
 import { getPrisma } from "@/lib/db";
+import { resolveJwtSecret } from "@/lib/jwt-secret";
 
 /**
  * Short-lived bearer token issued to the bay kiosk after an admin verifies a
@@ -13,7 +13,7 @@ const ISSUER = "tee24-admin";
 const TTL_SECONDS = 12 * 60 * 60;
 
 function secret() {
-  return new TextEncoder().encode(process.env.ADMIN_JWT_SECRET || ENV.AUTH_SECRET || "dev-secret");
+  return resolveJwtSecret(["ADMIN_JWT_SECRET", "AUTH_SECRET"], "dev-secret");
 }
 
 export type BayAdmin = {

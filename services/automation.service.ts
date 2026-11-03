@@ -24,6 +24,7 @@ import { deliverEmail, deliverMemberMessage, memberHasPush } from "@/lib/notify"
 import type { MemberEventKind } from "@/lib/events";
 import { addMemberTag, removeMemberTag, updateMember } from "./member.service";
 import { mergeFields } from "./marketing.service";
+import { isSafeOutboundUrl } from "@/lib/outbound-url";
 
 export type AutomationTrigger = MemberEventKind | "tag.added" | "inactive-for-days" | "manual";
 
@@ -433,7 +434,7 @@ async function runOneStep(enrollment: any) {
         }
       }
       subject = mergeFields(subject, member);
-      body = mergeFields(body, member);
+      body = mergeFields(body, member, undefined, { html: true });
       const msg = await prisma.message.create({
         data: { memberId: member.id, channel: "EMAIL", direction: "OUTBOUND", status: "QUEUED", category: "MARKETING", subject, body, toAddress: member.email, templateId: cfg.templateId ?? null, sentByAutomationId: automation.id },
       });
@@ -506,7 +507,9 @@ async function runOneStep(enrollment: any) {
       break;
     }
     case "WEBHOOK": {
-      if (cfg.url) {
+      if (cfg.url && !isSafeOutboundUrl(String(cfg.url))) {
+        console.warn("[automation] webhook blocked: unsafe destination", cfg.url);
+      } else if (cfg.url) {
         let payload: any = {};
         if (typeof cfg.payload === "string") {
           try { payload = JSON.parse(cfg.payload); } catch { payload = { raw: cfg.payload }; }

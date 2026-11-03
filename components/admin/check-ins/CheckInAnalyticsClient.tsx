@@ -51,8 +51,9 @@ function pct(n: number) {
   return `${n.toFixed(n % 1 === 0 ? 0 : 1)}%`;
 }
 function csvEscape(v: string | number | null | undefined) {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = v == null ? "" : String(v);
+  if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`; // defuse spreadsheet formulas
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export function CheckInAnalyticsClient({ scope }: { scope: AnalyticsScope }) {

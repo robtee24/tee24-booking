@@ -12,6 +12,7 @@ import { createHash, randomBytes } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
 import type { NextRequest } from "next/server";
 import { getPrisma } from "@/lib/db";
+import { resolveJwtSecret } from "@/lib/jwt-secret";
 
 const ISSUER = "tee24-mobile";
 const AUDIENCE = "tee24-mobile";
@@ -19,8 +20,7 @@ const AUDIENCE = "tee24-mobile";
 export const MOBILE_SESSION_SECONDS = Number(process.env.MOBILE_SESSION_MAX_AGE) || 60 * 60 * 24 * 90;
 
 function secret() {
-  const s = process.env.MOBILE_JWT_SECRET || process.env.MEMBER_JWT_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
-  return new TextEncoder().encode(s);
+  return resolveJwtSecret(["MOBILE_JWT_SECRET", "MEMBER_JWT_SECRET", "ADMIN_JWT_SECRET"], "dev-secret-member");
 }
 
 export function hashToken(raw: string): string {

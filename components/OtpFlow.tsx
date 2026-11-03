@@ -10,7 +10,8 @@ type Props = {
   title?: string;
   subtitle?: string;
   initialPhone?: string;
-  onSuccess: () => void;
+  /** Called after a successful verify with the endpoint's JSON body (e.g. `{ phoneToken }`). */
+  onSuccess: (data?: Record<string, unknown>) => void;
   sendButtonText?: string;
   successDelayMs?: number;
 };
@@ -90,7 +91,7 @@ export default function OtpFlow({
       if (!res.ok) throw new Error(data.error || "Invalid code");
 
       setMessage("Verified!");
-      setTimeout(() => onSuccess(), successDelayMs);
+      setTimeout(() => onSuccess(data && typeof data === "object" ? data : undefined), successDelayMs);
     } catch (err: any) {
       setMessage(err.message || "Verification failed");
     } finally {

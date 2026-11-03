@@ -1,12 +1,28 @@
 // app/api/bookings/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createBooking } from "@/services/booking.service";
+import { BOOKING_PHONE_AUDIENCE, verifyPhoneVerificationToken } from "@/lib/phone-verification";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // Public endpoint: the booking must be for a phone number this caller just
+    // verified via /api/bookings/otp/verify (which issues `phoneToken`). The
+    // booking page always goes through that step; direct API callers can't skip it.
+    const verifiedPhone = await verifyPhoneVerificationToken(
+      typeof body.phoneToken === "string" ? body.phoneToken : null,
+      String(body.phone ?? ""),
+      BOOKING_PHONE_AUDIENCE,
+    );
+    if (!verifiedPhone) {
+      return NextResponse.json(
+        { ok: false, error: "Please verify your phone number before booking.", code: "PHONE_NOT_VERIFIED" },
+        { status: 401 },
+      );
+    }
 
     const result = await createBooking({
       startLocal: body.startISO ?? body.start,

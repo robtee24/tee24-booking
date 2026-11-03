@@ -57,6 +57,26 @@ export async function guardMarketing(
   };
 }
 
+/**
+ * Visitors (leads) are addressed by id in the URL but guarded by the location
+ * in the query string. Make sure the lead actually belongs to that location so
+ * a SCOPED admin can't read or edit another location's leads by swapping ids.
+ * Returns a 404 response when out of scope (don't confirm the id exists).
+ */
+export async function requireLeadInScope(
+  leadId: string,
+  g: Extract<MarketingGuard, { ok: true }>,
+): Promise<NextResponse | null> {
+  const lead = await getPrisma().visitor.findUnique({ where: { id: leadId }, select: { locationId: true, organizationId: true } });
+  if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const fullAccess = g.admin.role === "ROOT" || g.admin.role === "FULL";
+  if (fullAccess) return null;
+  const sameLocation = lead.locationId === g.location.id;
+  const orgLeadInSameOrg = !lead.locationId && !!lead.organizationId && lead.organizationId === g.location.organizationId;
+  if (sameLocation || orgLeadInSameOrg) return null;
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
+}
+
 export function apiError(e: unknown, status = 400) {
   const msg = e instanceof Error ? e.message : String(e);
   return NextResponse.json({ error: msg }, { status: e instanceof ForbiddenError ? 403 : status });

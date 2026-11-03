@@ -1293,8 +1293,11 @@ export function toCsv(rows: (string | number | null | undefined)[][], _currency?
   void _currency;
   return rows
     .map((row) => row.map((v) => {
-      const s = v == null ? "" : String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      let s = v == null ? "" : String(v);
+      // Negative numbers are legitimate; anything else starting with a formula
+      // trigger (= + - @) is member/admin text and must not execute in Excel.
+      if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(","))
     .join("\n");
 }

@@ -129,8 +129,16 @@ export function verifyQuoSignature(
   standard?: { id?: string | null; timestamp?: string | null; signature?: string | null },
 ): boolean {
   const secret = process.env.QUO_WEBHOOK_SECRET || process.env.OPENPHONE_WEBHOOK_SECRET;
-  // Without a provisioned secret we accept the webhook; the receiver still validates payload shape.
-  if (!secret) return true;
+  if (!secret) {
+    // Never accept unsigned webhooks in production: anyone could inject inbound
+    // texts / delivery statuses into the inbox. Local dev may run without one.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[quo] QUO_WEBHOOK_SECRET missing — rejecting webhook");
+      return false;
+    }
+    console.warn("[quo] QUO_WEBHOOK_SECRET missing — accepting webhook unverified (non-production only)");
+    return true;
+  }
   try {
     // Both generations base64-decode the secret into raw key bytes. The current
     // generation prefixes it with `whsec_`; legacy secrets are bare base64.

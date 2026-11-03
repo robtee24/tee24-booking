@@ -220,7 +220,7 @@ export async function sendSystemMessage(
   const emailActive = emailTpl ? emailTpl.active : def.email.defaultOn;
   if (emailActive && member.email) {
     const subject = renderSystemTemplate(emailTpl?.subject ?? def.email.subject, merged);
-    const html = renderSystemTemplate(emailTpl?.body ?? def.email.body, merged);
+    const html = renderSystemTemplate(emailTpl?.body ?? def.email.body, merged, { html: true });
     result.email = await logAndDeliver({
       channel: "EMAIL",
       memberId,
@@ -347,7 +347,7 @@ export async function sendSystemTestToAdmin(opts: {
     const res = await deliverEmail({
       to: opts.adminEmail,
       subject: `[TEST] ${renderSystemTemplate(subject ?? "", vars)}`,
-      html: renderSystemTemplate(body, vars),
+      html: renderSystemTemplate(body, vars, { html: true }),
       category: "SYSTEM",
       organizationId: opts.organizationId,
       force: true,

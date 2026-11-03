@@ -1,10 +1,13 @@
 import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { Activity } from "lucide-react";
+import { requireFullAccessPage } from "../_full-only";
 
 export const dynamic = "force-dynamic";
 
 export default async function HealthPage() {
+  const denied = await requireFullAccessPage("Integration health");
+  if (denied) return denied;
   const prisma = getPrisma();
 
   const [recent, drift] = await Promise.all([

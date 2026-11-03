@@ -6,9 +6,10 @@ import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { deliverEmail, deliverMemberMessage, deliverSms, isQuietHours, nextQuietHoursEnd, previewMemberChannels, type DeliverResult } from "@/lib/notify";
 import type { EmailAttachment } from "@/lib/sendEmail";
-import { renderSystemTemplate } from "@/lib/system-templates";
+import { escapeHtml, renderSystemTemplate } from "@/lib/system-templates";
 import { buildMemberVars } from "./system-messages.service";
 import { ALL_LEAD_STAGES, type LeadStage } from "@/lib/chart-data";
+import { isSafeOutboundUrl } from "@/lib/outbound-url";
 
 export type AudienceFilter = {
   locationId?: string;
@@ -146,7 +147,7 @@ export async function applyTemplate(opts: {
  * Merge fields: supports `{{path.to.value}}` lookups on the member object
  * (legacy) and the `{first_name}` / `{{firstName}}` system-style vars.
  */
-export function mergeFields(template: string, member: any, extra?: Record<string, unknown>): string {
+export function mergeFields(template: string, member: any, extra?: Record<string, unknown>, opts?: { html?: boolean }): string {
   if (!template) return "";
   const pathPass = template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (m, path: string) => {
     if (!path.includes(".")) return m; // leave single-key tokens for the var pass
@@ -156,7 +157,8 @@ export function mergeFields(template: string, member: any, extra?: Record<string
       if (cur == null) return "";
       cur = cur[p];
     }
-    return cur == null ? "" : String(cur);
+    const s = cur == null ? "" : String(cur);
+    return opts?.html ? escapeHtml(s) : s;
   });
   const vars = buildMemberVars(
     {
@@ -171,7 +173,7 @@ export function mergeFields(template: string, member: any, extra?: Record<string
     },
     extra,
   );
-  return renderSystemTemplate(pathPass, vars);
+  return renderSystemTemplate(pathPass, vars, opts);
 }
 
 export const MARKETING_MERGE_FIELDS = [
@@ -307,7 +309,7 @@ function attachmentsFromUrls(urls?: string[]): EmailAttachment[] | undefined {
   if (!urls?.length) return undefined;
   return urls
     .map((u) => u.trim())
-    .filter((u) => /^https?:\/\//i.test(u))
+    .filter((u) => /^https?:\/\//i.test(u) && isSafeOutboundUrl(u))
     .map((u) => ({ filename: decodeURIComponent(u.split("/").pop()?.split("?")[0] || "attachment"), path: u }));
 }
 
@@ -357,8 +359,9 @@ export async function sendBulk(input: SendBulkInput) {
     try {
       const rawSubject = tpl ? tpl.subject : input.subject ?? null;
       const rawBody = tpl ? tpl.body : input.body ?? "";
+      const html = input.channel === "EMAIL";
       const subject = rawSubject ? mergeFields(rawSubject, m) : null;
-      const body = mergeFields(rawBody, m);
+      const body = mergeFields(rawBody, m, undefined, { html });
       const to = input.channel === "EMAIL" ? m.email : m.phone;
 
       // Quiet hours for marketing texts/pushes: queue to next morning instead of sending.
@@ -461,7 +464,7 @@ export async function sendTestToSelf(input: {
     : null;
   const member = sample ?? { firstName: "Jordan", lastName: "Sample", email: input.adminEmail ?? "", phone: input.adminPhone ?? "", membershipType: "Unlimited Monthly", location: { name: "Tee24" } };
   const renderedSubject = subject ? `[TEST] ${mergeFields(subject, member)}` : "[TEST]";
-  const rendered = mergeFields(body, member);
+  const rendered = mergeFields(body, member, undefined, { html: input.channel === "EMAIL" });
 
   if (input.channel === "EMAIL") {
     if (!input.adminEmail) return { ok: false, error: "Your admin profile has no email address" };

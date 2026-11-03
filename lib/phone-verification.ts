@@ -8,16 +8,17 @@
  */
 import { SignJWT, jwtVerify } from "jose";
 import { toE164 } from "@/lib/phone";
+import { resolveJwtSecret } from "@/lib/jwt-secret";
 
 const ISSUER = "tee24-phone-verification";
 export const SIGNUP_PHONE_AUDIENCE = "signup";
 export const PORTAL_LOGIN_AUDIENCE = "portal-login";
 export const MOBILE_TRANSFER_AUDIENCE = "mobile-transfer";
+export const BOOKING_PHONE_AUDIENCE = "booking";
 const TTL_SECONDS = 30 * 60;
 
 function secret() {
-  const s = process.env.MEMBER_JWT_SECRET || process.env.AUTH_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
-  return new TextEncoder().encode(s);
+  return resolveJwtSecret(["MEMBER_JWT_SECRET", "AUTH_SECRET", "ADMIN_JWT_SECRET"], "dev-secret-member");
 }
 
 export async function issuePhoneVerificationToken(rawPhone: string, audience: string): Promise<string> {

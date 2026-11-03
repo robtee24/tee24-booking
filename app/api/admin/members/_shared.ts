@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { requireLocationAdminApi, type ApiAdmin } from "@/lib/api-auth";
 import { getActorContext } from "@/lib/actor";
-import { ForbiddenError, type ActorContext } from "@/lib/permissions";
+import { can, ForbiddenError, type ActorContext } from "@/lib/permissions";
 import type { MemberQuery, MemberStatus } from "@/services/member.service";
 
 export type MemberGuard =
@@ -36,6 +36,10 @@ export async function requireLocationApi(ref: { locationId?: string | null; loca
 /**
  * Load the member, resolve its location and run the location admin guard.
  * Use for every /api/admin/members/[id]/** handler.
+ *
+ * Also enforces the baseline `member.view` permission: every member sub-route
+ * reveals at least some member data, so a SCOPED admin without that grant gets
+ * 403 here instead of each handler having to remember. ROOT/FULL always pass.
  */
 export async function requireMemberApi(memberId: string): Promise<MemberGuard> {
   const prisma = getPrisma();
@@ -48,6 +52,9 @@ export async function requireMemberApi(memberId: string): Promise<MemberGuard> {
   if (!guard.ok) return { ok: false, response: guard.response };
   const actor = await getActorContext();
   if (!actor) return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  if (!can(actor, "member.view", { locationId: member.locationId })) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden: missing permission "member.view"' }, { status: 403 }) };
+  }
   const location = await prisma.location.findUnique({
     where: { id: member.locationId },
     select: { id: true, slug: true, name: true, organizationId: true, timezone: true, taxRateBps: true },

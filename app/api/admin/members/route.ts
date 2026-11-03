@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   try {
+    const actor = await getActorContext();
+    assertCan(actor, "member.view", { locationId: guard.location.id });
     const q = memberQueryFromParams(sp, guard.location.id);
     const [result, counts] = await Promise.all([queryMembers(q), countMembersByStatus(q)]);
     return NextResponse.json({

@@ -103,8 +103,20 @@ export async function GET(req: NextRequest) {
   const guard = await requireAdminApi();
   if (!guard.ok) return guard.response;
   const locationId = req.nextUrl.searchParams.get("locationId");
+  const admin = guard.admin;
+  const allowedIds = admin.locations.map((l) => l.locationId);
+  // SCOPED admins only see events for their own locations (+ org-wide ones);
+  // a requested locationId outside that set is refused rather than honoured.
+  if (locationId && !canAccessLocation(admin.role as "ROOT" | "FULL" | "SCOPED", allowedIds, locationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const where = locationId
+    ? { OR: [{ locationId }, { locationId: null }] }
+    : admin.role === "SCOPED"
+      ? { OR: [{ locationId: { in: allowedIds } }, { locationId: null }] }
+      : {};
   const events = await getPrisma().event.findMany({
-    where: locationId ? { OR: [{ locationId }, { locationId: null }] } : {},
+    where,
     orderBy: { startsAt: "desc" },
     take: 200,
     include: { _count: { select: { rsvps: { where: { status: "GOING" } } } }, location: { select: { id: true, name: true, slug: true } } },

@@ -329,7 +329,13 @@ export function verifyKisiSignature(input: {
 }): boolean {
   const secret = input.secret ?? process.env.KISI_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn("[kisi] KISI_WEBHOOK_SECRET missing — accepting webhook unverified");
+    // Unsigned webhooks could forge unlock events (check-ins). Fail closed in
+    // production; local dev may run without a secret.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[kisi] KISI_WEBHOOK_SECRET missing — rejecting webhook");
+      return false;
+    }
+    console.warn("[kisi] KISI_WEBHOOK_SECRET missing — accepting webhook unverified (non-production only)");
     return true;
   }
   const hmac = crypto.createHmac("sha256", secret);

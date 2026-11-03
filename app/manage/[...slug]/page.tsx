@@ -72,10 +72,19 @@ export default function ManageBookingPage(props: {
       setBookingLoadError(null);
       setBooking(null);
       if (!bookingId) { setBookingLoading(false); return; }
+      if (!token) {
+        // The API only reveals a booking to the holder of its management token.
+        setBookingLoadError("This link is missing its token. Use the link from your confirmation message.");
+        setBookingLoading(false);
+        return;
+      }
       try {
-        const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, { cache: "no-store" });
+        const res = await fetch(
+          `/api/bookings/${encodeURIComponent(bookingId)}?token=${encodeURIComponent(token)}`,
+          { cache: "no-store" }
+        );
         if (!res.ok) {
-          if (!cancelled) setBookingLoadError(res.status === 404 ? "Reservation not found." : `HTTP ${res.status}`);
+          if (!cancelled) setBookingLoadError(res.status === 404 ? "Reservation not found, or this link is no longer valid." : `HTTP ${res.status}`);
           return;
         }
         const data: ApiBooking = await res.json();
@@ -89,7 +98,7 @@ export default function ManageBookingPage(props: {
     }
     load();
     return () => { cancelled = true; };
-  }, [bookingId]);
+  }, [bookingId, token]);
 
   const cancelReservation = React.useCallback(async () => {
     if (!bookingId) { setError("Missing booking id."); return; }

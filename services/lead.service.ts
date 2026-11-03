@@ -208,7 +208,7 @@ export async function messageLead(
 
   const pseudoMember = { firstName: lead.firstName ?? "", lastName: lead.lastName ?? "", email: lead.email ?? "", phone: lead.phone ?? "", location: lead.location };
   const subject = input.subject ? mergeFields(input.subject, pseudoMember) : null;
-  const body = mergeFields(input.body, pseudoMember);
+  const body = mergeFields(input.body, pseudoMember, undefined, { html: input.channel === "EMAIL" });
 
   let convo = await prisma.conversation.findFirst({ where: { visitorId: id, status: "OPEN" }, orderBy: { lastMessageAt: "desc" } });
   if (!convo) {

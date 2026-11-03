@@ -3,46 +3,52 @@
  *
  * Security:
  *  - We always return 200 to avoid email enumeration
- *  - Magic-link tokens expire in 15 minutes (one-time use)
- *  - Rate-limited at 5/min/email upstream (TODO: implement once redis is wired)
+ *  - Magic-link tokens expire in 15 minutes and are single-use (lib/magic-link.ts)
+ *  - Per-member cooldown (60s, via Member.magicLinkLastSentAt) + per-IP window so
+ *    the endpoint can't be used to flood a member's inbox
  */
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
 import { getPrisma } from "@/lib/db";
 import { sendEmail } from "@/lib/notify";
-import { memberBaseUrl } from "@/lib/public-url";
+import { buildMagicLink } from "@/lib/magic-link";
 
 export const dynamic = "force-dynamic";
 
-function getSecret() {
-  const s = process.env.MEMBER_JWT_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
-  return new TextEncoder().encode(s);
+const PER_MEMBER_COOLDOWN_MS = 60 * 1000;
+const PER_IP_MAX = 10;
+const PER_IP_WINDOW_MS = 10 * 60 * 1000;
+const ipHits = new Map<string, number[]>();
+
+function ipAllowed(ip: string): boolean {
+  const now = Date.now();
+  const hits = (ipHits.get(ip) ?? []).filter((t) => now - t < PER_IP_WINDOW_MS);
+  if (hits.length >= PER_IP_MAX) return false;
+  hits.push(now);
+  ipHits.set(ip, hits);
+  return true;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json();
-    if (!email) return NextResponse.json({ error: "email required" }, { status: 400 });
+    const { email } = await req.json().catch(() => ({} as { email?: unknown }));
+    if (!email || typeof email !== "string") return NextResponse.json({ error: "email required" }, { status: 400 });
 
-    const norm = String(email).trim().toLowerCase();
-    const member = await getPrisma().member.findFirst({ where: { email: norm } });
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    if (!ipAllowed(ip)) return NextResponse.json({ ok: true });
 
-    // Always pretend to send to avoid enumeration
-    if (!member) {
+    const norm = email.trim().toLowerCase();
+    const member = await getPrisma().member.findFirst({
+      where: { email: norm, mergedIntoId: null },
+      select: { id: true, email: true, magicLinkLastSentAt: true },
+    });
+
+    // Always pretend to send to avoid enumeration (also when cooling down).
+    if (!member || !member.email) return NextResponse.json({ ok: true });
+    if (member.magicLinkLastSentAt && Date.now() - member.magicLinkLastSentAt.getTime() < PER_MEMBER_COOLDOWN_MS) {
       return NextResponse.json({ ok: true });
     }
 
-    const token = await new SignJWT({ purpose: "magic" })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(member.id)
-      .setIssuer("tee24-portal-magic")
-      .setAudience("tee24-portal-magic")
-      .setIssuedAt()
-      .setExpirationTime("15m")
-      .sign(getSecret());
-
-    const baseUrl = memberBaseUrl();
-    const link = `${baseUrl}/api/portal/auth/magic/callback?token=${encodeURIComponent(token)}`;
+    const link = await buildMagicLink(member.id);
 
     await sendEmail({
       to: member.email,
@@ -51,14 +57,15 @@ export async function POST(req: NextRequest) {
       html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Helvetica,sans-serif;padding:24px;color:#0f172a;">
   <h1 style="font-size:20px;margin:0 0 16px;">Sign in to your account</h1>
-  <p style="margin:0 0 16px;color:#475569;">Click the button below to sign in. This link expires in 15 minutes.</p>
+  <p style="margin:0 0 16px;color:#475569;">Click the button below to sign in. This link expires in 15 minutes and works once.</p>
   <a href="${link}" style="display:inline-block;background:#16a34a;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;">Sign in</a>
   <p style="margin-top:16px;font-size:12px;color:#94a3b8;">If you didn't request this, ignore this email.</p>
 </div>`,
     });
+    await getPrisma().member.update({ where: { id: member.id }, data: { magicLinkLastSentAt: new Date() } }).catch(() => undefined);
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[portal magic] error", e);
     return NextResponse.json({ ok: true });
   }

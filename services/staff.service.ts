@@ -279,6 +279,11 @@ export async function deleteStaffAdmin(id: string, actorId: string) {
   const prisma = getPrisma();
   const existing = await prisma.admin.findUnique({ where: { id }, select: { phone: true, role: true, name: true } });
   if (!existing) throw new StaffError("Admin not found", 404);
+  if (existing.role === "ROOT") {
+    // Never let the org lock itself out: at least one ROOT must remain.
+    const roots = await prisma.admin.count({ where: { role: "ROOT" } });
+    if (roots <= 1) throw new StaffError("Cannot delete the last ROOT admin", 409);
+  }
   await prisma.$transaction(async (tx) => {
     await tx.adminPermission.deleteMany({ where: { adminId: id } });
     await tx.adminLocation.deleteMany({ where: { adminId: id } });

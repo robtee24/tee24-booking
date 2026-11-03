@@ -1,31 +1,15 @@
 // Build + email a portal magic link for a member (mirrors app/api/portal/auth/magic/route.ts).
-import { SignJWT } from "jose";
 import { getPrisma } from "@/lib/db";
 import { sendEmail, sendSMS } from "@/lib/notify";
-import { memberBaseUrl } from "@/lib/public-url";
+import { buildMagicLink } from "@/lib/magic-link";
 
-function getSecret() {
-  const s = process.env.MEMBER_JWT_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
-  return new TextEncoder().encode(s);
-}
+export { buildMagicLink };
 
-export async function buildMagicLink(memberId: string, req?: Request): Promise<string> {
-  const token = await new SignJWT({ purpose: "magic" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(memberId)
-    .setIssuer("tee24-portal-magic")
-    .setAudience("tee24-portal-magic")
-    .setIssuedAt()
-    .setExpirationTime("15m")
-    .sign(getSecret());
-  return `${memberBaseUrl()}/api/portal/auth/magic/callback?token=${encodeURIComponent(token)}`;
-}
-
-export async function sendAccessLink(memberId: string, req?: Request, opts: { channel?: "EMAIL" | "SMS" } = {}) {
+export async function sendAccessLink(memberId: string, _req?: Request, opts: { channel?: "EMAIL" | "SMS" } = {}) {
   const prisma = getPrisma();
   const member = await prisma.member.findUnique({ where: { id: memberId }, select: { id: true, email: true, phone: true, firstName: true, locationId: true } });
   if (!member) throw new Error("Member not found");
-  const link = await buildMagicLink(member.id, req);
+  const link = await buildMagicLink(member.id);
   const channel = opts.channel ?? "EMAIL";
   if (channel === "SMS") {
     if (!member.phone) throw new Error("Member has no phone number");

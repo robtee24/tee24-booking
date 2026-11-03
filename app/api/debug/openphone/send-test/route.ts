@@ -1,6 +1,7 @@
 // app/api/debug/openphone/send-test/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { sendSms } from "@/lib/sendSms";
+import { requireDebugAccess } from "@/lib/debug-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
  *   POST /api/debug/openphone/send-test   { "to": "+15551234567", "text": "Hello" }
  */
 export async function GET(req: NextRequest) {
+  const denied = await requireDebugAccess();
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const to = (searchParams.get("to") || "").trim();
   const text = (searchParams.get("text") || "").trim();
@@ -19,6 +22,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireDebugAccess();
+  if (denied) return denied;
   let to = "";
   let text = "";
   try {

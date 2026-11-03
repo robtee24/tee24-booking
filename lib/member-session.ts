@@ -12,6 +12,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { getPrisma } from "@/lib/db";
+import { resolveJwtSecret } from "@/lib/jwt-secret";
 
 const COOKIE_NAME = "tee24_member";
 const MAX_AGE = Number(process.env.MEMBER_SESSION_MAX_AGE) || 60 * 60 * 24 * 30; // 30 days
@@ -26,8 +27,7 @@ export type MemberSession = {
 };
 
 function getSecret() {
-  const s = process.env.MEMBER_JWT_SECRET || process.env.ADMIN_JWT_SECRET || "dev-secret-member";
-  return new TextEncoder().encode(s);
+  return resolveJwtSecret(["MEMBER_JWT_SECRET", "ADMIN_JWT_SECRET"], "dev-secret-member");
 }
 
 export async function setMemberSession(memberId: string, opts?: { impersonatedBy?: string }) {

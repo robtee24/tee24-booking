@@ -1,9 +1,12 @@
 // app/api/debug/openphone/check/route.ts
 import { NextResponse } from "next/server";
+import { requireDebugAccess } from "@/lib/debug-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const denied = await requireDebugAccess();
+  if (denied) return denied;
   const key = process.env.OPENPHONE_API_KEY || "";
   const from = process.env.OPENPHONE_FROM || ""; // can be a phone ID or an E.164 number
 

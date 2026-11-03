@@ -215,7 +215,7 @@ export default function BookPage() {
     }).catch(console.error);
   };
 
-  const finalizeBooking = async (phone: string) => {
+  const finalizeBooking = async (phone: string, phoneToken: string) => {
     if (!phone) return;
     setSubmitting(true);
     setError("");
@@ -235,6 +235,7 @@ export default function BookPage() {
         firstName,
         lastName,
         phone,
+        phoneToken,
         email,
         partyKind,
         handedness: partyKind === "SINGLE" ? handedness : undefined,
@@ -509,9 +510,9 @@ export default function BookPage() {
                   startEndpoint="/api/bookings/otp/start"
                   verifyEndpoint="/api/bookings/otp/verify"
                   sendButtonText="Resend Code"
-                  onSuccess={() => {
+                  onSuccess={(data) => {
                     setVerifiedPhone(toE164(phone));
-                    finalizeBooking(toE164(phone));
+                    finalizeBooking(toE164(phone), typeof data?.phoneToken === "string" ? data.phoneToken : "");
                   }}
                 />
 

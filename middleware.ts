@@ -12,8 +12,6 @@ const PUBLIC_ADMIN_PATHS = new Set([
   "/api/admin/auth/2fa/login-verify",
   "/api/admin/auth/session",
   "/api/admin/auth/logout",
-  // Dev ping; authenticates itself with CRON_SECRET.
-  "/api/admin/admins/ping",
 ]);
 
 // Member-facing pages live on the clubhouse host once MEMBER_BASE_URL is set
@@ -74,12 +72,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const session = await sessionRes.json();
-
-  const response = NextResponse.next();
-  response.headers.set("x-admin-id", session.id);
-  response.headers.set("x-admin-role", session.role);
-  return response;
+  // Session is valid. Route handlers re-derive the admin from the cookie via
+  // lib/api-auth.ts; nothing about the session is forwarded in headers (the old
+  // x-admin-id / x-admin-role response headers were never consumed and only
+  // leaked the admin id + role to the browser).
+  return NextResponse.next();
 }
 
 export const config = {

@@ -1,6 +1,7 @@
 // app/api/debug/add-email-1h/route.ts
 import { NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
+import { requireDebugAccess } from '@/lib/debug-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,8 @@ export const dynamic = 'force-dynamic';
  *   GET /api/debug/add-email-1h?slug=abc  -> uses location "abc"
  */
 export async function GET(req: Request) {
+  const denied = await requireDebugAccess();
+  if (denied) return denied;
   const url = new URL(req.url);
   const slug = url.searchParams.get('slug') ?? 'clarksville';
 

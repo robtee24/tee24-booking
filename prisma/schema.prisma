@@ -1714,11 +1714,28 @@ model WebhookDelivery {
  * One-time passcode (existing)
  * =========================
  */
+/**
+ * Single-use token ledger. A signed token's `jti` is written here the first
+ * time it is accepted; a second presentation hits the primary key and is
+ * rejected. Rows are only needed until the token's own expiry.
+ */
+model ConsumedToken {
+  jti       String   @id
+  purpose   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
 model Otp {
   id        String   @id @default(cuid())
   phone     String   @unique
   code      String
   expiresAt DateTime
+  // Failed verify attempts against this code. The row is burned once it hits
+  // OTP_MAX_ATTEMPTS so a 6-digit code can't be brute-forced inside its TTL.
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([phone])

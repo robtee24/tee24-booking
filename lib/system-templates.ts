@@ -334,13 +334,24 @@ export const NON_MEMBER_FACING_EVENTS: MemberEventKind[] = ["member.created", "l
  * Unknown fields render as empty strings. Also accepts camelCase aliases
  * (firstName → first_name).
  */
-export function renderSystemTemplate(tpl: string | null | undefined, vars: Record<string, unknown>): string {
+export function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+}
+
+/**
+ * @param opts.html  Escape merged values for an HTML (email) body. Member-entered
+ *                   fields such as names are untrusted; without this a name like
+ *                   `<img src=x onerror=…>` would be injected into every email
+ *                   that mentions it. Leave off for SMS / plain text.
+ */
+export function renderSystemTemplate(tpl: string | null | undefined, vars: Record<string, unknown>, opts?: { html?: boolean }): string {
   if (!tpl) return "";
   const lookup = (key: string): string => {
     const snake = key.replace(/([A-Z])/g, (m) => `_${m.toLowerCase()}`);
     const camel = key.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
     const v = vars[key] ?? vars[snake] ?? vars[camel];
-    return v === null || v === undefined ? "" : String(v);
+    const s = v === null || v === undefined ? "" : String(v);
+    return opts?.html ? escapeHtml(s) : s;
   };
   return tpl
     .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k: string) => lookup(k))
