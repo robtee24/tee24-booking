@@ -280,7 +280,7 @@ export function launchHelperOnly(which: 'launchMonitor' | 'gspro'): LauncherStat
 // ---------- Close everything (idle timeout / staff) ----------
 
 /** Programs that make up a bay session, beyond GSPro itself. */
-const SESSION_IMAGES = ['IDRA.exe', 'IDRAMonitor.exe', 'GolfInLauncher.exe'];
+export const SESSION_IMAGES = ['IDRA.exe', 'IDRAMonitor.exe', 'GolfInLauncher.exe'];
 
 function taskkill(images: string[], force: boolean): Promise<void> {
   if (process.platform !== 'win32' || !images.length) return Promise.resolve();
@@ -332,5 +332,8 @@ export function pathsExist() {
   return {
     launchMonitor: !!s.launchMonitorPath && fs.existsSync(s.launchMonitorPath),
     gspro: !!s.gsproPath && fs.existsSync(s.gsproPath),
+    golfinLauncher: !!s.golfinLauncherPath && fs.existsSync(s.golfinLauncherPath),
+    idraCalibration: !!s.idraCalibrationPath && fs.existsSync(s.idraCalibrationPath),
+    idraUpdates: !!s.idraUpdatesPath && fs.existsSync(s.idraUpdatesPath),
   };
 }

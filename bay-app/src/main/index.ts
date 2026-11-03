@@ -4,10 +4,11 @@ import * as api from './api';
 import * as exportsMod from './exports';
 import * as league from './league';
 import { ApiError } from './api';
-import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings } from './store';
+import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings, findGolfinLauncher } from './store';
 import { launchPlay, launchHelperOnly, pathsExist, startWatching } from './launcher';
 import * as poller from './poller';
 import * as remote from './remote';
+import * as tools from './tools';
 import * as windows from './windows';
 import * as autostart from './autostart';
 import * as screenWatch from './screen';
@@ -148,9 +149,8 @@ function registerIpc() {
   handle('kiosk:leagueSubmit', (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => league.submit(input));
 
   // ---- Admin ----
-  handle('admin:sendOtp', (phone: string) => api.adminSendOtp(phone));
-  handle('admin:verifyOtp', async (phone: string, code: string) => {
-    const r = await api.adminVerifyOtp(phone, code);
+  handle('admin:signIn', async (phone: string) => {
+    const r = await api.adminSignIn(phone);
     adminToken = r.token;
     adminExpiresAt = Date.now() + ADMIN_SESSION_MS;
     adminSession = { ok: true, admin: r.admin, locations: r.locations };
@@ -211,7 +211,7 @@ function registerIpc() {
   });
   handle('admin:saveLocal', (patch: Record<string, unknown>) => {
     requireAdmin();
-    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'openAtLogin', 'idleCloseMinutes', 'restartEveryIdleCloses'] as const;
+    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'golfinLauncherPath', 'idraCalibrationPath', 'idraUpdatesPath', 'openAtLogin', 'idleCloseMinutes', 'restartEveryIdleCloses'] as const;
     const clean: Record<string, unknown> = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
     if ('idleCloseMinutes' in clean) {
@@ -243,6 +243,26 @@ function registerIpc() {
     return launchHelperOnly(which);
   });
   handle('admin:pathsExist', () => pathsExist());
+  // ---- IDRA tools (calibration / updates live in the GolfIn Launcher) ----
+  handle('admin:idraTool', async (tool: tools.IdraTool) => {
+    requireAdmin();
+    if (tool !== 'calibration' && tool !== 'updates') throw new Error('Unknown tool');
+    const r = await tools.openTool(tool);
+    poller.beginMaintenance({ tool, exe: r.exe, viaLauncher: r.viaLauncher, startedAt: new Date().toISOString() });
+    return r;
+  });
+  // "Back to kiosk" on the strip. No sign-in needed: it only returns the bay to its normal screen.
+  handle('admin:idraToolDone', async () => {
+    const closed = await tools.closeTools();
+    poller.endMaintenance();
+    return { ok: true, closed };
+  });
+  handle('admin:detectGolfin', () => {
+    requireAdmin();
+    const found = findGolfinLauncher();
+    if (found) updateSettings({ golfinLauncherPath: found });
+    return { path: found };
+  });
   handle('admin:screenTest', () => screenWatch.scanOnce());
   handle('admin:remoteStatus', () => remote.getRemoteAgentStatus());
   handle('admin:remoteInstall', async () => {

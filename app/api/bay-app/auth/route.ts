@@ -3,12 +3,20 @@ import { getPrisma } from '@/lib/db';
 import { otpService } from '@/services/otp.service';
 import { toE164 } from '@/lib/phone';
 import { issueBayAdminToken, getBayAdmin } from '@/lib/bay-app/admin-token';
+import { clientIp, ipWindowAllowed } from '@/lib/otp-throttle';
 
 export const runtime = 'nodejs';
 
+/** Phone-only sign-in: attempts per IP before a cool-down (slows down guessing admin numbers). */
+const SIGN_IN_MAX_PER_IP = 20;
+const SIGN_IN_WINDOW_MS = 10 * 60 * 1000;
+
 /**
- * POST /api/bay-app/auth — admin sign-in for the bay kiosk (Quo SMS one-time code).
- *   { action: "send-otp",   phone }
+ * POST /api/bay-app/auth — admin sign-in for the bay kiosk.
+ *   { action: "sign-in",    phone }        -> { ok, token, admin, locations }
+ *      Phone number only (kiosk ≥ 1.4). The bay PC is behind a locked door and
+ *      the token only reaches the bay-app endpoints for that one kiosk.
+ *   { action: "send-otp",   phone }        (kiosks ≤ 1.3: Quo SMS one-time code)
  *   { action: "verify-otp", phone, code }  -> { ok, token, admin, locations }
  *
  * GET  /api/bay-app/auth  (Authorization: Bearer <token>) -> { ok, admin, locations }
@@ -21,6 +29,34 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? '');
+
+    if (action === 'sign-in') {
+      const gate = ipWindowAllowed('bay-admin-sign-in', clientIp(req.headers), SIGN_IN_MAX_PER_IP, SIGN_IN_WINDOW_MS);
+      if (!gate.ok) {
+        return NextResponse.json({ error: `Too many sign-in attempts. Try again in ${gate.retryInSeconds}s.` }, { status: 429 });
+      }
+      const phone = String(body?.phone ?? '').trim();
+      if (!phone) return NextResponse.json({ error: 'Phone number required' }, { status: 400 });
+
+      const normalized = safeE164(phone);
+      const admin = normalized
+        ? await getPrisma().admin.findUnique({
+            where: { phone: normalized },
+            select: { id: true, name: true, role: true, locations: { select: { locationId: true } } },
+          })
+        : null;
+      if (!admin) return NextResponse.json({ error: 'That number is not on the Tee24 admin list.' }, { status: 403 });
+
+      const token = await issueBayAdminToken(admin.id);
+      const locations = await accessibleLocations(admin.role, admin.locations.map((l) => l.locationId));
+      console.log(`[bay-app/auth] phone sign-in: ${normalized} (${admin.role})`);
+      return NextResponse.json({
+        ok: true,
+        token,
+        admin: { id: admin.id, name: admin.name, role: admin.role },
+        locations,
+      });
+    }
 
     if (action === 'send-otp') {
       const phone = String(body?.phone ?? '').trim();

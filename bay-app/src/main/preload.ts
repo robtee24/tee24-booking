@@ -47,9 +47,8 @@ const api = {
   leagueJoin: (leagueId: string, phone: string, displayName?: string | null) => ipcRenderer.invoke('kiosk:leagueJoin', leagueId, phone, displayName ?? null),
   leagueSubmit: (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => ipcRenderer.invoke('kiosk:leagueSubmit', input),
 
-  // Admin (Quo SMS sign-in)
-  adminSendOtp: (phone: string) => ipcRenderer.invoke('admin:sendOtp', phone),
-  adminVerifyOtp: (phone: string, code: string) => ipcRenderer.invoke('admin:verifyOtp', phone, code),
+  // Admin (phone-number sign-in)
+  adminSignIn: (phone: string) => ipcRenderer.invoke('admin:signIn', phone),
   adminSession: () => ipcRenderer.invoke('admin:session'),
   adminSignOut: () => ipcRenderer.invoke('admin:signOut'),
   adminRegister: (locationId: string, bayNumber: number, force?: boolean) =>
@@ -61,6 +60,10 @@ const api = {
   adminBrowseExe: (title: string) => ipcRenderer.invoke('admin:browseExe', title),
   adminLaunch: (which: 'launchMonitor' | 'gspro') => ipcRenderer.invoke('admin:launch', which),
   adminPathsExist: () => ipcRenderer.invoke('admin:pathsExist'),
+  // IDRA tools (calibration / updates inside the GolfIn Launcher)
+  adminIdraTool: (tool: 'calibration' | 'updates') => ipcRenderer.invoke('admin:idraTool', tool),
+  idraToolDone: () => ipcRenderer.invoke('admin:idraToolDone'),
+  adminDetectGolfin: () => ipcRenderer.invoke('admin:detectGolfin'),
   adminScreenTest: () => ipcRenderer.invoke('admin:screenTest'),
   adminRemoteStatus: () => ipcRenderer.invoke('admin:remoteStatus'),
   adminRemoteInstall: () => ipcRenderer.invoke('admin:remoteInstall'),

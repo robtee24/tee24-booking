@@ -50,14 +50,14 @@ export default async function DesktopAppPage() {
           <Feature icon={<CalendarClock className="h-5 w-5" />} title="Schedule" body="Players see today's reservations for the bay they're standing in." />
           <Feature icon={<LockKeyhole className="h-5 w-5" />} title="Reservation unlock" body="At start time, the member enters their phone number to claim the bay. Ten minutes before, players get a heads-up with a countdown." />
           <Feature icon={<RefreshCw className="h-5 w-5" />} title="Always up to date" body="Checks for a new version every time it opens and updates itself before showing the home screen." />
-          <Feature icon={<ShieldCheck className="h-5 w-5" />} title="Admin settings" body="A Settings button in the corner; only Tee24 admins can sign in (text-message code) to change the bay." />
+          <Feature icon={<ShieldCheck className="h-5 w-5" />} title="Admin settings" body="A Settings button in the corner; only phone numbers on the Tee24 admin list can sign in to change the bay or open IDRA calibration and updates." />
         </div>
 
         <section className="mt-12 rounded-apple border border-apple-divider bg-white p-5 shadow-apple sm:p-6">
           <h2 className="text-apple-xl font-semibold">Install on a bay computer</h2>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-apple-base text-apple-text">
             <li>Download and run the installer on the bay PC. It installs for all users and starts at login.</li>
-            <li>On first launch, sign in with your admin phone number (you&apos;ll get a text code).</li>
+            <li>On first launch, sign in with your admin phone number.</li>
             <li>Pick the location and the bay number for this computer. Each computer is assigned to exactly one bay.</li>
             <li>Confirm the paths to the launch-monitor software and GSPro (defaults are pre-filled).</li>
             <li>Remove the Golfin Launcher from Windows startup so the kiosk is the first thing players see.</li>

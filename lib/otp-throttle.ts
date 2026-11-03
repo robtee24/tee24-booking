@@ -18,6 +18,21 @@ export function clientIp(headers: Headers): string {
   return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown";
 }
 
+/**
+ * Generic per-IP sliding window (in-memory, best effort). `bucket` keeps
+ * unrelated endpoints from sharing a counter.
+ */
+const bucketHits = new Map<string, number[]>();
+export function ipWindowAllowed(bucket: string, ip: string, max: number, windowMs: number): { ok: true } | { ok: false; retryInSeconds: number } {
+  const now = Date.now();
+  const key = `${bucket}:${ip}`;
+  const hits = (bucketHits.get(key) ?? []).filter((t) => now - t < windowMs);
+  if (hits.length >= max) return { ok: false, retryInSeconds: Math.ceil((windowMs - (now - hits[0]!)) / 1000) };
+  hits.push(now);
+  bucketHits.set(key, hits);
+  return { ok: true };
+}
+
 export async function otpSendAllowed(rawPhone: string, ip: string): Promise<{ ok: true } | { ok: false; retryInSeconds: number }> {
   const now = Date.now();
   const hits = (ipHits.get(ip) ?? []).filter((t) => now - t < PER_IP_WINDOW_MS);

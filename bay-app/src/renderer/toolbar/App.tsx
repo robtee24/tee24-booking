@@ -10,6 +10,28 @@ export function App() {
   const onRange = state?.screen.kind === 'range';
   const left = cd ? new Date(cd.until).getTime() - now : null;
 
+  // Admin is in an IDRA tool: home is hidden, so this strip is the only way back.
+  const m = state?.maintenance;
+  if (m) {
+    const label = m.tool === 'calibration' ? 'IDRA calibration' : 'IDRA updates';
+    const where = m.tool === 'calibration' ? 'Calibration' : 'Updates';
+    return (
+      <div className="toolbar">
+        <div className="maint">
+          <div className="maint-eyebrow">Admin · Tee24 kiosk hidden</div>
+          <div className="maint-title">{label}</div>
+          <div className="maint-body">
+            {m.viaLauncher
+              ? <>In the GolfIn Launcher open <b>Settings</b>, then <b>{where}</b>. If the launcher is not showing, give it a few seconds or check the taskbar.</>
+              : <>The {label.toLowerCase()} program is open. Finish there, then come back.</>}
+          </div>
+          <button className="btn btn-primary btn-block" onClick={() => kiosk.idraToolDone()}>Back to kiosk</button>
+          <div className="maint-foot">Closes the GolfIn Launcher unless GSPro is running. Ctrl+Shift+T also returns.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="toolbar">
       <button className="fab fab-help" onClick={() => kiosk.openOverlay('help')} title="Help">

@@ -8,6 +8,7 @@ import { rememberRemoteInfo, agentInstalled, readNodeId } from './remote';
 import * as windows from './windows';
 import * as screenWatch from './screen';
 import * as players from './players';
+import type { IdraTool } from './tools';
 
 /**
  * Kiosk state machine.
@@ -27,6 +28,9 @@ import * as players from './players';
 
 export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'league' | 'idle' | 'players' | 'restart';
 
+/** An admin opened an IDRA tool (GolfIn Launcher); home is hidden until they come back. */
+export type Maintenance = { tool: IdraTool; exe: string; viaLauncher: boolean; startedAt: string } | null;
+
 export interface KioskState {
   version: string;
   registered: boolean;
@@ -44,6 +48,8 @@ export interface KioskState {
   screen: screenWatch.GsproScreen;
   /** Too-many-players enforcement */
   players: players.PlayersState;
+  /** Admin is in an IDRA tool (calibration / updates) with the home screen hidden */
+  maintenance: Maintenance;
 }
 
 const POLL_IDLE_MS = 15_000;
@@ -63,6 +69,7 @@ let state: KioskState = {
   settings: getSettings(),
   screen: screenWatch.getScreen(),
   players: players.getPlayersState(null),
+  maintenance: null,
 };
 
 const acceptedUpcoming = new Set<string>();
@@ -186,7 +193,14 @@ export function getState(): KioskState {
 }
 
 function publish() {
-  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher: getLauncherState(), screen: screenWatch.getScreen() };
+  const launcher = getLauncherState();
+  // A GSPro session (the admin clicked GolfIn's IDRA tile, or a player pressed Play)
+  // takes over from maintenance; the normal in-session windows apply from here.
+  if (maintenance && launcher.running && launcher.gsproPid) {
+    log.info('[tools] GSPro started; leaving maintenance mode');
+    maintenance = null;
+  }
+  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher, screen: screenWatch.getScreen(), maintenance };
   windows.broadcast('kiosk:state', state);
   applyWindows();
 }
@@ -213,10 +227,17 @@ function applyWindows() {
   // Wait for a real GSPro process (gsproPid) before stepping aside, otherwise the
   // Windows desktop shows for the seconds between Play and GSPro's first window.
   const inSession = launcher.running && !!launcher.gsproPid && !homeForced;
+  // Admin is in an IDRA tool: get the fullscreen home out of the way so the
+  // GolfIn Launcher is usable, and widen the strip into a "Back to kiosk" card.
+  const inMaintenance = !!maintenance && !inSession && !homeForced;
+  windows.setToolbarWide(inMaintenance);
   if (inSession) {
     // Home stays visible *under* GSPro (see windows.parkHomeBehind), so GSPro
     // closing reveals the kiosk, never the desktop.
     windows.parkHomeBehind(!wasInSession);
+    windows.showToolbar();
+  } else if (inMaintenance) {
+    windows.hideHome();
     windows.showToolbar();
   } else {
     windows.hideToolbar();
@@ -230,6 +251,30 @@ let wasInSession = false;
 let homeForced = false;
 export function setHomeForced(v: boolean) {
   homeForced = v;
+  if (v) maintenance = null; // the shortcut also ends an IDRA tools session
+  publish();
+}
+
+// ---------- IDRA tools (maintenance mode) ----------
+
+let maintenance: Maintenance = null;
+
+export function getMaintenance() {
+  return maintenance;
+}
+
+/** Admin opened calibration / updates: hide home until they return. */
+export function beginMaintenance(m: NonNullable<Maintenance>) {
+  maintenance = m;
+  homeForced = false;
+  log.info(`[tools] maintenance: ${m.tool} via ${m.exe}`);
+  publish();
+}
+
+export function endMaintenance() {
+  if (!maintenance) return;
+  log.info(`[tools] maintenance over (${maintenance.tool})`);
+  maintenance = null;
   publish();
 }
 

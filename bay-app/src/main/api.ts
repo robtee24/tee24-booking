@@ -337,14 +337,11 @@ export function leagueSubmit(body: {
   return request<LeagueSubmitResult>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'submit', ...body }, null, 60_000);
 }
 
-// ---------- Admin (Quo SMS) endpoints ----------
+// ---------- Admin endpoints ----------
 
-export function adminSendOtp(phone: string) {
-  return request<{ ok: boolean }>('POST', '/api/bay-app/auth', { action: 'send-otp', phone });
-}
-
-export function adminVerifyOtp(phone: string, code: string) {
-  return request<AdminSession>('POST', '/api/bay-app/auth', { action: 'verify-otp', phone, code });
+/** Phone-number sign-in (no text code). Only numbers on the admin list get a token. */
+export function adminSignIn(phone: string) {
+  return request<AdminSession>('POST', '/api/bay-app/auth', { action: 'sign-in', phone });
 }
 
 export function adminRefresh(token: string) {

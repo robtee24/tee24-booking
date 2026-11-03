@@ -1,5 +1,6 @@
 // Type-only re-exports from the main process (erased at build time).
-export type { KioskState, OverlayMode } from '../../main/poller';
+export type { KioskState, OverlayMode, Maintenance } from '../../main/poller';
+export type { IdraTool, OpenToolResult } from '../../main/tools';
 export type { StatusResponse, Booking, AdminLocation, AdminSession } from '../../main/api';
 export type { KioskBridge } from '../../main/preload';
 export type { KioskSettings } from '../../main/store';

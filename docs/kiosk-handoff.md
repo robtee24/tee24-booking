@@ -13,7 +13,7 @@ Electron app (`tee24-bay-kiosk`) that replaces the Golfin Launcher home screen o
 - Floating Help / Schedule / Export strip on the right edge while the launched GSPro process is running.
 - Reservation behavior comes from `https://reservations.tee24.golf` (`/api/bay-app/status`). It stays inert unless the location has bay-app mode on in admin. Check-in is the member’s phone number. A warning modal fires 10 minutes before the next booking. Countdowns use server time.
 - One computer per bay. Registering a second computer onto a bay returns `BAY_TAKEN` (409) unless the admin confirms a takeover (`force`), which deletes the previous device. Do not point a test PC at a bay that already has a live kiosk.
-- Admin settings (gear, top-right) require an admin phone and a texted code. Session lasts 30 minutes.
+- Admin settings (gear, top-right) require an admin phone number only (no texted code since 3 Nov 2026 — see *Admin sign-in and IDRA tools*). Session lasts 30 minutes.
 - Help content is the shared troubleshooting tree from the server (`/api/bay-app/help`), so copy changes do not need a reinstall.
 - Export finds a GSPro “Export CSV” file on disk and sends it to the Tee24 app and/or email.
 
@@ -158,6 +158,19 @@ When the idle timer closes a session (GSPro and the launch monitor are shut and 
 Each restart is also an update check (see *Auto-update* above), so a bay is never more than one maintenance restart behind the latest release.
 
 **Prerequisite: Windows must sign itself back in.** The kiosk starts from a logon-triggered scheduled task, so after a restart it only reappears once the Windows user is logged on. The Clarksville test PC has no auto-logon configured (`HKLM\...\Winlogon\AutoAdminLogon` is empty) — on that machine the restart would leave the bay at the Windows sign-in screen until someone types the password. Set up auto-logon (Sysinternals `Autologon.exe` stores the password encrypted, or the `AutoAdminLogon` / `DefaultUserName` / `DefaultPassword` registry values) before relying on this, or set the count to `0`.
+
+## Admin sign-in and IDRA tools (added 3 Nov 2026, untested on the PC)
+
+**Phone-only sign-in.** `POST /api/bay-app/auth` gained `action: 'sign-in'` — phone in, bay-admin JWT out, no OTP. The phone number is therefore the credential; mitigations are that the token only works against `/api/bay-app/*` from a bay PC behind the member door, and the route has a per-IP sliding window (20 attempts / 10 min, `ipWindowAllowed` in `lib/otp-throttle.ts`). The old `send-otp` / `verify-otp` actions are still served so kiosks ≤ 1.3.2 keep working until they auto-update. Renderer: `AdminLogin.tsx` is a single phone field → `kiosk.adminSignIn(digits)`.
+
+**IDRA calibration and updates.** Both live inside the GolfIn Launcher's own Settings screen (which the kiosk normally hides). GolfIn has no command-line switch or deep link into either, so the kiosk does the next best thing — *maintenance mode*:
+
+- **Settings → IDRA tools** has two tiles, *IDRA calibration* and *IDRA updates*. Each calls `admin:idraTool` (`bay-app/src/main/tools.ts`), which starts `GolfInLauncher.exe` (or a dedicated exe if one is set under *Advanced*), then `poller.beginMaintenance(...)`.
+- In maintenance the home window hides, and the right-edge strip widens (`windows.setToolbarWide`, 280×320) to show a "Back to kiosk" card with the instruction *Settings → Calibration / Updates*. **Back to kiosk** (`admin:idraToolDone`) runs `tools.closeTools()` — polite `taskkill` on GolfInLauncher / IDRAMonitor / IDRA, forced after 2.5 s — **unless GSPro is running**, then `endMaintenance()` and home returns. Ctrl+Shift+T (home-forced) also clears maintenance. If a session starts (GSPro PID seen) maintenance clears itself.
+- The tiles are disabled while `state.launcher.running` — the launcher would open behind GSPro and fight it for the launch monitor.
+- `golfinLauncherPath` is auto-detected on first use (`findGolfinLauncher` in `store.ts`: Program Files, Program Files (x86), `%LOCALAPPDATA%\Programs`, `%LOCALAPPDATA%`, vendor folders "Sim Sports Corporation" / "GolfIn Launcher" / "GolfIn" first, depth 2). *Detect* re-runs it; *Browse* overrides. `idraCalibrationPath` / `idraUpdatesPath` are optional overrides in case IDRA ships its own calibrator/updater; blank = launcher.
+
+**Verify on the PC:** (1) sign in with just a phone; a non-admin number gets "not on the Tee24 admin list". (2) Detect finds `GolfInLauncher.exe` — if not, note the real install path and add it to `findGolfinLauncher`. (3) Open calibration: launcher appears *in front* (home is hidden, so nothing should cover it), strip card shows on the right and stays on top of GolfIn's windows. (4) Does GolfIn immediately try to start GSPro/IDRAMonitor on launch? If so, maintenance will self-clear when the GSPro PID appears — we may need to suppress that (e.g. only auto-clear when the user did not just open a tool, or kill GSPro on Back). (5) Back to kiosk closes the launcher and home returns. (6) Does GolfIn's hardware check (IDRA USB) block the Settings screen itself? If it does, calibration needs the IDRA plugged in anyway, which is expected.
 
 ## Startup guide on the kiosk
 

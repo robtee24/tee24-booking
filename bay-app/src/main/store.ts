@@ -57,6 +57,53 @@ export function defaultLaunchMonitorPath(lm: string | null | undefined): string 
 
 export const DEFAULT_GSPRO_PATH = 'C:\\GSProV1\\Core\\GSP\\GSPro.exe';
 
+/**
+ * GolfIn Launcher (the vendor home screen the kiosk replaces). IDRA calibration
+ * and IDRA updates live inside its Settings, so the kiosk's "IDRA tools" open
+ * it on demand. The installer location varies, so look in the usual roots.
+ */
+export const GOLFIN_LAUNCHER_EXE = 'GolfInLauncher.exe';
+
+function fileIn(dir: string, name: string, depth: number): string | null {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const lower = name.toLowerCase();
+  for (const e of entries) if (e.isFile() && e.name.toLowerCase() === lower) return path.join(dir, e.name);
+  if (depth <= 0) return null;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const hit = fileIn(path.join(dir, e.name), name, depth - 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export function findGolfinLauncher(): string | null {
+  if (process.platform !== 'win32') return null;
+  const roots = [
+    process.env.ProgramFiles || 'C:\\Program Files',
+    process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs') : '',
+    process.env.LOCALAPPDATA || '',
+  ].filter(Boolean);
+  // Vendor folders first (cheap), then a shallow scan of each root.
+  for (const root of roots) {
+    for (const vendor of ['Sim Sports Corporation', 'GolfIn Launcher', 'GolfIn']) {
+      const hit = fileIn(path.join(root, vendor), GOLFIN_LAUNCHER_EXE, 2);
+      if (hit) return hit;
+    }
+  }
+  for (const root of roots) {
+    const hit = fileIn(root, GOLFIN_LAUNCHER_EXE, 2);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export interface KioskSettings {
   deviceId: string;
   apiBaseUrl: string;
@@ -71,6 +118,12 @@ export interface KioskSettings {
   /** Launch paths */
   launchMonitorPath: string;
   gsproPath: string;
+  /** IDRA tools (Settings → IDRA tools). Blank launcher path = auto-detect. */
+  golfinLauncherPath: string;
+  /** Optional: a program that opens IDRA calibration directly (instead of the GolfIn Launcher). */
+  idraCalibrationPath: string;
+  /** Optional: a program that opens IDRA updates directly (instead of the GolfIn Launcher). */
+  idraUpdatesPath: string;
   /** Remote support (MeshCentral agent) */
   remoteNodeId: string | null;
   remoteAgentInstalledAt: string | null;
@@ -100,6 +153,9 @@ const DEFAULTS: KioskSettings = {
   launchMonitor: null,
   launchMonitorPath: '',
   gsproPath: DEFAULT_GSPRO_PATH,
+  golfinLauncherPath: '',
+  idraCalibrationPath: '',
+  idraUpdatesPath: '',
   remoteNodeId: null,
   remoteAgentInstalledAt: null,
   openAtLogin: true,

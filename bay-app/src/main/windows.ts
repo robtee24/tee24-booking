@@ -66,14 +66,20 @@ export function createHome(): BrowserWindow {
   return win;
 }
 
+/** Toolbar sizes: the narrow Help/Schedule strip, and the wider "Back to kiosk" card used while an admin is in an IDRA tool. */
+const TOOLBAR_NARROW: [number, number] = [92, 400];
+const TOOLBAR_WIDE: [number, number] = [280, 320];
+let toolbarWide = false;
+
 /** Narrow always-on-top strip hugging the right edge: Help / Schedule / Export / countdown. */
 export function createToolbar(): BrowserWindow {
   const existing = get('toolbar');
   if (existing) return existing;
+  const [width, height] = toolbarWide ? TOOLBAR_WIDE : TOOLBAR_NARROW;
   const win = new BrowserWindow(
     common({
-      width: 92,
-      height: 400,
+      width,
+      height,
       frame: false,
       transparent: true,
       resizable: false,
@@ -101,6 +107,17 @@ export function positionToolbar(win = get('toolbar')) {
   const { workArea } = screen.getPrimaryDisplay();
   const [w, h] = win.getSize();
   win.setPosition(workArea.x + workArea.width - w - 6, Math.round(workArea.y + workArea.height / 2 - h / 2));
+}
+
+/** Switch the strip between its narrow and wide (IDRA tools) layouts. Idempotent. */
+export function setToolbarWide(wide: boolean) {
+  if (toolbarWide === wide) return;
+  toolbarWide = wide;
+  const win = get('toolbar');
+  if (!win) return;
+  const [w, h] = wide ? TOOLBAR_WIDE : TOOLBAR_NARROW;
+  win.setSize(w, h);
+  positionToolbar(win);
 }
 
 /** Transparent fullscreen overlay for the unlock / upcoming / help / schedule modals. */

@@ -4,16 +4,18 @@ import type { AdminSession, KioskState, RemoteAgentStatus, UpdatePhase } from '.
 import { AdminLogin } from '../shared/AdminLogin';
 import { AssignBay } from './Setup';
 import { labelLM } from '../shared/TroubleshootFlow';
-import { BackIcon } from '../shared/Icons';
+import { BackIcon, WrenchIcon, UploadIcon } from '../shared/Icons';
 
 type Session = Omit<AdminSession, 'token'>;
-type Tab = 'bay' | 'assignment' | 'launch' | 'remote' | 'app';
+type Tab = 'bay' | 'assignment' | 'launch' | 'idra' | 'remote' | 'app';
+type IdraTool = 'calibration' | 'updates';
+type PathsExist = { launchMonitor: boolean; gspro: boolean; golfinLauncher: boolean; idraCalibration: boolean; idraUpdates: boolean };
 
 const LMS = ['IDRA', 'SKYTRAK', 'PROTEE_VX', 'OTHER'];
 
 /**
- * Admin-only Settings (gear, top-right). Gate: Quo text-message sign-in; the
- * session lives in the main process and expires after 30 idle minutes.
+ * Admin-only Settings (gear, top-right). Gate: admin phone number; the session
+ * lives in the main process and expires after 30 idle minutes.
  */
 export function Settings({ state, onClose }: { state: KioskState; onClose: () => void }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -53,6 +55,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
                 ['bay', 'Bay details'],
                 ['assignment', 'Bay assignment'],
                 ['launch', 'Play button'],
+                ['idra', 'IDRA tools'],
                 ['remote', 'Remote support'],
                 ['app', 'App & updates'],
               ] as [Tab, string][]).map(([k, label]) => (
@@ -65,6 +68,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
               {tab === 'bay' && <BayDetails state={state} />}
               {tab === 'assignment' && <Assignment state={state} session={session} onChanged={async () => setSession((await kiosk.adminSession()) as Session)} />}
               {tab === 'launch' && <LaunchPaths state={state} />}
+              {tab === 'idra' && <IdraTools state={state} />}
               {tab === 'remote' && <Remote />}
               {tab === 'app' && <AppUpdates state={state} />}
             </div>
@@ -278,6 +282,151 @@ function ScreenReaderTest({ state }: { state: KioskState }) {
       </div>
       {result && <div className="hint" style={{ marginTop: 8 }}>{result}</div>}
       <div className="hint">Bring GSPro to the front (Round Settings, a round, or the range) and press Test to see what the kiosk reads. The live value only updates while a session is running.</div>
+    </div>
+  );
+}
+
+// ---------- IDRA tools (calibration / updates) ----------
+
+/**
+ * Calibration and updates live inside the GolfIn Launcher's Settings; GolfIn has
+ * no switch that opens either directly. Each button starts the launcher (or a
+ * dedicated program if one is configured), hides the kiosk home, and leaves a
+ * "Back to kiosk" strip on the right edge of the screen.
+ */
+function IdraTools({ state }: { state: KioskState }) {
+  const s = state.settings;
+  const [launcherPath, setLauncherPath] = useState(s.golfinLauncherPath ?? '');
+  const [calPath, setCalPath] = useState(s.idraCalibrationPath ?? '');
+  const [updPath, setUpdPath] = useState(s.idraUpdatesPath ?? '');
+  const [advanced, setAdvanced] = useState(!!(s.idraCalibrationPath || s.idraUpdatesPath));
+  const [exists, setExists] = useState<PathsExist | null>(null);
+  const [busy, setBusy] = useState<IdraTool | 'detect' | 'save' | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function refresh() {
+    setExists((await kiosk.adminPathsExist()) as PathsExist);
+  }
+  useEffect(() => { refresh(); }, []);
+
+  // While GSPro is running the kiosk is parked behind it, so the launcher would open
+  // behind GSPro too; and GolfIn shares the launch monitor with the live session.
+  const sessionRunning = state.launcher.running;
+
+  async function open(tool: IdraTool) {
+    setBusy(tool);
+    setMsg(null);
+    const r = await kiosk.adminIdraTool(tool);
+    setBusy(null);
+    if (isErr(r)) return setMsg({ ok: false, text: r.error });
+    // Home hides now; the strip on the right brings it back.
+  }
+
+  async function detect() {
+    setBusy('detect');
+    setMsg(null);
+    const r = await kiosk.adminDetectGolfin();
+    setBusy(null);
+    if (isErr(r)) return setMsg({ ok: false, text: r.error });
+    const p = (r as { path: string | null }).path;
+    if (!p) return setMsg({ ok: false, text: 'GolfInLauncher.exe was not found under Program Files or AppData. Use Browse to pick it.' });
+    setLauncherPath(p);
+    setMsg({ ok: true, text: `Found ${p}` });
+    refresh();
+  }
+
+  async function browse(which: 'launcher' | IdraTool) {
+    const title = which === 'launcher' ? 'Choose GolfInLauncher.exe' : which === 'calibration' ? 'Choose the IDRA calibration program' : 'Choose the IDRA updates program';
+    const p = await kiosk.adminBrowseExe(title);
+    if (typeof p !== 'string') return;
+    if (which === 'launcher') setLauncherPath(p);
+    else if (which === 'calibration') setCalPath(p);
+    else setUpdPath(p);
+  }
+
+  async function save() {
+    setBusy('save');
+    setMsg(null);
+    const r = await kiosk.adminSaveLocal({
+      golfinLauncherPath: launcherPath.trim(),
+      idraCalibrationPath: advanced ? calPath.trim() : '',
+      idraUpdatesPath: advanced ? updPath.trim() : '',
+    });
+    setBusy(null);
+    if (isErr(r)) return setMsg({ ok: false, text: r.error });
+    setMsg({ ok: true, text: 'Saved.' });
+    refresh();
+  }
+
+  const whereCal = calPath.trim() ? 'its own program' : 'GolfIn Launcher → Settings → Calibration';
+  const whereUpd = updPath.trim() ? 'its own program' : 'GolfIn Launcher → Settings → Updates';
+
+  return (
+    <div className="card stack">
+      <div>
+        <div className="card-title">IDRA calibration &amp; updates</div>
+        <div className="card-sub">
+          Both are inside the GolfIn Launcher’s settings. These buttons open it over the kiosk. When you’re done, press <b>Back to kiosk</b> on the strip at the right edge of the screen (or Ctrl+Shift+T).
+        </div>
+      </div>
+
+      <div className="home-actions" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <button className="tile" onClick={() => open('calibration')} disabled={!!busy || sessionRunning}>
+          <span className="tile-icon">{busy === 'calibration' ? <span className="spinner" /> : <WrenchIcon size={28} />}</span>
+          <h2>IDRA calibration</h2>
+          <p>Opens {whereCal}.</p>
+        </button>
+        <button className="tile" onClick={() => open('updates')} disabled={!!busy || sessionRunning}>
+          <span className="tile-icon">{busy === 'updates' ? <span className="spinner" /> : <UploadIcon size={28} />}</span>
+          <h2>IDRA updates</h2>
+          <p>Opens {whereUpd}.</p>
+        </button>
+      </div>
+      {sessionRunning && <div className="hint error">GSPro is running on this bay. Close it first (the GolfIn Launcher needs the launch monitor and would open behind GSPro).</div>}
+
+      <div className="field">
+        <label className="label">GolfIn Launcher</label>
+        <div className="row">
+          <input className="input" value={launcherPath} onChange={(e) => setLauncherPath(e.target.value)} placeholder="C:\Program Files\Sim Sports Corporation\GolfIn Launcher\GolfInLauncher.exe" />
+          <button className="btn" onClick={() => browse('launcher')}>Browse</button>
+          <button className="btn btn-sm" onClick={detect} disabled={busy === 'detect'}>{busy === 'detect' ? 'Looking…' : 'Detect'}</button>
+        </div>
+        {exists && launcherPath && <div className={`hint ${exists.golfinLauncher ? '' : 'error'}`} style={{ marginTop: 8 }}>{exists.golfinLauncher ? 'Found.' : 'Not found at this path.'}</div>}
+        {!launcherPath && <div className="hint" style={{ marginTop: 8 }}>Leave blank to auto-detect on first use.</div>}
+      </div>
+
+      <div className="field">
+        <label className="row" style={{ gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
+          <span className="label" style={{ margin: 0 }}>Open calibration / updates with a dedicated program instead</span>
+        </label>
+        <div className="hint">Only if IDRA ships its own calibration or updater executable. Blank = use the GolfIn Launcher.</div>
+      </div>
+      {advanced && (
+        <>
+          <div className="field">
+            <label className="label">Calibration program (optional)</label>
+            <div className="row">
+              <input className="input" value={calPath} onChange={(e) => setCalPath(e.target.value)} placeholder="C:\…\Calibration.exe" />
+              <button className="btn" onClick={() => browse('calibration')}>Browse</button>
+            </div>
+            {exists && calPath && <div className={`hint ${exists.idraCalibration ? '' : 'error'}`} style={{ marginTop: 8 }}>{exists.idraCalibration ? 'Found.' : 'Not found at this path.'}</div>}
+          </div>
+          <div className="field">
+            <label className="label">Updates program (optional)</label>
+            <div className="row">
+              <input className="input" value={updPath} onChange={(e) => setUpdPath(e.target.value)} placeholder="C:\…\Updater.exe" />
+              <button className="btn" onClick={() => browse('updates')}>Browse</button>
+            </div>
+            {exists && updPath && <div className={`hint ${exists.idraUpdates ? '' : 'error'}`} style={{ marginTop: 8 }}>{exists.idraUpdates ? 'Found.' : 'Not found at this path.'}</div>}
+          </div>
+        </>
+      )}
+
+      {msg && <div className={msg.ok ? 'success' : 'error'}>{msg.text}</div>}
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary" onClick={save} disabled={busy === 'save'}>{busy === 'save' ? <span className="spinner" /> : 'Save paths'}</button>
+      </div>
     </div>
   );
 }
