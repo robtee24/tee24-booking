@@ -7,9 +7,12 @@
 //   ?view=current               → hub for the running league (or the latest finished one)
 //   ?view=hub&id=…              → hub for one league
 //   ?view=player&id=…&pid=…     → player profile
+//   POST { action: "signup", firstName, lastName, phone, email?, notifyWeekly?, joinRequested? }
+//   POST { action: "unsubscribe", token }
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { currentWeekOf, leagueHub, LeagueError, playerProfile } from "@/services/league.service";
+import { currentWeekOf, leagueHub, LeagueError, leaguePreseasonDefaults, playerProfile } from "@/services/league.service";
+import { leagueSignup, leagueUnsubscribe } from "@/services/league-notify.service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest) {
     }
     if (view === "current") {
       const id = await runningLeagueId();
-      if (!id) return json({ hub: null });
+      if (!id) return json({ hub: null, defaults: leaguePreseasonDefaults() });
       return json({ hub: scrubHub(await leagueHub(id)) });
     }
     if (view === "hub") {
@@ -90,6 +93,27 @@ export async function GET(req: NextRequest) {
       return json({ profile: scrubProfile(await playerProfile(id, pid)) });
     }
     return NextResponse.json({ error: "Unknown view" }, { status: 400 });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const action = String(body.action ?? "");
+  try {
+    if (action === "signup") {
+      return NextResponse.json(await leagueSignup({
+        firstName: String(body.firstName ?? ""),
+        lastName: String(body.lastName ?? ""),
+        phone: String(body.phone ?? ""),
+        email: typeof body.email === "string" ? body.email : null,
+        notifyWeekly: body.notifyWeekly !== false,
+        joinRequested: body.joinRequested !== false,
+      }));
+    }
+    if (action === "unsubscribe") return NextResponse.json(await leagueUnsubscribe(String(body.token ?? "")));
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (e) {
     return fail(e);
   }

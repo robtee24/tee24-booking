@@ -17,7 +17,8 @@
  *  - generate-invoices           : daily 09:00 UTC — recurring invoices + auto-charge default cards
  *  - retry-failed-payments       : hourly — dunning retries, late fees, mark overdue
  *  - upcoming-payment-reminders  : daily — payment.upcoming (3 days ahead) + card expiry notices
- *  - league-deadlines            : every 15 min — reveal + finalize league weeks whose Sunday deadline passed
+ *  - league-deadlines            : every 15 min — reveal + finalize league weeks whose Sunday deadline passed,
+ *                                  then send "week open" / "results in" texts that haven't gone out
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
@@ -33,6 +34,7 @@ import { reconcileAllMemberAccess } from "@/services/reconciliation.service";
 import { syncDoorsFromKisi, syncKisiUnlockEvents } from "@/services/door.service";
 import { isMigrationFrozen, MIGRATION_FREEZE_SKIP } from "@/lib/migration-freeze";
 import { runLeagueDeadlines } from "@/services/league.service";
+import { runLeagueNotifications } from "@/services/league-notify.service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -127,7 +129,8 @@ async function run(req: NextRequest) {
       }
       case "league-deadlines": {
         const r = await runLeagueDeadlines();
-        return NextResponse.json({ ok: true, ...r });
+        const n = await runLeagueNotifications();
+        return NextResponse.json({ ok: true, ...r, ...n });
       }
       default:
         return NextResponse.json({ error: `Unknown job '${job}'` }, { status: 400 });

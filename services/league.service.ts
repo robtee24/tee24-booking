@@ -520,6 +520,27 @@ export function leagueRulesUrl(league: { id: string; rulesUrl: string | null }) 
   return `${site}/rules`;
 }
 
+/**
+ * What the public site shows before a league exists: the rules and tutorial
+ * rendered from the schema defaults. Keep in sync with prisma League @defaults.
+ */
+export function leaguePreseasonDefaults() {
+  const settings = {
+    gimmeDistanceFt: 10, mulligans: false, greenSpeed: "Normal", teeRules: defaultTeeRules(),
+    openingWeeks: 2, handicapCap: 20, throwOutEvery: 3,
+    pointsTop5: 3, pointsTop10: 2, pointsTop15: 1, pointsTeamWin: 2, pointsTeamTie: 1,
+    firstPlacePct: 50, firstPlaceCapCents: 10000, secondPlacePct: 25, secondPlaceCapCents: 5000,
+    minorAge: 18, weeklyFeeCents: 1000, championshipTopPct: 50,
+  };
+  return {
+    name: "Tee24 Winter League",
+    championshipAt: new Date("2027-03-06T12:00:00-05:00").toISOString(),
+    settings,
+    tutorialSteps: kioskTutorialSteps(settings),
+    rulesUrl: `${(process.env.LEAGUE_SITE_URL || "https://league.tee24.golf").replace(/\/$/, "")}/rules`,
+  };
+}
+
 /** Step-by-step kiosk tutorial, rendered on the kiosk and in the app. */
 export function kioskTutorialSteps(league: { gimmeDistanceFt: number; mulligans: boolean; greenSpeed: string; weeklyFeeCents: number }) {
   return [

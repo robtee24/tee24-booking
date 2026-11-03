@@ -18,6 +18,9 @@ export type LeagueListRow = {
 };
 
 type Loc = { id: string; name: string; slug: string; timezone: string };
+export type SubscriberRow = { id: string; name: string; phone: string; email: string | null; isMember: boolean; memberId: string | null; joined: boolean; notifyWeekly: boolean; createdAt: string };
+
+const fmtPhone = (d: string) => (d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : d);
 
 function nextMonday() {
   const d = new Date();
@@ -25,7 +28,7 @@ function nextMonday() {
   return d.toISOString().slice(0, 10);
 }
 
-export function LeagueListClient({ leagues, locations }: { leagues: LeagueListRow[]; locations: Loc[] }) {
+export function LeagueListClient({ leagues, locations, subscribers }: { leagues: LeagueListRow[]; locations: Loc[]; subscribers: SubscriberRow[] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -111,6 +114,56 @@ export function LeagueListClient({ leagues, locations }: { leagues: LeagueListRo
           ))}
         </div>
       )}
+
+      <Card className="mt-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-apple-lg font-semibold text-apple-text">Sign-ups from league.tee24.golf</div>
+            <div className="text-apple-sm text-apple-text-secondary">
+              {subscribers.length} people · {subscribers.filter((s) => s.notifyWeekly).length} on the weekly text · {subscribers.filter((s) => !s.isMember).length} not yet members. Members are auto-joined when a league is running; non-members need a membership first.
+            </div>
+          </div>
+          {subscribers.length ? (
+            <a
+              className="text-apple-sm font-medium text-apple-blue"
+              href={`data:text/csv;charset=utf-8,${encodeURIComponent(["Name,Phone,Email,Member,Joined,Weekly text,Signed up", ...subscribers.map((s) => [s.name, fmtPhone(s.phone), s.email ?? "", s.isMember ? "yes" : "no", s.joined ? "yes" : "no", s.notifyWeekly ? "yes" : "no", s.createdAt.slice(0, 10)].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n"))}`}
+              download="league-signups.csv"
+            >
+              Export CSV
+            </a>
+          ) : null}
+        </div>
+        {subscribers.length === 0 ? (
+          <div className="mt-3 text-apple-sm text-apple-text-tertiary">Nobody has signed up yet.</div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-apple-sm">
+              <thead>
+                <tr className="text-left text-apple-xs uppercase tracking-wide text-apple-text-tertiary">
+                  <th className="py-2 pr-3 font-medium">Name</th>
+                  <th className="py-2 pr-3 font-medium">Phone</th>
+                  <th className="py-2 pr-3 font-medium">Email</th>
+                  <th className="py-2 pr-3 font-medium">Status</th>
+                  <th className="py-2 pr-3 font-medium">Weekly text</th>
+                  <th className="py-2 font-medium">Signed up</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscribers.map((s) => (
+                  <tr key={s.id} className="border-t border-apple-border">
+                    <td className="py-2 pr-3 font-medium text-apple-text">{s.name}</td>
+                    <td className="py-2 pr-3 tabular-nums">{fmtPhone(s.phone)}</td>
+                    <td className="py-2 pr-3 text-apple-text-secondary">{s.email ?? "—"}</td>
+                    <td className="py-2 pr-3"><Badge tone={s.joined ? "success" : s.isMember ? "info" : "warn"}>{s.joined ? "In the league" : s.isMember ? "Member · not joined" : "Not a member"}</Badge></td>
+                    <td className="py-2 pr-3">{s.notifyWeekly ? "On" : "Off"}</td>
+                    <td className="py-2 text-apple-text-secondary">{new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Modal
         open={open}

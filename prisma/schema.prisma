@@ -2360,6 +2360,10 @@ model LeagueWeek {
   revealedAt          DateTime?
   /// Set when standings / points / payouts / next-week teams were computed
   finalizedAt         DateTime?
+  /// When "week is open" notifications went out to players + subscribers
+  openNotifiedAt      DateTime?
+  /// When "results are in" notifications went out
+  resultsNotifiedAt   DateTime?
   /// Cached sum of PAID entries
   potCents            Int       @default(0)
   /// Cached payout totals for the week
@@ -2588,4 +2592,34 @@ model LeaguePayout {
 
   @@index([playerId])
   @@index([leagueId, weekId])
+}
+
+/// Someone who signed up on league.tee24.golf to join the league and/or get
+/// the weekly text. Members are matched by phone and auto-joined to the running
+/// league; non-members are kept so staff can follow up.
+model LeagueSubscriber {
+  id             String    @id @default(cuid())
+  organizationId String?
+  memberId       String?
+  /// Last 10 digits
+  phone          String    @unique
+  email          String?
+  firstName      String
+  lastName       String
+  /// Weekly "week is open" / "results are in" texts
+  notifyWeekly   Boolean   @default(true)
+  /// Asked to be added to the league
+  joinRequested  Boolean   @default(true)
+  /// League they were auto-joined to (when a member + a league was running)
+  joinedLeagueId String?
+  /// WEB | ADMIN
+  source         String    @default("WEB")
+  /// Unsubscribe link token
+  token          String    @unique @default(cuid())
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([memberId])
+  @@index([organizationId])
 }

@@ -2,6 +2,7 @@ import { getCurrentAdmin, isFullAccess } from "@/lib/access";
 import { getPrisma } from "@/lib/db";
 import { PageHeader } from "@/components/ui";
 import { listLeagues } from "@/services/league.service";
+import { listLeagueSubscribers } from "@/services/league-notify.service";
 import { LeagueListClient } from "./LeagueListClient";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,9 @@ export default async function LeagueAdminPage() {
   if (!admin) return null;
   const full = isFullAccess(admin.role);
   const locationIds = full ? null : admin.locations.map((l) => l.locationId);
-  const [leagues, locations] = await Promise.all([
+  const [leagues, subscribers, locations] = await Promise.all([
     listLeagues(locationIds),
+    listLeagueSubscribers(locationIds),
     getPrisma().location.findMany({ where: locationIds ? { id: { in: locationIds } } : {}, select: { id: true, name: true, slug: true, timezone: true }, orderBy: { name: "asc" } }),
   ]);
   return (
@@ -30,6 +32,7 @@ export default async function LeagueAdminPage() {
           currentWeek: l.currentWeek ? { weekNumber: l.currentWeek.weekNumber, courseName: l.currentWeek.courseName, deadlineAt: l.currentWeek.deadlineAt.toISOString(), potCents: l.currentWeek.potCents } : null,
         }))}
         locations={locations}
+        subscribers={subscribers}
       />
     </div>
   );
