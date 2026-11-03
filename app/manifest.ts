@@ -1,6 +1,6 @@
 /**
- * PWA manifest for the member portal.
- * Served at /portal/manifest.webmanifest by Next.js.
+ * PWA manifest (served at /manifest.webmanifest and auto-linked by Next.js).
+ * Home-screen installs land on the member clubhouse.
  */
 import { type MetadataRoute } from "next";
 
