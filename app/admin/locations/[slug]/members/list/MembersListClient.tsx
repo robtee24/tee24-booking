@@ -10,7 +10,7 @@ import { Avatar, Checkbox, MONTHS, TagChip, ageFromDob, api, errMsg, fmtDate, re
 
 type Row = {
   id: string; firstName: string; lastName: string; email: string; phone: string; status: string; photoUrl: string | null; joinDate: string | null; dob: string | null; gender: string | null;
-  checkinCode: string | null; membershipType: string | null; kisiAccessEnabled: boolean;
+  membershipType: string | null; kisiAccessEnabled: boolean;
   memberTags: Array<{ tag: { id: string; name: string; color: string | null } }>;
   subscription: {
     id: string; status: string; planName: string; paidThroughDate: string | null; nextInvoiceDate: string | null;
@@ -234,7 +234,7 @@ export default function MembersListClient({ slug, plans }: { slug: string; plans
       {/* Toolbar */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="flex-1">
-          <Input prefix={<Search className="h-4 w-4" />} placeholder="Search name, email, phone or check-in code…" value={searchDraft} onChange={(e) => setSearchDraft(e.target.value)} suffix={searchDraft ? <button type="button" onClick={() => setSearchDraft("")} aria-label="Clear"><X className="h-4 w-4" /></button> : undefined} />
+          <Input prefix={<Search className="h-4 w-4" />} placeholder="Search name, email or phone…" value={searchDraft} onChange={(e) => setSearchDraft(e.target.value)} suffix={searchDraft ? <button type="button" onClick={() => setSearchDraft("")} aria-label="Clear"><X className="h-4 w-4" /></button> : undefined} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" iconLeft={<Filter className="h-4 w-4" />} onClick={() => setFiltersOpen(true)}>

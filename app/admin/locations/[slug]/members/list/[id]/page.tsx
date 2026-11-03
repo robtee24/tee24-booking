@@ -5,7 +5,7 @@ import { getMemberDetail } from "@/services/member.service";
 import { getPrisma } from "@/lib/db";
 import { adminRoutes } from "@/lib/admin/routes";
 import { Card, CardHeader, StatusBadge, Money, Badge } from "@/components/ui";
-import { TagsEditor, KisiAccessCard, CheckinCodeCard } from "@/components/admin/members/OverviewWidgets";
+import { TagsEditor, KisiAccessCard } from "@/components/admin/members/OverviewWidgets";
 import { MobileDeviceCard } from "@/components/admin/members/MobileDeviceCard";
 import { memberDeviceSummary } from "@/services/mobile-auth.service";
 import { ageFromDob, fmtDate, fmtDateTime, genderLabel, relTime } from "@/components/admin/members/format";
@@ -129,12 +129,6 @@ export default async function MemberProfilePage({ params }: { params: Promise<{ 
             <CardHeader title="Door access" subtitle="Kisi" />
             <div className="mt-3">
               <KisiAccessCard memberId={id} enabled={member.kisiAccessEnabled} reason={member.kisiAccessReason} kisiUserId={member.kisiUserId} history={kisiLinks.map((l) => ({ kisiUserId: l.kisiUserId, linkedAt: l.linkedAt.toISOString(), unlinkedAt: l.unlinkedAt?.toISOString() ?? null, unlinkReason: l.unlinkReason }))} />
-            </div>
-          </Card>
-          <Card>
-            <CardHeader title="Check-in code" subtitle="Front desk kiosk" />
-            <div className="mt-3">
-              <CheckinCodeCard memberId={id} code={member.checkinCode} />
             </div>
           </Card>
           <Card className="md:col-span-2">

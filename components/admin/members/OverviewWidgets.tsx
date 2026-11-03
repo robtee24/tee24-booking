@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Copy, KeyRound, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { Button, Input, Modal, useToast } from "@/components/ui";
 import { Toggle } from "@/components/admin/location-settings/SettingsSection";
 import { TagChip, api, errMsg } from "./shared";
@@ -206,73 +206,6 @@ export function KisiAccessCard({ memberId, enabled: initial, reason, kisiUserId,
       >
         <Input label="Reason (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Comp week while card is replaced" />
       </Modal>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Check-in code                                                       */
-/* ------------------------------------------------------------------ */
-
-export function CheckinCodeCard({ memberId, code: initial }: { memberId: string; code: string | null }) {
-  const { toast } = useToast();
-  const router = useRouter();
-  const [code, setCode] = React.useState(initial);
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(initial ?? "");
-  const [busy, setBusy] = React.useState(false);
-
-  React.useEffect(() => setCode(initial), [initial]);
-
-  async function save(next?: string) {
-    setBusy(true);
-    try {
-      const r = await api<{ checkinCode: string | null }>(`/api/admin/members/${memberId}/checkin-code`, { method: "POST", json: next === undefined ? {} : { code: next } });
-      setCode(r.checkinCode);
-      setEditing(false);
-      toast({ tone: "success", title: next === undefined ? "New code generated" : "Check-in code saved" });
-      router.refresh();
-    } catch (e) {
-      toast({ tone: "error", title: "Couldn't save code", description: errMsg(e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      {editing ? (
-        <div className="flex items-end gap-2">
-          <Input
-            label="4–8 digit code"
-            inputMode="numeric"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, 8))}
-            onKeyDown={(e) => { if (e.key === "Enter") void save(draft); if (e.key === "Escape") setEditing(false); }}
-          />
-          <Button size="md" onClick={() => void save(draft)} loading={busy} disabled={draft.length < 4}>Save</Button>
-          <Button size="md" variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-apple-sm bg-apple-fill-secondary px-3 py-2 font-mono text-apple-lg tracking-[0.3em] text-apple-text">
-            <KeyRound className="h-4 w-4 text-apple-text-tertiary" />
-            {code ?? "— — — —"}
-          </div>
-          {code && (
-            <button type="button" className="rounded-apple-sm p-2 text-apple-text-tertiary hover:bg-apple-fill-secondary hover:text-apple-text" aria-label="Copy code" onClick={() => { void navigator.clipboard?.writeText(code); toast({ tone: "info", title: "Code copied" }); }}>
-              <Copy className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      )}
-      {!editing && (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => { setDraft(code ?? ""); setEditing(true); }}>{code ? "Change" : "Set code"}</Button>
-          <Button size="sm" variant="secondary" iconLeft={<RefreshCw className="h-3.5 w-3.5" />} loading={busy} onClick={() => void save()}>Regenerate</Button>
-        </div>
-      )}
-      <p className="text-apple-xs text-apple-text-tertiary">Members type this at the Front Desk kiosk to check in. Unique per location.</p>
     </div>
   );
 }

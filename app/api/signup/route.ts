@@ -508,6 +508,15 @@ export async function POST(req: NextRequest) {
       refs: { subscriptionId: sub.id },
       vars: { planName: displayName, firstName },
     });
+    for (const fc of familyCreated) {
+      void emitMemberEvent("member.welcome", {
+        memberId: fc.member.id,
+        locationId: location.id,
+        organizationId: location.organizationId,
+        refs: { subscriptionId: fc.sub.id },
+        vars: { planName: `${plan.name} (family)`, firstName: fc.member.firstName },
+      });
+    }
 
     const payToken = await ensurePayToken(invoice.id);
     const payUrl = publicPayUrl(payToken);

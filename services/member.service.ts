@@ -73,7 +73,6 @@ export type MemberListRow = {
   joinDate: Date | null;
   dob: Date | null;
   gender: string | null;
-  checkinCode: string | null;
   membershipType: string | null;
   kisiAccessEnabled: boolean;
   memberTags: Array<{ tag: { id: string; name: string; color: string | null } }>;
@@ -124,7 +123,6 @@ export async function buildMemberWhere(q: MemberQuery, opts: { ignoreStatus?: bo
       { lastName: { contains: s, mode: "insensitive" } },
       { fullName: { contains: s, mode: "insensitive" } },
       { email: { contains: s, mode: "insensitive" } },
-      { checkinCode: s },
     ];
     if (digits.length >= 3) or.push({ phone: { contains: digits } });
     and.push({ OR: or });
@@ -236,7 +234,7 @@ export async function queryMembers(q: MemberQuery): Promise<{ items: MemberListR
       where: { id: { in: pageIds } },
       select: {
         id: true, firstName: true, lastName: true, email: true, phone: true, status: true, photoUrl: true,
-        joinDate: true, dob: true, gender: true, checkinCode: true, membershipType: true, kisiAccessEnabled: true,
+        joinDate: true, dob: true, gender: true, membershipType: true, kisiAccessEnabled: true,
         memberTags: { select: { tag: { select: { id: true, name: true, color: true } } } },
       },
     }),
@@ -435,7 +433,6 @@ export type CreateMemberInput = {
   country?: string | null;
   smsConsent?: boolean;
   smsConsentSource?: string | null;
-  checkinCode?: string | null;
   actorId?: string;
 };
 
@@ -474,7 +471,6 @@ export async function createMember(input: CreateMemberInput) {
       state: input.state ?? null,
       zip: input.zip ?? null,
       country: input.country ?? "US",
-      checkinCode: input.checkinCode ?? (await generateCheckinCode(input.locationId)),
     },
   });
 
@@ -610,48 +606,6 @@ export async function removeMemberTag(memberId: string, tagId: string, actorId?:
     entityId: memberId,
     metadata: { tagId },
   });
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Front-desk check-in codes                                                  */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-/** Generate a 4–6 digit code that is unique within the location. */
-export async function generateCheckinCode(locationId: string): Promise<string> {
-  const prisma = getPrisma();
-  for (const digits of [4, 4, 4, 5, 5, 6, 6, 6]) {
-    const min = 10 ** (digits - 1);
-    const code = String(Math.floor(min + Math.random() * (9 * min)));
-    const clash = await prisma.member.findFirst({ where: { locationId, checkinCode: code }, select: { id: true } });
-    if (!clash) return code;
-  }
-  throw new Error("Could not generate a unique check-in code");
-}
-
-export async function setCheckinCode(memberId: string, code: string | null, actorId?: string) {
-  const prisma = getPrisma();
-  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { id: true, locationId: true, checkinCode: true, organizationId: true } });
-  if (!member) throw new Error("Member not found");
-  let next = code;
-  if (next === null) {
-    next = await generateCheckinCode(member.locationId);
-  } else {
-    next = next.trim();
-    if (!/^\d{4,6}$/.test(next)) throw new Error("Code must be 4–6 digits");
-    const clash = await prisma.member.findFirst({ where: { locationId: member.locationId, checkinCode: next, NOT: { id: memberId } }, select: { id: true } });
-    if (clash) throw new Error("That code is already in use at this location");
-  }
-  const updated = await prisma.member.update({ where: { id: memberId }, data: { checkinCode: next } });
-  void audit({
-    organizationId: member.organizationId,
-    actorId,
-    action: "member.update",
-    entityType: "Member",
-    entityId: memberId,
-    before: { checkinCode: member.checkinCode },
-    after: { checkinCode: next },
-  });
-  return updated;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */

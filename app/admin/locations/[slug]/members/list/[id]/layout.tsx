@@ -27,7 +27,7 @@ export default async function MemberProfileLayout({
     where: { id },
     select: {
       id: true, firstName: true, lastName: true, email: true, phone: true, status: true, photoUrl: true, kisiAccessEnabled: true, kisiAccessReason: true,
-      checkinCode: true, mergedIntoId: true, joinDate: true, dob: true, gender: true, guardianName: true, acquisitionSource: true, secondaryEmails: true, secondaryPhones: true,
+      mergedIntoId: true, joinDate: true, dob: true, gender: true, guardianName: true, acquisitionSource: true, secondaryEmails: true, secondaryPhones: true,
       addressLine1: true, addressLine2: true, city: true, state: true, zip: true, country: true, optInEmailMarketing: true, optInSmsMarketing: true, smsConsentAt: true,
       membershipType: true, magicLinkLastSentAt: true,
       location: { select: { slug: true } },
@@ -67,7 +67,6 @@ export default async function MemberProfileLayout({
                 <StatusBadge status={member.status} />
                 {latestUsageTier && <StatusBadge status={latestUsageTier.tier} />}
                 {member.kisiAccessEnabled ? <Badge tone="success">Door access enabled</Badge> : <Badge tone="warn">Door access disabled</Badge>}
-                {member.checkinCode && <Badge tone="muted">Code {member.checkinCode}</Badge>}
                 <span className="text-apple-xs text-apple-text-tertiary">{member.email} · {member.phone}</span>
               </>
             }

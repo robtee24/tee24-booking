@@ -30,7 +30,6 @@ export type EditableMember = {
   optInEmailMarketing: boolean;
   optInSmsMarketing: boolean;
   smsConsentAt: string | null;
-  checkinCode: string | null;
   kisiAccessEnabled: boolean;
   kisiAccessReason: string | null;
   magicLinkLastSentAt: string | null;

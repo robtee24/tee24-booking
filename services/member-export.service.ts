@@ -5,7 +5,7 @@ import { queryMembers, type MemberQuery } from "@/services/member.service";
 
 const COLUMNS = [
   "id", "first_name", "last_name", "email", "phone", "status", "membership", "membership_status",
-  "paid_through", "joined", "dob", "gender", "checkin_code", "last_visit", "next_invoice_due", "next_invoice_amount",
+  "paid_through", "joined", "dob", "gender", "last_visit", "next_invoice_due", "next_invoice_amount",
   "overdue_amount", "card_on_file", "door_access", "tags",
 ] as const;
 
@@ -30,7 +30,7 @@ export async function exportMembersCsv(q: MemberQuery): Promise<{ csv: string; c
       lines.push([
         m.id, m.firstName, m.lastName, m.email, m.phone, m.status,
         m.subscription ? [m.subscription.displayName, m.subscription.promo?.label].filter(Boolean).join(" · ") : (m.membershipType ?? ""), m.subscription?.status ?? "",
-        m.subscription?.paidThroughDate ?? "", m.joinDate ?? "", m.dob ?? "", m.gender ?? "", m.checkinCode ?? "",
+        m.subscription?.paidThroughDate ?? "", m.joinDate ?? "", m.dob ?? "", m.gender ?? "",
         m.lastVisitAt ? m.lastVisitAt.toISOString() : "", m.billing.nextInvoiceDue ?? "",
         m.billing.nextInvoiceCents != null ? (m.billing.nextInvoiceCents / 100).toFixed(2) : "",
         (m.billing.overdueCents / 100).toFixed(2), m.billing.hasCard ? "yes" : "no", m.kisiAccessEnabled ? "enabled" : "disabled",

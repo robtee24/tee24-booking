@@ -9,7 +9,6 @@ export type CardDTO = {
   name: string;
   photoUrl: string | null;
   status: string;
-  checkinCode: string | null;
   memberSince: string;
   location: { name: string; slug: string; logoUrl: string | null; businessName: string | null } | null;
   plan: string | null;

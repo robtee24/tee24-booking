@@ -120,7 +120,6 @@ export type MemberForVars = {
   email: string;
   phone: string;
   membershipType?: string | null;
-  checkinCode?: string | null;
   referralCode?: string | null;
   organizationId?: string | null;
   location?: { name: string; slug: string; timezone?: string } | null;
@@ -136,7 +135,6 @@ export function buildMemberVars(member: MemberForVars, extra?: Record<string, un
     plan_name: member.membershipType ?? "",
     location_name: member.location?.name ?? "",
     portal_url: `${base}/portal`,
-    checkin_code: member.checkinCode ?? "",
     referral_code: member.referralCode ?? "",
     amount: "",
     due_date: "",
@@ -174,7 +172,6 @@ export const MEMBER_VARS_SELECT = {
   email: true,
   phone: true,
   membershipType: true,
-  checkinCode: true,
   referralCode: true,
   organizationId: true,
   locationId: true,

@@ -636,7 +636,7 @@ export const AUTOMATION_PRESETS: AutomationPreset[] = [
       triggerConfig: { exitOnCancel: true },
       active: false,
       steps: [
-        { kind: "SEND_EMAIL", config: { subject: "Welcome to {location_name}, {first_name}!", body: "Hi {first_name},<br><br>We're thrilled to have you. Here's how to get the most out of your membership:<br>• Book bays any time from the portal: {portal_url}<br>• Your check-in code is {checkin_code}<br>• Bring a friend — share your referral code {referral_code}<br><br>See you on the sim!" } },
+        { kind: "SEND_EMAIL", config: { subject: "Welcome to {location_name}, {first_name}!", body: "Hi {first_name},<br><br>We're thrilled to have you. Here's how to get the most out of your membership:<br>• Book bays any time from the portal: {portal_url}<br>• Bring a friend — share your referral code {referral_code}<br><br>See you on the sim!" } },
         { kind: "WAIT", config: { days: 2 } },
         { kind: "SEND_SMS", config: { body: "Hi {first_name}! Quick tip from {location_name}: off-peak mornings are the easiest time to grab a bay. Book here: {portal_url}" } },
         { kind: "WAIT", config: { days: 5 } },

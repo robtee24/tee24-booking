@@ -5,7 +5,6 @@ import { getActorContext } from "@/lib/actor";
 import { assertCan } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
-import { generateCheckinCode } from "@/services/member.service";
 
 export const dynamic = "force-dynamic";
 
@@ -331,7 +330,6 @@ export async function POST(req: NextRequest) {
               joinDate,
               gymDeskId: gymDeskId || null,
               source: "CSV",
-              checkinCode: await generateCheckinCode(location.id).catch(() => null),
             },
           });
           memberId = m.id;

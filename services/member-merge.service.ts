@@ -187,7 +187,7 @@ export async function mergeMembers(opts: { survivorId: string; loserIds: string[
       // Retire the loser (free unique code / referral code / family id)
       await tx.member.update({
         where: { id: loserId },
-        data: { status: "MERGED", mergedIntoId: survivor.id, checkinCode: null, familyAccountId: null, kisiAccessEnabled: false, kisiAccessReason: `Merged into ${survivor.id}` },
+        data: { status: "MERGED", mergedIntoId: survivor.id, familyAccountId: null, kisiAccessEnabled: false, kisiAccessReason: `Merged into ${survivor.id}` },
       });
     });
 
