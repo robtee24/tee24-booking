@@ -14,7 +14,7 @@ import { parseImageDataUrl, saveMemberPhoto, PhotoError } from "@/services/membe
 import { signDocument } from "@/services/document.service";
 import { isRecurringCadence } from "@/services/recurring-billing.service";
 import { addPeriods, familyAddonFor, guestCentsFor, guestLineLabel, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
-import { assertFamilyMemberUnique, createFamilyMemberRecord, FamilyAddonError, parseFamilyMemberInput, type FamilyMemberInput } from "@/services/family-addon.service";
+import { assertFamilyMemberUnique, assertFamilyPhoneVerified, createFamilyMemberRecord, FamilyAddonError, parseFamilyMemberInput, type FamilyMemberInput } from "@/services/family-addon.service";
 import { parseUploadDataUrl, saveMemberUpload, UploadError } from "@/services/member-upload.service";
 
 const GENDERS = new Set(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"]);
@@ -272,6 +272,7 @@ export async function POST(req: NextRequest) {
           // The account holder signs for their minors unless the form collected a separate guardian.
           defaultGuardian: guardianInput ?? { name: `${String(firstName).trim()} ${String(lastName).trim()}`, signatureSvg: sigByDoc.values().next().value ?? "" },
         });
+        await assertFamilyPhoneVerified(fi);
         await assertFamilyMemberUnique(location.id, fi, seen);
         familyInputs.push(fi);
       }

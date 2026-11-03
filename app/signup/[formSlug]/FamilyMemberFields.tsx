@@ -11,7 +11,8 @@ import React, { useMemo, useState } from "react";
 import { Button, Card, CardHeader, Input, Money, Select } from "@/components/ui";
 import { SignaturePad, type SignaturePadHandle } from "@/components/portal/SignaturePad";
 import { Camera, RefreshCw, Trash2 } from "lucide-react";
-import { ageFromDob, digitsOnly, escapeHtml, fileToPhotoDataUrl, formatPhone } from "./photo-utils";
+import { ageFromDob, digitsOnly, escapeHtml, fileToPhotoDataUrl } from "./photo-utils";
+import { PhoneVerifyField } from "./PhoneVerifyField";
 
 export type FamilyDraft = {
   key: string;
@@ -19,6 +20,9 @@ export type FamilyDraft = {
   lastName: string;
   email: string;
   phone: string;
+  /** Set once their number passed the SMS code — E.164 number + signed proof the API requires. */
+  verifiedPhone: string | null;
+  phoneToken: string | null;
   dob: string;
   gender: string;
   relationship: string;
@@ -36,7 +40,11 @@ export const FAMILY_RELATIONSHIPS: Array<[string, string]> = [
 
 export function newFamilyDraft(): FamilyDraft {
   const key = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return { key, firstName: "", lastName: "", email: "", phone: "", dob: "", gender: "", relationship: "SPOUSE", photo: null };
+  return { key, firstName: "", lastName: "", email: "", phone: "", verifiedPhone: null, phoneToken: null, dob: "", gender: "", relationship: "SPOUSE", photo: null };
+}
+
+export function familyPhoneVerified(d: FamilyDraft): boolean {
+  return !!d.phoneToken && !!d.verifiedPhone && digitsOnly(d.verifiedPhone).slice(-10) === digitsOnly(d.phone);
 }
 
 export function familyDraftValid(d: FamilyDraft, opts: { requiredFields: string[]; photoRequired: boolean; docsSigned: boolean; takenEmails: string[]; takenPhones: string[] }): string | null {
@@ -46,6 +54,7 @@ export function familyDraftValid(d: FamilyDraft, opts: { requiredFields: string[
   if (opts.takenEmails.filter((e) => e === d.email.trim().toLowerCase()).length > 1) return `${who}: each person needs their own email`;
   if (digitsOnly(d.phone).length !== 10) return `${who}: a 10-digit mobile number`;
   if (opts.takenPhones.filter((p) => p === digitsOnly(d.phone)).length > 1) return `${who}: each person needs their own mobile number`;
+  if (!familyPhoneVerified(d)) return `${who}: verify their mobile number (we text them a code)`;
   const age = ageFromDob(d.dob);
   if (!d.dob || age === null || age < 0 || age > 120) return `${who}: date of birth`;
   if (!d.gender) return `${who}: sex`;
@@ -113,6 +122,8 @@ export function FamilyMemberFields({
       firstName: draft.firstName, lastName: draft.lastName, fullName: name, memberName: name, name,
       email: draft.email, phone: draft.phone, dob: draft.dob ? new Date(draft.dob + "T00:00:00").toLocaleDateString() : "",
       guardianName: isMinor ? holderName : "", locationName, businessName: locationName, date: today, today,
+      // Family members share the holder's household; these are left blank on their copy rather than showing raw tags.
+      address: "", contactName: "", contactPhone: "", contactRelation: "", emergencyContact: "", emergencyPhone: "",
     } as Record<string, string>;
   }, [draft, name, isMinor, holderName, locationName]);
   function renderDoc(d: FamilyDoc) {
@@ -141,16 +152,16 @@ export function FamilyMemberFields({
           {FAMILY_RELATIONSHIPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
         <Input label="Email" type="email" required inputMode="email" value={draft.email} onChange={(e) => set("email", e.target.value)} hint="Their own address — used for receipts and waivers." />
-        <Input
-          label="Mobile number"
-          type="tel"
-          inputMode="tel"
-          required
-          placeholder="(555) 123-4567"
-          value={draft.phone}
-          onChange={(e) => set("phone", formatPhone(e.target.value))}
-          hint="Their own number — it's how they sign in to the Tee24 app. We'll text them a code the first time."
-        />
+        <div className="sm:col-span-2">
+          <PhoneVerifyField
+            phone={draft.phone}
+            onPhoneChange={(v) => onChange({ ...draft, phone: v, verifiedPhone: null, phoneToken: null })}
+            verified={draft.phoneToken && draft.verifiedPhone ? { phone: draft.verifiedPhone, token: draft.phoneToken } : null}
+            onVerified={(v) => onChange({ ...draft, verifiedPhone: v?.phone ?? null, phoneToken: v?.token ?? null })}
+            whose={draft.firstName.trim() || "them"}
+            hint={`Their own number — it's how ${draft.firstName.trim() || "they"} will sign in to the Tee24 app. We'll text them a 6-digit code now to confirm it; they'll need to read it to you.`}
+          />
+        </div>
         <Input label="Date of birth" type="date" required max={new Date().toISOString().slice(0, 10)} value={draft.dob} onChange={(e) => set("dob", e.target.value)} hint={isMinor ? `Under 18 — you'll sign the waiver for ${draft.firstName || "them"} as parent/guardian.` : undefined} />
         <Select label="Sex" required value={draft.gender} onChange={(e) => set("gender", e.target.value)}>
           <option value="">Select…</option>

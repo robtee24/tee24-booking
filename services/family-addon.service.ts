@@ -18,6 +18,7 @@
  * mobile "Add a family member" flows (added later, prorated), and removal.
  */
 import { getPrisma } from "@/lib/db";
+import { SIGNUP_PHONE_AUDIENCE, verifyPhoneVerificationToken } from "@/lib/phone-verification";
 import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
@@ -56,6 +57,8 @@ export type FamilyMemberInput = {
   lastName: string;
   email: string;
   phone: string;
+  /** Signed proof from /api/signup/phone/verify that `phone` received an SMS code. Checked by assertFamilyPhoneVerified. */
+  phoneToken: string | null;
   dob: Date | null;
   gender: string | null;
   relationship: FamilyRole;
@@ -136,7 +139,20 @@ export function parseFamilyMemberInput(raw: unknown, ctx: ParseCtx): FamilyMembe
   if (isMinor && !guardian) guardian = ctx.defaultGuardian ?? null;
   if (isMinor && !guardian) throw new FamilyAddonError(`${label} is under 18 — a parent or guardian must sign for them`);
 
-  return { firstName, lastName, email, phone, dob, gender: genderStr || null, relationship, photoDataUrl, signatures, guardian };
+  const phoneToken = str("phoneToken", 2048) || null;
+
+  return { firstName, lastName, email, phone, phoneToken, dob, gender: genderStr || null, relationship, photoDataUrl, signatures, guardian };
+}
+
+/**
+ * A family member's mobile is their login, so — exactly like the account holder's
+ * number — it must have received an SMS code in this session. Replaces `phone`
+ * with the verified E.164 number.
+ */
+export async function assertFamilyPhoneVerified(input: FamilyMemberInput): Promise<void> {
+  const verified = await verifyPhoneVerificationToken(input.phoneToken, input.phone, SIGNUP_PHONE_AUDIENCE);
+  if (!verified) throw new FamilyAddonError(`${input.firstName} ${input.lastName}: verify their mobile number with the code we text them before continuing`);
+  input.phone = verified;
 }
 
 /** Resolve the plan's family add-on or explain why there isn't one. */
@@ -385,6 +401,7 @@ export async function addFamilyMemberToAccount(memberId: string, raw: unknown, m
     requiredDocs: ctx.form?.requiredDocs ?? [],
     index: used,
   });
+  await assertFamilyPhoneVerified(input);
   const seen = { emails: new Set<string>([ctx.primary.email.toLowerCase()]), phones: new Set<string>([ctx.primary.phone.replace(/\D/g, "").slice(-10)]) };
   await assertFamilyMemberUnique(ctx.primary.locationId, input, seen);
 
