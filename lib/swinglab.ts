@@ -74,6 +74,18 @@ export type SwinglabJob = {
   detected_view_confidence?: number | null;
   /** Pro queued via /recompare while the job was still running */
   pending_pro_id?: string | null;
+  /** Pro this record was rendered against (null = analyzer's best match) */
+  pro_id?: string | null;
+  /** Epoch seconds of the last job.json write; stale "done" records predate a swap */
+  updated_at?: number;
+};
+
+export type SwinglabVsPro = {
+  swing_id: string;
+  player: string;
+  rows: { event: string; metric: string; label: string; unit: string; you: number; pro: number; delta: number; tolerance: number; flag: "more" | "less" | "match"; reliable: boolean }[];
+  focus: { rank: number; event: string; metric: string; title: string; detail: string; tip: string }[];
+  matches: string[];
 };
 
 export type SwinglabReport = {
@@ -94,6 +106,8 @@ export type SwinglabReport = {
   };
   comparison: unknown;
   pro_reference: SwinglabProReference | null;
+  /** One-on-one read against the chosen pro (analyzer >= 0.2.1) */
+  vs_pro?: SwinglabVsPro | null;
   feedback: {
     rule: string;
     kind: string;

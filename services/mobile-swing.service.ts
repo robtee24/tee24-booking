@@ -111,6 +111,7 @@ function compactReport(r: SwinglabReport): SwinglabReport {
     metrics: r.metrics,
     comparison: r.comparison ?? null,
     pro_reference: r.pro_reference ?? null,
+    vs_pro: r.vs_pro ?? null,
     feedback: r.feedback ?? [],
     warnings: r.warnings ?? [],
     outputs: r.outputs ?? {},
@@ -534,8 +535,8 @@ async function refresh(a: SwingAnalysis): Promise<SwingAnalysis> {
     // for a backend instance that went away mid-job: the analyzer publishes
     // job.json to Blob regardless of who is listening.
     const job = await readJobRecord<SwinglabJob>(a.jobId).catch(() => null);
-    if (job?.status === "done" && job.report) return applyReport(a, job);
-    if (job?.status === "error") {
+    if (job?.status === "done" && job.report && jobIsForThisRun(a, job)) return applyReport(a, job);
+    if (job?.status === "error" && jobIsForThisRun(a, job)) {
       return prisma.swingAnalysis.update({
         where: { id: a.id },
         data: { status: "ERROR", error: friendlyError(job.error), seconds: job.seconds ?? null, completedAt: new Date() },
@@ -576,6 +577,31 @@ async function refresh(a: SwingAnalysis): Promise<SwingAnalysis> {
   return applyReport(a, job);
 }
 
+/**
+ * job.json is rewritten by the analyzer as a job progresses, but right after a
+ * pro swap is requested it still holds the *previous* run's "done" (the
+ * container may be cold and take seconds to mark it running). Reading that as
+ * the result would finish the swap with the old pro — and the old files are
+ * about to be replaced, so the app would then point at 404s. A record counts
+ * for the current run only if it was written after we (re)started the run and,
+ * when a specific pro was asked for, it was rendered against that pro.
+ */
+function jobIsForThisRun(a: SwingAnalysis, job: SwinglabJob) {
+  if (typeof job.updated_at === "number") {
+    // 15 s of slack for clock drift between the two Vercel runtimes.
+    if (job.updated_at * 1000 < a.updatedAt.getTime() - 15_000) return false;
+  }
+  const rendered = job.report?.pro_reference?.swing_id ?? job.pro_id ?? null;
+  if (a.proId && rendered && rendered !== a.proId) return false;
+  return true;
+}
+
+function sameRender(cur: SwinglabReport | null | undefined, next: SwinglabReport) {
+  if (!cur) return false;
+  return (cur.pro_reference?.swing_id ?? null) === (next.pro_reference?.swing_id ?? null)
+    && (cur.outputs?.side_by_side_video ?? null) === (next.outputs?.side_by_side_video ?? null);
+}
+
 function friendlyError(raw: string | undefined) {
   const s = raw ?? "Analysis failed";
   if (/no pose|pose_low_confidence|could not detect/i.test(s)) return "We couldn't see a full body in the clip. Film the whole swing with your body in frame.";
@@ -595,10 +621,11 @@ async function applyReport(a: SwingAnalysis, job: SwinglabJob): Promise<SwingAna
   const sessionSummary = { shots: 1, clubs: [], flags, highlights, source: "SWING_VIDEO", swingAnalysisId: a.id, score };
 
   const updated = await prisma.$transaction(async (tx) => {
-    // The after() worker and a concurrent refresh() can both see "done".
+    // The after() worker and a concurrent refresh() can both see "done" for
+    // the same render; a *different* render (new pro) must always land.
     const cur = await tx.swingAnalysis.findUnique({ where: { id: a.id } });
     if (!cur) return a;
-    if (cur.status === "DONE" && cur.report && cur.completedAt && cur.completedAt > a.updatedAt) return cur;
+    if (cur.status === "DONE" && cur.completedAt && cur.completedAt > a.updatedAt && sameRender(cur.report as SwinglabReport | null, report)) return cur;
     const session = cur.sessionId
       ? await tx.practiceSession.update({ where: { id: cur.sessionId }, data: { summary: sessionSummary as unknown as Prisma.InputJsonValue, shotCount: 1 } })
       : await tx.practiceSession.create({
@@ -748,6 +775,7 @@ function present(a: SwingAnalysis) {
           feedback: report.feedback,
           warnings: report.warnings,
           highlights: buildHighlights(report),
+          vsPro: report.vs_pro ?? null,
         }
       : null,
   };
