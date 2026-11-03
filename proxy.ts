@@ -1,4 +1,5 @@
-// middleware.ts
+// proxy.ts — Next 16 request proxy (formerly middleware.ts). Runs on the Node
+// runtime in front of admin + member routes; see `config.matcher` below.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -37,7 +38,7 @@ function memberHostRedirect(request: NextRequest): NextResponse | null {
   return NextResponse.redirect(url, 308);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const hop = memberHostRedirect(request);

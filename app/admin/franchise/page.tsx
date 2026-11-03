@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Badge, Card, CardHeader, PageHeader, Money } from "@/components/ui";
 import { BarChart, DonutChart, KpiCard } from "@/components/ui/charts";
 import { getAccessibleLocationIds } from "@/lib/access";
+import { getActorContext } from "@/lib/actor";
+import { can } from "@/lib/permissions";
 import { adminRoutes } from "@/lib/admin/routes";
 import { LocationRowActions } from "@/components/admin/staff/LocationRowActions";
 import { DateRangeSelect, parseRange, rangeBounds } from "@/components/admin/staff/DateRangeSelect";
@@ -12,7 +14,22 @@ export const dynamic = "force-dynamic";
 export default async function FranchisePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const prisma = getPrisma();
   const sp = await searchParams;
+  const actor = await getActorContext();
   const locationIds = await getAccessibleLocationIds();
+  // Org-level reporting: SCOPED admins need the `franchise.view` grant (org-wide or
+  // for at least one of their locations). FULL/ROOT pass through `can`.
+  const allowed = can(actor, "franchise.view", {}) || locationIds.some((id) => can(actor, "franchise.view", { locationId: id }));
+  if (!allowed) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Franchise" />
+        <Card>
+          <p className="text-apple-sm text-apple-text-secondary">You don&apos;t have permission to view franchise reports.</p>
+          <Link href={adminRoutes.home()} className="mt-3 inline-block text-apple-sm font-medium text-apple-blue hover:underline">← Back to dashboard</Link>
+        </Card>
+      </div>
+    );
+  }
   const locations = await prisma.location.findMany({
     where: { id: { in: locationIds } },
     orderBy: { createdAt: "asc" }, // first created = HQ

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { apiError, guardMarketing, readJson } from "../marketing/_shared";
+import { apiError, guardLocationIds, guardMarketing, readJson, requireMembersInScope } from "../marketing/_shared";
 import { recordReferral } from "@/services/referral.service";
 import { getMarketingSettings } from "@/services/marketing.service";
 
@@ -18,9 +18,16 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
   const prisma = getPrisma();
   try {
+    // Referrals/payouts are org-wide rows keyed only by member. SCOPED admins
+    // only see those whose referrer belongs to one of their locations.
+    const allowed = guardLocationIds(g);
+    const referrerFilter =
+      allowed === null
+        ? {}
+        : { referrerId: { in: (await prisma.member.findMany({ where: { locationId: { in: allowed } }, select: { id: true } })).map((m) => m.id) } };
     const [referrals, payouts, unmatchedMembers] = await Promise.all([
-      prisma.referral.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
-      prisma.referralPayout.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
+      prisma.referral.findMany({ where: referrerFilter, orderBy: { createdAt: "desc" }, take: 500 }),
+      prisma.referralPayout.findMany({ where: referrerFilter, orderBy: { createdAt: "desc" }, take: 500 }),
       prisma.member.findMany({
         where: { locationId: g.location.id, referredById: { not: null } },
         select: { id: true, firstName: true, lastName: true, referredById: true, joinDate: true },
@@ -64,6 +71,8 @@ export async function POST(req: NextRequest) {
     }
     if (!referrerId) return NextResponse.json({ error: "Referrer not found" }, { status: 404 });
     if (referrerId === body.referredMemberId) return NextResponse.json({ error: "A member cannot refer themselves" }, { status: 400 });
+    const scope = await requireMembersInScope([referrerId, String(body.referredMemberId)], g);
+    if (scope) return scope;
     const settings = await getMarketingSettings(g.location.organizationId);
     const referral = await recordReferral({
       referrerId,

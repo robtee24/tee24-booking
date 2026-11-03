@@ -8,12 +8,28 @@ import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/db";
 import { requireAdminApi } from "@/lib/api-auth";
 import { getActorContext } from "@/lib/actor";
-import { assertCan } from "@/lib/permissions";
+import { isFullAccess } from "@/lib/access";
+import { assertCanInOrg } from "@/lib/org-scope";
 import { audit, diff } from "@/lib/audit";
 import { apiError } from "@/app/api/admin/members/_shared";
 import { parsePlanBody, PlanInputError } from "@/lib/admin/plan-input";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Plans are org-level. A SCOPED admin may read a plan when they manage any
+ * location in the plan's organization, and edit it when they hold
+ * `membership.edit` for one of those locations.
+ */
+async function planInScope(actor: Awaited<ReturnType<typeof getActorContext>>, organizationId: string | null) {
+  if (!actor) return false;
+  if (isFullAccess(actor.role)) return true;
+  if (!organizationId) return true; // global plan: listed for every location; edits still need an org-wide grant
+  const ids = actor.locationIds ?? [];
+  if (ids.length === 0) return false;
+  const n = await getPrisma().location.count({ where: { id: { in: ids }, organizationId } });
+  return n > 0;
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const guard = await requireAdminApi();
@@ -21,6 +37,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
   const plan = await getPrisma().membershipPlan.findUnique({ where: { id }, include: { _count: { select: { subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN", "CANCEL_SCHEDULED", "FREEZE_SCHEDULED", "PENDING"] } } } } } } });
   if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  const actor = await getActorContext();
+  if (!(await planInScope(actor, plan.organizationId))) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   return NextResponse.json({ plan });
 }
 
@@ -29,15 +47,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!guard.ok) return guard.response;
   const { id } = await ctx.params;
   const actor = await getActorContext();
-  try {
-    assertCan(actor, "membership.edit");
-  } catch (e) {
-    return apiError(e);
-  }
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const prisma = getPrisma();
   const before = await prisma.membershipPlan.findUnique({ where: { id } });
   if (!before) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  if (!(await planInScope(actor, before.organizationId))) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  try {
+    await assertCanInOrg(actor, "membership.edit", before.organizationId);
+  } catch (e) {
+    return apiError(e);
+  }
 
   let patch;
   try {

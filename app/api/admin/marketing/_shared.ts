@@ -63,6 +63,35 @@ export async function guardMarketing(
  * a SCOPED admin can't read or edit another location's leads by swapping ids.
  * Returns a 404 response when out of scope (don't confirm the id exists).
  */
+/**
+ * Location IDs a marketing guard may touch: FULL/ROOT → null (unrestricted);
+ * SCOPED → their assigned locations. Used to scope org-wide entities (referrals,
+ * payouts) that only carry a member reference.
+ */
+export function guardLocationIds(g: Extract<MarketingGuard, { ok: true }>): string[] | null {
+  const fullAccess = g.admin.role === "ROOT" || g.admin.role === "FULL";
+  if (fullAccess) return null;
+  return g.actor.locationIds ?? [g.location.id];
+}
+
+/**
+ * 404 unless every given member belongs to a location the guard can manage.
+ * FULL/ROOT always pass. Unknown member IDs are treated as out of scope.
+ */
+export async function requireMembersInScope(
+  memberIds: Array<string | null | undefined>,
+  g: Extract<MarketingGuard, { ok: true }>,
+): Promise<NextResponse | null> {
+  const ids = Array.from(new Set(memberIds.filter((x): x is string => typeof x === "string" && x.length > 0)));
+  if (ids.length === 0) return null;
+  const allowed = guardLocationIds(g);
+  const rows = await getPrisma().member.findMany({ where: { id: { in: ids } }, select: { id: true, locationId: true } });
+  if (rows.length !== ids.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (allowed === null) return null;
+  const ok = rows.every((m) => m.locationId && allowed.includes(m.locationId));
+  return ok ? null : NextResponse.json({ error: "Not found" }, { status: 404 });
+}
+
 export async function requireLeadInScope(
   leadId: string,
   g: Extract<MarketingGuard, { ok: true }>,

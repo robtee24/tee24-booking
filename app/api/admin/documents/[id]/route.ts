@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { getCurrentAdmin, canAccessLocation } from "@/lib/access";
+import { getCurrentAdmin } from "@/lib/access";
+import { getActorContext } from "@/lib/actor";
+import { canInOrg } from "@/lib/org-scope";
+import type { Permission } from "@/lib/permissions";
 import { updateDocument } from "@/services/document.service";
 
 export const dynamic = "force-dynamic";
@@ -21,16 +24,19 @@ function toSafeHtml(input: string, format: "text" | "html"): string {
     .replace(/javascript:/gi, "");
 }
 
-async function loadDoc(id: string) {
+/**
+ * Documents are org-level templates. A SCOPED admin must hold `permission`
+ * for one of THEIR locations inside the document's organization (not merely
+ * any location in that org).
+ */
+async function loadDoc(id: string, permission: Permission) {
   const admin = await getCurrentAdmin();
   if (!admin) return { ok: false as const, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   const doc = await getPrisma().document.findUnique({ where: { id } });
   if (!doc) return { ok: false as const, response: NextResponse.json({ error: "Document not found" }, { status: 404 }) };
-  if (doc.organizationId) {
-    const loc = await getPrisma().location.findFirst({ where: { organizationId: doc.organizationId }, select: { id: true } });
-    if (loc && !canAccessLocation(admin.role, admin.locations.map((l) => l.locationId), loc.id)) {
-      return { ok: false as const, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-    }
+  const actor = await getActorContext();
+  if (!(await canInOrg(actor, permission, doc.organizationId))) {
+    return { ok: false as const, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
   return { ok: true as const, admin, doc };
 }
@@ -38,7 +44,7 @@ async function loadDoc(id: string) {
 /** GET /api/admin/documents/[id] */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const g = await loadDoc(id);
+  const g = await loadDoc(id, "document.view-library");
   if (!g.ok) return g.response;
   return NextResponse.json({ ok: true, document: g.doc });
 }
@@ -49,7 +55,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const g = await loadDoc(id);
+  const g = await loadDoc(id, "document.create");
   if (!g.ok) return g.response;
   let body: Record<string, unknown>;
   try {

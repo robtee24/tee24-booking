@@ -1,7 +1,8 @@
 // services/otp.service.ts
 
-import { randomInt, timingSafeEqual } from "crypto";
+import { createHmac, randomInt, timingSafeEqual } from "crypto";
 import { ENV } from "@/lib/env";
+import { resolveJwtSecret } from "@/lib/jwt-secret";
 import { getPrisma } from "@/lib/db";
 import { sendSms } from "@/lib/openphone";
 import { toE164 } from "@/lib/phone";
@@ -20,6 +21,20 @@ function codesMatch(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
   return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+/**
+ * Codes are stored as a keyed hash so a database read (backup, leaked
+ * connection string, SQL injection elsewhere) doesn't hand out live login codes.
+ * The pepper comes from env; in production a configured secret is required.
+ */
+let pepperCache: Buffer | null = null;
+function pepper(): Buffer {
+  if (!pepperCache) pepperCache = Buffer.from(resolveJwtSecret(["OTP_PEPPER", "ADMIN_JWT_SECRET", "AUTH_SECRET"], "dev-otp-pepper"));
+  return pepperCache;
+}
+function hashCode(phone: string, code: string): string {
+  return createHmac("sha256", pepper()).update(`${phone}:${code}`).digest("hex");
 }
 
 /**
@@ -73,10 +88,11 @@ export class OtpService {
     const code = this.generateCode();
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
+    const stored = hashCode(phone, code);
     await getPrisma().otp.upsert({
       where: { phone },
-      update: { code, expiresAt, attempts: 0 },
-      create: { phone, code, expiresAt },
+      update: { code: stored, expiresAt, attempts: 0 },
+      create: { phone, code: stored, expiresAt },
     });
 
     const message = this.buildMessage(code, purpose, ttl);
@@ -117,7 +133,10 @@ export class OtpService {
       await getPrisma().otp.delete({ where: { phone } }).catch(() => undefined);
       return { ok: false, reason: "TOO_MANY_ATTEMPTS" };
     }
-    if (!codesMatch(record.code, codeStr)) {
+    // Rows written before hashing was introduced hold the 6-digit code itself;
+    // they expire within minutes, so accept either form during the transition.
+    const expected = /^\d{6}$/.test(record.code) ? codeStr : hashCode(phone, codeStr);
+    if (!codesMatch(record.code, expected)) {
       // Count the miss first so parallel guesses can't all slip under the cap.
       const updated = await getPrisma().otp.update({
         where: { phone },

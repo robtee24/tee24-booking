@@ -34,6 +34,14 @@ export async function POST(req: NextRequest) {
   const prisma = getPrisma();
   const externalId: string = event.id ?? event.event_id ?? event.data?.object?.id ?? `${Date.now()}`;
 
+  // Replay / redelivery guard: an event we already processed is acknowledged
+  // without re-running its side effects (mirrors the Square webhook).
+  const already = await prisma.webhookDelivery.findUnique({
+    where: { provider_externalId: { provider: "QUO", externalId } },
+    select: { status: true },
+  });
+  if (already?.status === "PROCESSED") return NextResponse.json({ ok: true, duplicate: true });
+
   const delivery = await prisma.webhookDelivery.upsert({
     where: { provider_externalId: { provider: "QUO", externalId } },
     create: {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { apiError, guardMarketing, readJson } from "../../../marketing/_shared";
+import { apiError, guardMarketing, readJson, requireMembersInScope } from "../../../marketing/_shared";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const prisma = getPrisma();
     const before = await prisma.referralPayout.findUnique({ where: { id } });
     if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const scope = await requireMembersInScope([before.referrerId], g);
+    if (scope) return scope;
     if (["SENT", "PAID"].includes(before.status) && body.status !== "PAID") return NextResponse.json({ error: "Payout already sent" }, { status: 400 });
     const after = await prisma.referralPayout.update({
       where: { id },

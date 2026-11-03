@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { getCurrentAdmin, canAccessLocation } from "@/lib/access";
+import { getActorContext } from "@/lib/actor";
+import { can } from "@/lib/permissions";
 import { createDocument } from "@/services/document.service";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,9 @@ export async function POST(req: NextRequest) {
   if (!location) return NextResponse.json({ error: "Location not found" }, { status: 404 });
   if (!canAccessLocation(admin.role, admin.locations.map((l) => l.locationId), location.id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!can(await getActorContext(), "document.create", { locationId: location.id })) {
+    return NextResponse.json({ error: 'Forbidden: missing permission "document.create"' }, { status: 403 });
   }
 
   const expiresAfterDays = body?.expiresAfterDays == null || body.expiresAfterDays === "" ? null : Math.max(1, Math.floor(Number(body.expiresAfterDays)) || 0) || null;

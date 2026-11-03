@@ -48,6 +48,7 @@ async function clearAll(req: NextRequest) {
         path,
         httpOnly: true,
         sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
         expires: new Date(0),
         maxAge: 0,
       });
