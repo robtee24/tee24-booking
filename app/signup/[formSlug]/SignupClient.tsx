@@ -6,8 +6,10 @@ import { Button, Card, CardHeader, Input, Money, Select } from "@/components/ui"
 import { CardForm } from "@/components/payments/CardForm";
 import { SignaturePad, type SignaturePadHandle } from "@/components/portal/SignaturePad";
 import type { SquarePublicConfig } from "@/lib/square";
-import { BadgePercent, Camera, Check, ChevronRight, FileCheck, RefreshCw, ShieldCheck, Upload, Users } from "lucide-react";
-import { guestCentsFor, guestIncrementCents, maxGuestsFor, membershipDisplayName, type SignupPromo } from "@/lib/membership-pricing";
+import { BadgePercent, Camera, Check, ChevronRight, FileCheck, RefreshCw, ShieldCheck, Upload, UserPlus, Users, X } from "lucide-react";
+import { familyAddonFor, familyMemberCents, guestCentsFor, guestIncrementCents, maxGuestsFor, membershipDisplayName, type SignupPromo } from "@/lib/membership-pricing";
+import { FamilyMemberFields, familyDraftValid, newFamilyDraft, type FamilyDraft } from "./FamilyMemberFields";
+import { ageFromDob, digitsOnly, escapeHtml, fileToPhotoDataUrl, fileToUploadDataUrl, formatPhone } from "./photo-utils";
 
 type Plan = {
   id: string;
@@ -23,6 +25,8 @@ type Plan = {
   maxGuests: number;
   dayPassGuestPricing: unknown;
   visitsPerPeriod: number | null;
+  familyBundle: boolean;
+  familyDiscountConfig: unknown;
 };
 
 type CustomField = { id: string; name: string; type: string; required: boolean; options: string[] | null };
@@ -76,87 +80,29 @@ type PhoneState =
 const STORAGE_REF_KEY = "tee24:ref";
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 
-function digitsOnly(v: string) {
-  return v.replace(/\D/g, "");
-}
-function formatPhone(v: string) {
-  const d = digitsOnly(v).replace(/^1(?=\d{10})/, "").slice(0, 10);
-  if (d.length < 4) return d;
-  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-}
-function ageFromDob(dob: string): number | null {
-  if (!dob) return null;
-  const d = new Date(dob + "T00:00:00");
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
-  return age;
-}
 function cadenceLabel(p: Plan) {
   if (p.productType === "DAY_PASS") return p.durationDays && p.durationDays > 1 ? `${p.durationDays}-day pass` : "day pass";
   if (p.productType === "PUNCH_CARD") return "one-time";
   if (p.billingCadence === "ONE_OFF") return p.durationDays ? `${p.durationDays} days` : "one-time";
   return `/ ${p.billingCadence.toLowerCase()}`;
 }
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
-
-/** Downscale a camera/gallery image to a small JPEG data URL before upload. */
-async function fileToPhotoDataUrl(file: File, max = 640): Promise<string> {
-  let source: ImageBitmap | HTMLImageElement;
-  try {
-    source = await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
-  } catch {
-    source = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Could not read that image"));
-      img.src = URL.createObjectURL(file);
-    });
-  }
-  const w = "width" in source ? source.width : 0;
-  const h = "height" in source ? source.height : 0;
-  const scale = Math.min(1, max / Math.max(w, h));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(w * scale));
-  canvas.height = Math.max(1, Math.round(h * scale));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not process image");
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.85);
-}
-
-/** Read an ID photo / PDF as a data URL (images are downscaled, PDFs sent as-is). */
-async function fileToUploadDataUrl(file: File): Promise<string> {
-  if (file.type === "application/pdf") {
-    if (file.size > 6 * 1024 * 1024) throw new Error("PDF must be under 6 MB");
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error("Could not read that file"));
-      r.readAsDataURL(file);
-    });
-  }
-  return fileToPhotoDataUrl(file, 1600);
-}
-
 export function SignupClient({ form, plans, promos, customFields, documents, utm, referralCode: refFromUrl, square, staging = false }: FormProps) {
   const stagingQs = staging ? "&staging=1" : "";
   const [step, setStep] = useState<Step>(1);
   const [selectedPlanId, setSelectedPlanId] = useState(form.defaultPlanId ?? plans[0]?.id ?? "");
   const [guestCount, setGuestCount] = useState(0);
-  // Signup promotion (mutually exclusive with a discount code)
-  const [promoId, setPromoId] = useState<string | null>(null);
-  const [promoPreview, setPromoPreview] = useState<{ ok: boolean; text: string; amountCents: number } | null>(null);
-  const [promoIdFile, setPromoIdFile] = useState<{ name: string; dataUrl: string } | null>(null);
-  const [promoIdBusy, setPromoIdBusy] = useState(false);
-  const [promoIdError, setPromoIdError] = useState<string | null>(null);
-  const [promoAck, setPromoAck] = useState(false);
-  const promoIdInputRef = React.useRef<HTMLInputElement>(null);
+  // Signup promotions — any number can be combined, with each other and with discount codes
+  const [promoIds, setPromoIds] = useState<string[]>([]);
+  const [promoPreviews, setPromoPreviews] = useState<Record<string, { ok: boolean; text: string; amountCents: number; scope: string }>>({});
+  const [promoIdFiles, setPromoIdFiles] = useState<Record<string, { name: string; dataUrl: string }>>({});
+  const [promoIdBusy, setPromoIdBusy] = useState<string | null>(null);
+  const [promoIdErrors, setPromoIdErrors] = useState<Record<string, string>>({});
+  const [promoAcks, setPromoAcks] = useState<Record<string, boolean>>({});
+  const promoIdInputRefs = React.useRef<Record<string, HTMLInputElement | null>>({});
+  // Family add-on (extra members at a % off, billed to this account)
+  const [family, setFamily] = useState<FamilyDraft[]>([]);
+  const familySigRefs = React.useRef<Record<string, SignaturePadHandle | null>>({});
+  const [familySigEmpty, setFamilySigEmpty] = useState<Record<string, boolean>>({});
   const [profile, setProfile] = useState({
     firstName: "",
     lastName: "",
@@ -173,7 +119,8 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [ec, setEc] = useState({ name: "", phone: "", relationship: "" });
   const [discount, setDiscount] = useState("");
-  const [discountPreview, setDiscountPreview] = useState<{ ok: boolean; text: string; amountCents: number } | null>(null);
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  const [appliedCodes, setAppliedCodes] = useState<Array<{ code: string; text: string; amountCents: number; scope: string }>>([]);
   const [checkingCode, setCheckingCode] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [emailConsent, setEmailConsent] = useState(true);
@@ -226,55 +173,90 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
   const isDayPass = plan?.productType === "DAY_PASS";
   const displayName = plan ? membershipDisplayName(plan.name, isDayPass ? 0 : guestCount) : "";
   const eligiblePromos = useMemo(() => (plan ? promos.filter((pr) => pr.planIds.length === 0 || pr.planIds.includes(plan.id)) : []), [promos, plan]);
-  const promo = eligiblePromos.find((pr) => pr.id === promoId) ?? null;
-  const promoNeedsId = !!promo?.requiresIdUpload;
-  const promoNeedsAck = !!(promo?.commitmentMonths && promo.commitmentAcknowledgement);
-  const promoOk = !promo || ((!promoNeedsId || !!promoIdFile) && (!promoNeedsAck || promoAck));
+  const selectedPromos = eligiblePromos.filter((pr) => promoIds.includes(pr.id));
+  const promoMissingId = selectedPromos.find((pr) => pr.requiresIdUpload && !promoIdFiles[pr.id]) ?? null;
+  const promoMissingAck = selectedPromos.find((pr) => pr.commitmentMonths && pr.commitmentAcknowledgement && !promoAcks[pr.id]) ?? null;
+  const promoOk = !promoMissingId && !promoMissingAck;
+  const maxCommitment = selectedPromos.reduce((m, pr) => Math.max(m, pr.commitmentMonths ?? 0), 0);
+  const familyAddon = plan ? familyAddonFor(plan) : null;
+  const familyEachCents = plan && familyAddon ? familyMemberCents(plan.priceCents, familyAddon.percentOff) : 0;
+  const perLabel = plan?.billingCadence === "YEARLY" ? "yr" : "mo";
+  const promoKey = promoIds.join(",");
+  const codeKey = appliedCodes.map((c) => c.code).join(",");
 
-  // Server-authoritative preview of the selected promotion for this plan + guest count
+  // Server-authoritative preview of each selected promotion for this plan + guest count
   React.useEffect(() => {
-    if (!promo || !plan) { setPromoPreview(null); return; }
+    if (!plan || promoIds.length === 0) { setPromoPreviews({}); return; }
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&promoId=${encodeURIComponent(promo.id)}${stagingQs}`);
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) setPromoPreview({ ok: true, text: json.description, amountCents: json.amountCents ?? 0 });
-        else setPromoPreview({ ok: false, text: json.reason ?? "This promotion isn't available", amountCents: 0 });
-      } catch {
-        if (!cancelled) setPromoPreview({ ok: false, text: "Could not load promotion", amountCents: 0 });
-      }
+      const entries = await Promise.all(promoIds.map(async (id) => {
+        try {
+          const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&promoId=${encodeURIComponent(id)}${stagingQs}`);
+          const json = await res.json();
+          return [id, json.ok ? { ok: true, text: json.description, amountCents: json.amountCents ?? 0, scope: json.scope ?? "ONE_TIME" } : { ok: false, text: json.reason ?? "This promotion isn't available", amountCents: 0, scope: "" }] as const;
+        } catch {
+          return [id, { ok: false, text: "Could not load promotion", amountCents: 0, scope: "" }] as const;
+        }
+      }));
+      if (!cancelled) setPromoPreviews(Object.fromEntries(entries));
     })();
     return () => { cancelled = true; };
-  }, [promo, plan, guestCount, form.slug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan?.id, guestCount, form.slug, promoKey]);
+
+  // Re-price applied discount codes when the plan or guest count changes
+  React.useEffect(() => {
+    if (!plan || appliedCodes.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const next = await Promise.all(appliedCodes.map(async (c) => {
+        try {
+          const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(c.code)}${stagingQs}`);
+          const json = await res.json();
+          return json.ok ? { ...c, text: json.description, amountCents: json.amountCents ?? 0, scope: json.scope ?? c.scope } : null;
+        } catch {
+          return c;
+        }
+      }));
+      if (!cancelled) setAppliedCodes(next.filter((c): c is NonNullable<typeof c> => Boolean(c)));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan?.id, guestCount, form.slug, codeKey]);
 
   function choosePlan(id: string) {
     const next = plans.find((p) => p.id === id);
     setSelectedPlanId(id);
-    setDiscountPreview(null);
+    setDiscountError(null);
     setGuestCount((g) => Math.min(g, next ? maxGuestsFor(next) : 0));
-    const stillEligible = promoId && promos.some((pr) => pr.id === promoId && (pr.planIds.length === 0 || (next && pr.planIds.includes(next.id))));
-    if (!stillEligible) { setPromoId(null); setPromoAck(false); }
+    setPromoIds((cur) => cur.filter((pid) => promos.some((pr) => pr.id === pid && (pr.planIds.length === 0 || (next && pr.planIds.includes(next.id))))));
+    const addon = next ? familyAddonFor(next) : null;
+    setFamily((cur) => cur.slice(0, addon ? addon.maxAdditional : 0));
   }
-  function choosePromo(id: string | null) {
-    setPromoId((cur) => (cur === id ? null : id));
-    setPromoAck(false);
-    setPromoIdError(null);
-    if (id) { setDiscount(""); setDiscountPreview(null); }
+  function togglePromo(id: string) {
+    setPromoIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    setPromoIdErrors((e) => ({ ...e, [id]: "" }));
   }
-  async function onPromoIdPicked(file: File | null) {
+  async function onPromoIdPicked(id: string, file: File | null) {
     if (!file) return;
-    setPromoIdBusy(true);
-    setPromoIdError(null);
+    setPromoIdBusy(id);
+    setPromoIdErrors((e) => ({ ...e, [id]: "" }));
     try {
-      setPromoIdFile({ name: file.name, dataUrl: await fileToUploadDataUrl(file) });
+      const dataUrl = await fileToUploadDataUrl(file);
+      setPromoIdFiles((f) => ({ ...f, [id]: { name: file.name, dataUrl } }));
     } catch (e) {
-      setPromoIdError(e instanceof Error ? e.message : "Could not read that file");
+      setPromoIdErrors((er) => ({ ...er, [id]: e instanceof Error ? e.message : "Could not read that file" }));
     } finally {
-      setPromoIdBusy(false);
-      if (promoIdInputRef.current) promoIdInputRef.current.value = "";
+      setPromoIdBusy(null);
+      const el = promoIdInputRefs.current[id];
+      if (el) el.value = "";
     }
+  }
+  function setFamilyCount(n: number) {
+    setFamily((cur) => (n > cur.length ? [...cur, ...Array.from({ length: n - cur.length }, () => newFamilyDraft())] : cur.slice(0, n)));
+  }
+  function removeFamilyMember(key: string) {
+    setFamily((cur) => cur.filter((f) => f.key !== key));
   }
   const isRequired = (key: string) => form.requiredFields.includes(key);
   const age = ageFromDob(profile.dob);
@@ -287,8 +269,8 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     const seen = new Set([...memberships, ...passes, ...packs].map((p) => p.id));
     const other = plans.filter((p) => !seen.has(p.id));
     return [
+      { label: "Day pass", items: passes },
       { label: "Memberships", items: memberships },
-      { label: "Passes", items: passes },
       { label: "Lessons & packs", items: [...packs, ...other] },
     ].filter((g) => g.items.length > 0);
   }, [plans]);
@@ -299,13 +281,20 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     const guests = plan ? guestCentsFor(plan, guestCount) : 0;
     const price = base + guests;
     const fee = plan?.signupFeeCents ?? 0;
-    const discAmount = promo ? (promoPreview?.ok ? promoPreview.amountCents : 0) : discountPreview?.ok ? discountPreview.amountCents : 0;
-    const disc = Math.min(price, discAmount);
-    const taxable = price + fee - disc;
+    const familyCents = familyEachCents * family.length;
+    const promoDisc = selectedPromos.reduce((sum, pr) => sum + (promoPreviews[pr.id]?.ok ? promoPreviews[pr.id]!.amountCents : 0), 0);
+    const codeDisc = appliedCodes.reduce((sum, c) => sum + c.amountCents, 0);
+    const disc = Math.min(price, promoDisc + codeDisc);
+    // What renews each period: standing (non one-time) discounts keep applying
+    const recurringDisc = Math.min(price,
+      selectedPromos.reduce((sum, pr) => sum + (promoPreviews[pr.id]?.ok && promoPreviews[pr.id]!.scope !== "ONE_TIME" ? promoPreviews[pr.id]!.amountCents : 0), 0) +
+      appliedCodes.reduce((sum, c) => sum + (c.scope !== "ONE_TIME" ? c.amountCents : 0), 0));
+    const taxable = price + familyCents + fee - disc;
     const tax = form.collectTax && form.location ? Math.round((taxable * form.location.taxRateBps) / 10_000) : 0;
     const surcharge = square.configured && form.location ? Math.round(((taxable + tax) * form.location.cardSurchargeBps) / 10_000) : 0;
-    return { base, guests, price, fee, disc, tax, surcharge, total: taxable + tax + surcharge };
-  }, [plan, guestCount, promo, promoPreview, discountPreview, form.collectTax, form.location, square.configured]);
+    return { base, guests, price, familyCents, fee, disc, recurring: price + familyCents - recurringDisc, tax, surcharge, total: taxable + tax + surcharge };
+  }, [plan, guestCount, familyEachCents, family.length, selectedPromos, promoPreviews, appliedCodes, form.collectTax, form.location, square.configured]);
+  const discountLabel = [...selectedPromos.map((pr) => pr.title), ...appliedCodes.map((c) => c.code)].join(" + ") || "Discount";
 
   const phoneVerified = phoneState.status === "verified";
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email.trim());
@@ -313,10 +302,16 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
   const photoOk = !!photo || !(isRequired("photo") || form.photoRequired);
   const ecOk = form.emergencyContactMode !== "required" || (!!ec.name.trim() && digitsOnly(ec.phone).length === 10);
   const docsOk = documents.every((d) => !sigEmpty[d.id]) && (!isMinor || (!!guardianName.trim() && !guardianEmpty)) && (documents.length === 0 || agree);
+  const takenEmails = [profile.email.trim().toLowerCase(), ...family.map((f) => f.email.trim().toLowerCase())];
+  const takenPhones = [digitsOnly(profile.phone), ...family.map((f) => digitsOnly(f.phone))];
+  const familyProblem = family.length && isMinor
+    ? "You must be 18 or older to add family members."
+    : family.map((f) => familyDraftValid(f, { requiredFields: form.requiredFields, photoRequired: form.photoRequired || isRequired("photo"), docsSigned: documents.every((d) => !familySigEmpty[`${f.key}:${d.id}`]), takenEmails, takenPhones })).find(Boolean) ?? null;
+  const familyOk = !familyProblem;
   const profileValid =
     !!profile.firstName.trim() && !!profile.lastName.trim() && emailOk && phoneVerified &&
     !!profile.dob && age !== null && age >= 0 && age < 120 && !!profile.gender &&
-    addressOk && photoOk && docsOk && ecOk &&
+    addressOk && photoOk && docsOk && ecOk && familyOk &&
     customFields.every((f) => !f.required || Boolean(custom[f.id]));
 
   function set<K extends keyof typeof profile>(k: K, v: (typeof profile)[K]) {
@@ -382,16 +377,22 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     }
   }
 
-  async function checkCode() {
-    if (!discount.trim() || !plan) return;
+  async function applyCode() {
+    const code = discount.trim().toUpperCase();
+    if (!code || !plan) return;
+    if (appliedCodes.some((c) => c.code.toUpperCase() === code)) { setDiscountError("That code is already applied."); return; }
     setCheckingCode(true);
+    setDiscountError(null);
     try {
-      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(discount.trim())}${stagingQs}`);
+      const res = await fetch(`/api/signup?formSlug=${encodeURIComponent(form.slug)}&planId=${encodeURIComponent(plan.id)}&guestCount=${guestCount}&code=${encodeURIComponent(code)}${stagingQs}`);
       const json = await res.json();
-      if (json.ok) { setDiscountPreview({ ok: true, text: `${json.code}: ${json.description}`, amountCents: json.amountCents ?? 0 }); setPromoId(null); setPromoAck(false); }
-      else setDiscountPreview({ ok: false, text: json.reason ?? "Invalid code", amountCents: 0 });
+      if (json.ok) {
+        if (selectedPromos.some((pr) => pr.code.toUpperCase() === String(json.code).toUpperCase())) { setDiscountError("That promotion is already selected above."); return; }
+        setAppliedCodes((c) => [...c, { code: json.code ?? code, text: json.description, amountCents: json.amountCents ?? 0, scope: json.scope ?? "ONE_TIME" }]);
+        setDiscount("");
+      } else setDiscountError(json.reason ?? "Invalid code");
     } catch {
-      setDiscountPreview({ ok: false, text: "Could not check code", amountCents: 0 });
+      setDiscountError("Could not check code");
     } finally {
       setCheckingCode(false);
     }
@@ -404,7 +405,21 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
       return { documentId: d.id, signatureSvg: svg };
     });
     const guardian = isMinor ? { name: guardianName.trim(), signatureSvg: guardianRef.current?.toSvgDataUrl() ?? guardianRef.current?.toDataUrl() ?? null } : null;
-    return { signatures, guardian };
+    const familyMembers = family.map((f) => ({
+      firstName: f.firstName.trim(),
+      lastName: f.lastName.trim(),
+      email: f.email.trim(),
+      phone: f.phone,
+      dob: f.dob,
+      gender: f.gender,
+      relationship: f.relationship,
+      photoDataUrl: f.photo,
+      signatures: documents.map((d) => {
+        const pad = familySigRefs.current[`${f.key}:${d.id}`];
+        return { documentId: d.id, signatureSvg: pad?.toSvgDataUrl() ?? pad?.toDataUrl() ?? null };
+      }),
+    }));
+    return { signatures, guardian, familyMembers };
   }
   // Signature pads unmount when leaving step 2, so capture their strokes on the way out.
   const [captured, setCaptured] = useState<ReturnType<typeof collectSignatures> | null>(null);
@@ -416,6 +431,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
   function backToDetails() {
     setSigEmpty(Object.fromEntries(documents.map((d) => [d.id, true])));
     setGuardianEmpty(true);
+    setFamilySigEmpty({});
     setCaptured(null);
     setStep(2);
   }
@@ -441,11 +457,12 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
           guardian: sigs.guardian,
           customFields: custom,
           emergencyContact: ec.name.trim() ? ec : null,
-          discountCode: !promo && discountPreview?.ok ? discount.trim() : null,
+          discountCodes: appliedCodes.map((c) => c.code),
           guestCount: maxGuests > 0 ? guestCount : 0,
-          promoDiscountId: promo?.id ?? null,
-          promoIdDataUrl: promo?.requiresIdUpload ? promoIdFile?.dataUrl ?? null : null,
-          promoAcknowledged: promo ? promoAck : false,
+          promoDiscountIds: selectedPromos.map((pr) => pr.id),
+          promoIdDataUrls: Object.fromEntries(selectedPromos.filter((pr) => pr.requiresIdUpload && promoIdFiles[pr.id]).map((pr) => [pr.id, promoIdFiles[pr.id]!.dataUrl])),
+          promoAcknowledged: selectedPromos.every((pr) => !pr.commitmentMonths || !pr.commitmentAcknowledgement || !!promoAcks[pr.id]),
+          familyMembers: sigs.familyMembers,
           smsConsent,
           emailConsent,
           utm,
@@ -558,7 +575,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
         {/* ───────────────── Step 1: pass or membership + code ───────────────── */}
         {step === 1 && (
           <Card>
-            <CardHeader title="Choose a pass or membership" subtitle="You can change plans any time from your member portal." />
+            <CardHeader title="Choose a pass or membership" subtitle="Every option includes 24/7 door access via the Tee24 app. Members can change plans any time." />
             {groups.map((g) => (
               <div key={g.label} className="mt-5">
                 {groups.length > 1 && <h3 className="mb-2 text-apple-xs font-semibold uppercase tracking-wide text-apple-text-tertiary">{g.label}</h3>}
@@ -599,20 +616,24 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </div>
             ))}
 
+            {plan && (maxGuests > 0 || familyAddon) && (
+              <h3 className="mt-6 border-t border-apple-divider pt-5 text-apple-xs font-semibold uppercase tracking-wide text-apple-text-tertiary">Add-ons</h3>
+            )}
+
             {plan && maxGuests > 0 && (
-              <div className="mt-6 border-t border-apple-divider pt-5">
+              <div className="mt-3">
                 <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-apple-blue/10 text-apple-blue"><Users className="h-4 w-4" /></span>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-medium text-apple-text">
                       {isDayPass
-                        ? "How many guests will be coming with you?"
-                        : <>Would you like to add a complimentary guest on every visit for <Money cents={plan.guestAddonCents ?? 0} currency={currency} />/{plan.billingCadence === "YEARLY" ? "yr" : "mo"}?</>}
+                        ? "Bringing guests today?"
+                        : <>Guests — <Money cents={plan.guestAddonCents ?? 0} currency={currency} /> per guest per {plan.billingCadence === "YEARLY" ? "year" : "month"}</>}
                     </h3>
                     <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">
                       {isDayPass
-                        ? <>Guest pricing: {Array.from({ length: maxGuests }, (_, i) => i + 1).map((n, i) => <span key={n}>{i > 0 && ", "}guest {n} <Money cents={guestIncrementCents(plan, n)} currency={currency} /></span>)}.</>
-                        : <>Bring up to {maxGuests} guest{maxGuests === 1 ? "" : "s"} on every visit — each one is an extra <Money cents={plan.guestAddonCents ?? 0} currency={currency} /> per {plan.billingCadence === "YEARLY" ? "year" : "month"}. Your membership becomes “{membershipDisplayName(plan.name, Math.max(1, guestCount))}”.</>}
+                        ? <>Up to {maxGuests}. Guest pricing: {Array.from({ length: maxGuests }, (_, i) => i + 1).map((n, i) => <span key={n}>{i > 0 && ", "}guest {n} <Money cents={guestIncrementCents(plan, n)} currency={currency} /></span>)}.</>
+                        : <>Bring up to {maxGuests} guest{maxGuests === 1 ? "" : "s"} with you on every visit. Your membership becomes “{membershipDisplayName(plan.name, Math.max(1, guestCount))}”.</>}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Guests">
                       {Array.from({ length: maxGuests + 1 }, (_, n) => {
@@ -641,19 +662,55 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </div>
             )}
 
+            {plan && familyAddon && (
+              <div className="mt-5">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-apple-blue/10 text-apple-blue"><UserPlus className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-medium text-apple-text">Family members — {familyAddon.percentOff}% off, <Money cents={familyEachCents} currency={currency} />/{perLabel} each</h3>
+                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">
+                      Add up to {familyAddon.maxAdditional} family member{familyAddon.maxAdditional === 1 ? "" : "s"} on the same {plan.name} plan. Each gets their own full membership, app login and door access — all billed to your card. You&apos;ll enter their details on the next step.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Family members">
+                      {Array.from({ length: familyAddon.maxAdditional + 1 }, (_, n) => {
+                        const selected = family.length === n;
+                        return (
+                          <button
+                            key={n}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setFamilyCount(n)}
+                            className={[
+                              "rounded-apple border px-3 py-2 text-left text-apple-sm transition-colors",
+                              selected ? "border-apple-blue bg-apple-blue/5 ring-2 ring-apple-blue/30" : "border-apple-border bg-white hover:border-apple-blue/30",
+                            ].join(" ")}
+                          >
+                            <div className="font-medium text-apple-text">{n === 0 ? "Just me" : n === 1 ? "1 family member" : `${n} family members`}</div>
+                            <div className="text-apple-xs text-apple-text-tertiary">{n === 0 ? "—" : <>+<Money cents={familyEachCents * n} currency={currency} />/{perLabel}</>}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {plan && eligiblePromos.length > 0 && (
               <div className="mt-6 border-t border-apple-divider pt-5">
                 <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-apple-green/10 text-apple-green"><BadgePercent className="h-4 w-4" /></span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-apple-text">Current promotions</h3>
-                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">Pick one if it applies to you. Promotions can’t be combined with a discount code.</p>
+                    <h3 className="font-medium text-apple-text">Discounts</h3>
+                    <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">Select every promotion that applies to you — they can be combined with each other and with a discount code.</p>
                     <div className="mt-3 space-y-2">
                       {eligiblePromos.map((pr) => {
-                        const selected = promoId === pr.id;
+                        const selected = promoIds.includes(pr.id);
+                        const preview = promoPreviews[pr.id];
                         return (
                           <div key={pr.id} className={["rounded-apple border transition-colors", selected ? "border-apple-green bg-apple-green/5 ring-2 ring-apple-green/20" : "border-apple-border bg-white hover:border-apple-green/40"].join(" ")}>
-                            <button type="button" onClick={() => choosePromo(pr.id)} aria-pressed={selected} className="flex w-full items-start justify-between gap-3 p-4 text-left">
+                            <button type="button" onClick={() => togglePromo(pr.id)} aria-pressed={selected} className="flex w-full items-start justify-between gap-3 p-4 text-left">
                               <div className="min-w-0">
                                 <div className="font-medium text-apple-text">{pr.title}</div>
                                 {pr.description && <div className="mt-1 text-apple-xs text-apple-text-secondary">{pr.description}</div>}
@@ -665,31 +722,32 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                                   {pr.requiresIdUpload ? " · ID required" : ""}
                                 </div>
                               </div>
-                              <span className={["mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-apple-green bg-apple-green text-white" : "border-apple-border"].join(" ")}>
+                              <span className={["mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border", selected ? "border-apple-green bg-apple-green text-white" : "border-apple-border"].join(" ")}>
                                 {selected && <Check className="h-3 w-3" />}
                               </span>
                             </button>
+                            {selected && preview && !preview.ok && <p className="px-4 pb-3 text-apple-xs text-apple-red">{preview.text}</p>}
                             {selected && (pr.requiresIdUpload || (pr.commitmentMonths && pr.commitmentAcknowledgement)) && (
                               <div className="space-y-3 border-t border-apple-divider px-4 py-3">
                                 {pr.requiresIdUpload && (
                                   <div>
                                     <div className="text-apple-sm font-medium text-apple-text">{pr.idUploadLabel ?? "Upload your qualifying ID"} <span className="text-apple-red">*</span></div>
                                     <p className="mt-0.5 text-apple-xs text-apple-text-tertiary">A clear photo or PDF of your military, veteran, first-responder, student or government ID. Our staff verifies it before your first visit.</p>
-                                    <input ref={promoIdInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => onPromoIdPicked(e.target.files?.[0] ?? null)} />
+                                    <input ref={(el) => { promoIdInputRefs.current[pr.id] = el; }} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => onPromoIdPicked(pr.id, e.target.files?.[0] ?? null)} />
                                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                                      <Button variant="secondary" size="sm" onClick={() => promoIdInputRef.current?.click()} loading={promoIdBusy}>
-                                        <Upload className="h-4 w-4" /> {promoIdFile ? "Replace file" : "Upload ID"}
+                                      <Button variant="secondary" size="sm" onClick={() => promoIdInputRefs.current[pr.id]?.click()} loading={promoIdBusy === pr.id}>
+                                        <Upload className="h-4 w-4" /> {promoIdFiles[pr.id] ? "Replace file" : "Upload ID"}
                                       </Button>
-                                      {promoIdFile && (
-                                        <span className="inline-flex items-center gap-1 text-apple-xs text-apple-green"><FileCheck className="h-4 w-4" /> {promoIdFile.name}</span>
+                                      {promoIdFiles[pr.id] && (
+                                        <span className="inline-flex items-center gap-1 text-apple-xs text-apple-green"><FileCheck className="h-4 w-4" /> {promoIdFiles[pr.id]!.name}</span>
                                       )}
                                     </div>
-                                    {promoIdError && <p className="mt-1 text-apple-xs text-apple-red">{promoIdError}</p>}
+                                    {promoIdErrors[pr.id] && <p className="mt-1 text-apple-xs text-apple-red">{promoIdErrors[pr.id]}</p>}
                                   </div>
                                 )}
                                 {pr.commitmentMonths && pr.commitmentAcknowledgement ? (
                                   <label className="flex items-start gap-2 text-apple-sm text-apple-text">
-                                    <input type="checkbox" className="mt-0.5 h-4 w-4 rounded accent-apple-blue" checked={promoAck} onChange={(e) => setPromoAck(e.target.checked)} />
+                                    <input type="checkbox" className="mt-0.5 h-4 w-4 rounded accent-apple-blue" checked={!!promoAcks[pr.id]} onChange={(e) => setPromoAcks((a) => ({ ...a, [pr.id]: e.target.checked }))} />
                                     <span>{pr.commitmentAcknowledgement} <span className="text-apple-red">*</span></span>
                                   </label>
                                 ) : null}
@@ -699,19 +757,28 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                         );
                       })}
                     </div>
-                    {promo && promoPreview && !promoPreview.ok && <p className="mt-2 text-apple-xs text-apple-red">{promoPreview.text}</p>}
                   </div>
                 </div>
               </div>
             )}
 
-            {form.allowDiscountCode && !promo && (
-              <div className="mt-6 border-t border-apple-divider pt-4">
+            {form.allowDiscountCode && (
+              <div className={`mt-6 ${eligiblePromos.length ? "" : "border-t border-apple-divider pt-4"}`}>
                 <div className="flex items-end gap-2">
-                  <Input label="Discount code (optional)" value={discount} autoCapitalize="characters" onChange={(e) => { setDiscount(e.target.value.toUpperCase()); setDiscountPreview(null); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void checkCode(); } }} />
-                  <Button variant="secondary" onClick={checkCode} loading={checkingCode} disabled={!discount.trim() || !plan}>Apply</Button>
+                  <Input label={appliedCodes.length ? "Add another discount code" : "Discount code (optional)"} value={discount} autoCapitalize="characters" onChange={(e) => { setDiscount(e.target.value.toUpperCase()); setDiscountError(null); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void applyCode(); } }} />
+                  <Button variant="secondary" onClick={applyCode} loading={checkingCode} disabled={!discount.trim() || !plan}>Apply</Button>
                 </div>
-                {discountPreview && <p className={`mt-1 text-apple-xs ${discountPreview.ok ? "text-apple-green" : "text-apple-red"}`}>{discountPreview.text}</p>}
+                {discountError && <p className="mt-1 text-apple-xs text-apple-red">{discountError}</p>}
+                {appliedCodes.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {appliedCodes.map((c) => (
+                      <li key={c.code} className="inline-flex items-center gap-1.5 rounded-full border border-apple-green/40 bg-apple-green/5 py-1 pl-3 pr-1.5 text-apple-xs text-apple-green">
+                        <Check className="h-3 w-3" /> <span className="font-medium">{c.code}</span> <span className="text-apple-text-secondary">· {c.text}</span>
+                        <button type="button" aria-label={`Remove ${c.code}`} onClick={() => setAppliedCodes((cur) => cur.filter((x) => x.code !== c.code))} className="ml-0.5 rounded-full p-0.5 text-apple-text-tertiary hover:bg-apple-fill-secondary hover:text-apple-text"><X className="h-3 w-3" /></button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 
@@ -719,8 +786,9 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               <dl className="mt-6 space-y-1.5 rounded-apple bg-apple-fill-secondary p-4 text-apple-sm">
                 <Row label={plan.name} value={<Money cents={totals.base} currency={currency} />} />
                 {totals.guests > 0 && <Row label={guestCount === 1 ? "1 guest" : `${guestCount} guests`} value={<Money cents={totals.guests} currency={currency} />} />}
+                {totals.familyCents > 0 && <Row label={family.length === 1 ? "1 family member" : `${family.length} family members`} value={<Money cents={totals.familyCents} currency={currency} />} />}
                 {totals.fee > 0 && <Row label="Signup fee" value={<Money cents={totals.fee} currency={currency} />} />}
-                {totals.disc > 0 && <Row label={promo ? promo.title : "Discount"} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
+                {totals.disc > 0 && <Row label={discountLabel} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
                 {totals.tax > 0 && <Row label="Tax" value={<Money cents={totals.tax} currency={currency} />} />}
                 {totals.surcharge > 0 && <Row label="Card surcharge" value={<Money cents={totals.surcharge} currency={currency} />} />}
                 <div className="my-1 border-t border-apple-divider" />
@@ -729,7 +797,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
             )}
 
             <div className="mt-6 flex items-center justify-end gap-3">
-              {plan && !promoOk && <p className="text-apple-xs text-apple-text-tertiary">{promoNeedsId && !promoIdFile ? "Upload your ID to continue." : "Check the box to confirm the promotion terms."}</p>}
+              {plan && !promoOk && <p className="text-apple-xs text-apple-text-tertiary">{promoMissingId ? `Upload your ID for “${promoMissingId.title}” to continue.` : "Check the box to confirm the promotion terms."}</p>}
               <Button disabled={!plan || !promoOk} onClick={() => setStep(2)}>Continue</Button>
             </div>
           </Card>
@@ -926,6 +994,38 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </Card>
             )}
 
+            {family.length > 0 && plan && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pt-2">
+                  <UserPlus className="h-4 w-4 text-apple-blue" />
+                  <h2 className="text-apple-base font-semibold text-apple-text">Your family members</h2>
+                </div>
+                {isMinor && <p className="rounded-apple border border-apple-red/30 bg-apple-red/5 p-3 text-apple-sm text-apple-red">You must be 18 or older to add family members to your account.</p>}
+                {family.map((f, i) => (
+                  <FamilyMemberFields
+                    key={f.key}
+                    index={i}
+                    draft={f}
+                    onChange={(next) => setFamily((cur) => cur.map((x) => (x.key === f.key ? next : x)))}
+                    onRemove={() => removeFamilyMember(f.key)}
+                    documents={documents}
+                    photoRequired={form.photoRequired || isRequired("photo")}
+                    planName={plan.name}
+                    priceCents={familyEachCents}
+                    currency={currency}
+                    cadence={perLabel}
+                    holderName={`${profile.firstName} ${profile.lastName}`.trim()}
+                    locationName={form.location?.name ?? "Tee24"}
+                    sigRef={(docId, h) => { familySigRefs.current[`${f.key}:${docId}`] = h; }}
+                    onSigChange={(docId, empty) => setFamilySigEmpty((st) => ({ ...st, [`${f.key}:${docId}`]: empty }))}
+                  />
+                ))}
+                {familyAddon && family.length < familyAddon.maxAdditional && (
+                  <Button variant="secondary" size="sm" iconLeft={<UserPlus className="h-4 w-4" />} onClick={() => setFamilyCount(family.length + 1)}>Add another family member</Button>
+                )}
+              </div>
+            )}
+
             <Card>
               <div className="space-y-2 text-apple-sm">
                 <label className="flex items-start gap-2">
@@ -949,7 +1049,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
               </div>
               {!profileValid && (
                 <p className="mt-2 text-right text-apple-xs text-apple-text-tertiary">
-                  {!phoneVerified ? "Verify your mobile number to continue." : !docsOk ? "Sign the waiver to continue." : "Complete the required fields to continue."}
+                  {!phoneVerified ? "Verify your mobile number to continue." : !docsOk ? "Sign the waiver to continue." : familyProblem ? `Family: ${familyProblem}.` : "Complete the required fields to continue."}
                 </p>
               )}
             </Card>
@@ -966,10 +1066,11 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                 <Row label="Billed" value={cadenceLabel(plan).replace(/^\/ /, "")} />
                 <Row label="Price" value={<Money cents={totals.base} currency={currency} />} />
                 {totals.guests > 0 && <Row label={isDayPass ? `${guestCount} guest${guestCount === 1 ? "" : "s"} today` : `${guestCount} guest${guestCount === 1 ? "" : "s"} on every visit`} value={<Money cents={totals.guests} currency={currency} />} />}
+                {family.map((f) => <Row key={f.key} label={`Family: ${f.firstName} ${f.lastName}`.trim()} value={<Money cents={familyEachCents} currency={currency} />} />)}
                 {totals.fee > 0 && <Row label="Signup fee" value={<Money cents={totals.fee} currency={currency} />} />}
-                {totals.disc > 0 && <Row label={promo ? promo.title : "Discount"} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
-                {promo?.commitmentMonths ? <Row label="Minimum term" value={`${promo.commitmentMonths} months`} /> : null}
-                {promo?.requiresIdUpload && promoIdFile && <Row label="ID uploaded" value={<span className="text-apple-xs">{promoIdFile.name} · pending review</span>} />}
+                {totals.disc > 0 && <Row label={discountLabel} value={<span className="text-apple-green">−<Money cents={totals.disc} currency={currency} /></span>} />}
+                {maxCommitment > 0 ? <Row label="Minimum term" value={`${maxCommitment} months`} /> : null}
+                {selectedPromos.filter((pr) => pr.requiresIdUpload && promoIdFiles[pr.id]).map((pr) => <Row key={pr.id} label="ID uploaded" value={<span className="text-apple-xs">{promoIdFiles[pr.id]!.name} · pending review</span>} />)}
                 {totals.tax > 0 && <Row label="Tax" value={<Money cents={totals.tax} currency={currency} />} />}
                 {totals.surcharge > 0 && <Row label="Card surcharge" value={<Money cents={totals.surcharge} currency={currency} />} />}
                 <div className="my-2 border-t border-apple-divider" />
@@ -1018,7 +1119,7 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
                   >
                     {plan.productType === "RECURRING" && (
                       <p className="text-apple-xs text-apple-text-tertiary">
-                        Your card is saved securely with Square and charged <Money cents={promo && promo.scope !== "ONE_TIME" ? totals.price - totals.disc : totals.price} currency={currency} /> every {plan.billingCadence.toLowerCase().replace("ly", "")} until you cancel.{promo?.commitmentMonths ? ` ${promo.commitmentMonths}-month minimum applies.` : ""}
+                        Your card is saved securely with Square and charged <Money cents={totals.recurring} currency={currency} /> every {plan.billingCadence.toLowerCase().replace("ly", "")} until you cancel{family.length ? " — that covers you and your family members" : ""}.{maxCommitment ? ` ${maxCommitment}-month minimum applies.` : ""}
                       </p>
                     )}
                   </CardForm>

@@ -329,7 +329,58 @@ export async function onInvoicePaid(
       }
       if (!sub.paidThroughDate || sub.paidThroughDate < paidThrough) data.paidThroughDate = paidThrough;
       if (!sub.nextInvoiceDate || sub.nextInvoiceDate <= periodStart) data.nextInvoiceDate = paidThrough;
+      // A family add-on's own (prorated) invoice: it's paid by the account holder, so the
+      // family member's first period ends when the holder's does.
+      if (sub.familyOfSubscriptionId && sub.billedToMemberId === inv.memberId) {
+        const primary = await prisma.membershipSubscription.findUnique({ where: { id: sub.familyOfSubscriptionId }, select: { paidThroughDate: true, nextInvoiceDate: true } });
+        if (primary?.paidThroughDate) data.paidThroughDate = primary.paidThroughDate;
+        if (primary?.nextInvoiceDate) data.nextInvoiceDate = primary.nextInvoiceDate;
+      }
       await prisma.membershipSubscription.update({ where: { id: sub.id }, data });
+      if (sub.memberId !== inv.memberId) {
+        // Invoice paid by someone else (family add-on): activate the member it's for.
+        if (activated) await prisma.member.updateMany({ where: { id: sub.memberId, status: "PENDING" }, data: { status: "ACTIVE" } });
+        void computeDesiredAccessState(sub.memberId).then((d) => applyAccessState(sub.memberId, d)).catch((e) => console.warn("[billing] access sync failed", sub.memberId, e));
+        if (activated) {
+          const fm = await prisma.member.findUnique({ where: { id: sub.memberId }, select: { firstName: true, locationId: true, organizationId: true } });
+          if (fm) {
+            await emitMemberEvent("membership.activated", {
+              memberId: sub.memberId,
+              locationId: fm.locationId,
+              organizationId: fm.organizationId,
+              refs: { invoiceId: inv.id, subscriptionId: sub.id },
+              vars: { planName, firstName: fm.firstName, amount: (opts.paidCents / 100).toFixed(2), invoiceNumber: inv.number, method: opts.method },
+            });
+          }
+          activated = false; // don't tell the payer *they* were activated
+          renewed = false;
+        }
+      }
+
+      // Family add-ons billed on this invoice move with the account holder.
+      const familySubs = await prisma.membershipSubscription.findMany({
+        where: { familyOfSubscriptionId: sub.id, billedToMemberId: inv.memberId, status: { in: ["PENDING", "ACTIVE", "CANCEL_SCHEDULED"] } },
+        select: { id: true, memberId: true, status: true, paidThroughDate: true, nextInvoiceDate: true, member: { select: { locationId: true, organizationId: true, firstName: true } } },
+      });
+      for (const f of familySubs) {
+        const fData: Prisma.MembershipSubscriptionUpdateInput = {};
+        const wasPending = f.status === "PENDING";
+        if (wasPending) fData.status = "ACTIVE";
+        if (!f.paidThroughDate || f.paidThroughDate < paidThrough) fData.paidThroughDate = paidThrough;
+        if (!f.nextInvoiceDate || f.nextInvoiceDate <= periodStart) fData.nextInvoiceDate = paidThrough;
+        await prisma.membershipSubscription.update({ where: { id: f.id }, data: fData });
+        if (wasPending) await prisma.member.updateMany({ where: { id: f.memberId, status: "PENDING" }, data: { status: "ACTIVE" } });
+        void computeDesiredAccessState(f.memberId).then((d) => applyAccessState(f.memberId, d)).catch((e) => console.warn("[billing] family access sync failed", f.memberId, e));
+        if (wasPending) {
+          await emitMemberEvent("membership.activated", {
+            memberId: f.memberId,
+            locationId: f.member.locationId,
+            organizationId: f.member.organizationId,
+            refs: { invoiceId: inv.id, subscriptionId: f.id },
+            vars: { planName, firstName: f.member.firstName, amount: "0.00", invoiceNumber: inv.number, method: opts.method },
+          });
+        }
+      }
     }
   }
 

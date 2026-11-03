@@ -60,7 +60,7 @@ export default async function RecurringPage({ params, searchParams }: { params: 
         planName: s.plan.name,
         adHoc: s.plan.description === AD_HOC_PLAN_DESCRIPTION,
         hasCard: s.member.paymentMethods.length > 0,
-        nextAmountCents: live ? await previewNextInvoiceCents({ memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: location.taxRateBps }).catch(() => s.priceCents) : s.priceCents,
+        nextAmountCents: live ? await previewNextInvoiceCents({ id: s.id, memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: location.taxRateBps }).catch(() => s.priceCents) : s.priceCents,
       };
     }),
   );

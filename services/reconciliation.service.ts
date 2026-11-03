@@ -26,8 +26,9 @@ export async function reconcileAllMemberAccess() {
   let healed = 0;
   for (const m of members) {
     const desired = await computeDesiredAccessState(m.id);
-    // Drift = mirror disagrees, or access is off but a Kisi identity is still attached.
-    if (desired.enabled !== m.kisiAccessEnabled || (!desired.enabled && m.kisiUserId)) {
+    // Drift = mirror disagrees, or access is off but a Kisi identity is still attached
+    // (quota revokes keep the identity on purpose — the member is back next period).
+    if (desired.enabled !== m.kisiAccessEnabled || (!desired.enabled && m.kisiUserId && !desired.keepKisiUser)) {
       drifted++;
       await applyAccessState(m.id, desired).catch((e) => console.warn("[reconcile] apply failed", m.id, e));
       healed++;
@@ -65,11 +66,12 @@ export async function reconcileKisiOrphans(opts: { dryRun?: boolean } = {}) {
     if (email && staffEmails.has(email)) { skippedStaff++; continue; }
 
     const member =
-      (userId ? await prisma.member.findFirst({ where: { kisiUserId: userId }, select: { id: true, kisiAccessEnabled: true, firstName: true, lastName: true, email: true, organizationId: true, locationId: true } }) : null) ??
-      (email ? await prisma.member.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, orderBy: { kisiAccessEnabled: "desc" }, select: { id: true, kisiAccessEnabled: true, firstName: true, lastName: true, email: true, organizationId: true, locationId: true } }) : null);
+      (userId ? await prisma.member.findFirst({ where: { kisiUserId: userId }, select: { id: true, kisiAccessEnabled: true, kisiAccessReason: true, firstName: true, lastName: true, email: true, organizationId: true, locationId: true } }) : null) ??
+      (email ? await prisma.member.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, orderBy: { kisiAccessEnabled: "desc" }, select: { id: true, kisiAccessEnabled: true, kisiAccessReason: true, firstName: true, lastName: true, email: true, organizationId: true, locationId: true } }) : null);
 
     if (!member) { if (email) unknown.push(email); continue; }
     if (member.kisiAccessEnabled) continue; // legitimately in Kisi
+    if ((member.kisiAccessReason ?? "").startsWith("Visit limit reached")) continue; // quota revoke: identity kept on purpose
 
     if (opts.dryRun) { removed.push(`${member.firstName} ${member.lastName} <${email}>`); deleted++; continue; }
     try {

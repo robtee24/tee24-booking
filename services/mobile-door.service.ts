@@ -135,6 +135,10 @@ async function membershipGate(memberId: string) {
   if (member.status === "PENDING") return { ok: false, code: "PENDING", reason: "Your membership is still pending activation." };
   if (!isMigrationFrozen() && member.kisiAccessEnabled === false && member.kisiAccessReason) {
     const r = member.kisiAccessReason;
+    // Quota revokes are decided by the live allowance (getVisitAllowance), not the
+    // mirror — otherwise a member whose period just rolled over would stay blocked
+    // until the next enforcement pass re-adds them.
+    if (/visit limit/i.test(r)) return { ok: true as const, code: null, reason: null };
     const reason = /payment|chargeback/i.test(r)
       ? "Door access is paused until your payment is updated. Fix it in Settings → Billing."
       : /doc/i.test(r)

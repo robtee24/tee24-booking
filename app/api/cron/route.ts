@@ -12,7 +12,8 @@
  *  - expire-documents            : flip expired signed docs
  *  - build-referral-batch        : build monthly referral payout batch
  *  - reconcile-access            : nightly Kisi access state reconciliation
- *  - sync-kisi-events            : poll Kisi unlock history → check-ins (Visit rows)
+ *  - sync-kisi-events            : poll Kisi unlock history → check-ins (Visit rows), then visit-quota pass
+ *  - enforce-visit-quota         : limited plans — "last visit used" notice; in enforce mode also Kisi group on/off
  *  - sync-kisi-doors             : refresh door status/placement from Kisi
  *  - generate-invoices           : daily 09:00 UTC — recurring invoices + auto-charge default cards
  *  - retry-failed-payments       : hourly — dunning retries, late fees, mark overdue
@@ -38,6 +39,7 @@ import { isMigrationFrozen, MIGRATION_FREEZE_SKIP } from "@/lib/migration-freeze
 import { runLeagueDeadlines } from "@/services/league.service";
 import { runLeagueNotifications } from "@/services/league-notify.service";
 import { checkSwinglabHealth, runSwingRetention } from "@/services/mobile-swing.service";
+import { enforceVisitQuotas } from "@/services/visit-quota.service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -107,6 +109,11 @@ async function run(req: NextRequest) {
       case "sync-kisi-events": {
         if (!process.env.KISI_API_KEY) return NextResponse.json({ ok: true, skipped: "Kisi not configured" });
         const r = await syncKisiUnlockEvents();
+        const quota = await enforceVisitQuotas().catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+        return NextResponse.json({ ok: true, ...r, visitQuota: quota });
+      }
+      case "enforce-visit-quota": {
+        const r = await enforceVisitQuotas();
         return NextResponse.json({ ok: true, ...r });
       }
       case "sync-kisi-doors": {

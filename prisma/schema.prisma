@@ -466,6 +466,8 @@ model Member {
   family        FamilyMember?
   visitorRecord Visitor?         @relation("VisitorMemberLink")
   kisiLinks     MemberKisiLink[]
+  // Family add-on subscriptions this member pays for.
+  billedSubscriptions MembershipSubscription[] @relation("BilledSubscriptions")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -655,6 +657,17 @@ model MembershipSubscription {
   pendingPriceCents Int?
   pendingChangeAt   DateTime?
 
+  // Visit quota: start of the rolling period in which the "you've used all your
+  // visits" message was last sent (one message per period).
+  quotaNotifiedPeriodStart DateTime?
+
+  // Family add-on: this subscription is paid for by another member (the account
+  // holder) and rides on their subscription's billing date. Invoices are raised on
+  // the payer; `familyDiscountPercent` is the discount off the plan's base price.
+  billedToMemberId       String?
+  familyOfSubscriptionId String?
+  familyDiscountPercent  Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -664,10 +677,16 @@ model MembershipSubscription {
   invoices Invoice[]
   charges  Charge[]
 
+  billedTo       Member?                  @relation("BilledSubscriptions", fields: [billedToMemberId], references: [id], onDelete: SetNull)
+  familyOf       MembershipSubscription?  @relation("FamilySubscriptions", fields: [familyOfSubscriptionId], references: [id], onDelete: SetNull)
+  familyMembers  MembershipSubscription[] @relation("FamilySubscriptions")
+
   @@index([memberId, status])
   @@index([planId])
   @@index([locationId, status])
   @@index([squareSubscriptionId])
+  @@index([billedToMemberId])
+  @@index([familyOfSubscriptionId])
 }
 
 /**

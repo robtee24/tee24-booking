@@ -44,6 +44,9 @@ export const SYSTEM_MERGE_FIELDS: { key: string; label: string }[] = [
   { key: "change_summary", label: "Plan-change summary sentence" },
   { key: "freeze_start", label: "Freeze start date" },
   { key: "reason", label: "Reason (door access on/off)" },
+  { key: "visits_limit", label: "Visits allowed per period (limited plans)" },
+  { key: "period_label", label: "Current visit period, e.g. Oct 17 – Nov 16" },
+  { key: "next_visit_date", label: "Date the next visit period starts" },
 ];
 
 const portal = "{portal_url}";
@@ -283,6 +286,14 @@ export const SYSTEM_TEMPLATES: SystemTemplateDef[] = [
     sms: { defaultOn: false, body: `Checked in at {location_name}. Enjoy, {first_name}!` },
   },
   {
+    eventKey: "visit.quota-reached",
+    group: "Attendance",
+    label: "Visit limit reached",
+    description: "Limited plans (e.g. 3 visits/month): sent once per period when the member uses their last allowed visit. Tells them when the next visit opens up.",
+    email: { defaultOn: true, subject: "You've used your {visits_limit} visits for this period", body: `Hi {first_name},<br><br>Today was visit {visits_limit} of {visits_limit} on your <strong>{plan_name}</strong> membership for {period_label}. Your next visit opens up on <strong>{next_visit_date}</strong>.<br><br>Want to come more often? Upgrade to unlimited any time in the Tee24 app or at <a href="${portal}">${portal}</a>.` },
+    sms: { defaultOn: true, body: `Tee24: that was visit {visits_limit} of {visits_limit} on your {plan_name} ({period_label}). Your next visit opens {next_visit_date}. Upgrade to unlimited any time in the Tee24 app.` },
+  },
+  {
     eventKey: "access.enabled",
     group: "Attendance",
     label: "Door access turned on",
@@ -360,4 +371,7 @@ export const SAMPLE_MEMBER_VARS: Record<string, string> = {
   change_summary: "We charged $16.13 today for the rest of your current period.",
   freeze_start: "Nov 1, 2026",
   reason: "Membership cancelled",
+  visits_limit: "3",
+  period_label: "Oct 17 – Nov 16",
+  next_visit_date: "Nov 17",
 };

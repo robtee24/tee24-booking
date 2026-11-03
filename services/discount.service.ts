@@ -351,14 +351,28 @@ export async function applyDiscountCode(subscriptionId: string, code: string, ac
  * apply to the member's next invoice on this plan, honouring scope limits.
  */
 export async function findRecurringDiscountForMember(memberId: string, planId: string): Promise<Discount | null> {
+  const all = await findRecurringDiscountsForMember(memberId, planId);
+  return all[0] ?? null;
+}
+
+/**
+ * All standing discounts that apply to the member's next invoice on this plan.
+ * Members can hold several (e.g. military + annual-prepay); they stack, each
+ * computed on the same pre-discount subtotal, and the total is capped at the
+ * subtotal by `stackedDiscountCents`.
+ */
+export async function findRecurringDiscountsForMember(memberId: string, planId: string): Promise<Discount[]> {
   const prisma = getPrisma();
   const markers = await prisma.discountApplication.findMany({
     where: { memberId, invoiceId: null },
     include: { discount: { include: { planRestrictions: { select: { planId: true } } } } },
     orderBy: { appliedAt: "desc" },
   });
+  const out: Discount[] = [];
+  const seen = new Set<string>();
   for (const m of markers) {
     const d = m.discount;
+    if (seen.has(d.id)) continue;
     if (!d.active || d.scope === "ONE_TIME") continue;
     if (d.planRestrictions.length && !d.planRestrictions.some((r) => r.planId === planId)) continue;
     if (d.endsAt && d.endsAt < new Date()) continue;
@@ -366,9 +380,16 @@ export async function findRecurringDiscountForMember(memberId: string, planId: s
       const used = await prisma.discountApplication.count({ where: { memberId, discountId: d.id, invoiceId: { not: null } } });
       if (used >= d.recurringMonths) continue;
     }
-    return d;
+    seen.add(d.id);
+    out.push(d);
   }
-  return null;
+  return out;
+}
+
+/** Sum of several discounts on one subtotal, each computed independently, capped at the subtotal. */
+export function stackedDiscountCents(discounts: Pick<Discount, "type" | "value">[], subtotalCents: number): number {
+  const total = discounts.reduce((s, d) => s + computeDiscountCents(d, subtotalCents), 0);
+  return Math.min(Math.max(0, subtotalCents), total);
 }
 
 export async function getDiscountUsage(discountId: string) {

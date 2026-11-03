@@ -46,7 +46,7 @@ function resolveLocationFromDoor(kisiDoorId: string | null): string | null {
   }
 }
 
-export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ visitId: string | null; deduped: boolean }> {
+export async function ingestKisiUnlock(input: IngestKisiUnlockInput, opts?: { silent?: boolean }): Promise<{ visitId: string | null; deduped: boolean }> {
   const prisma = getPrisma();
 
   // Idempotency: if we already processed this kisiEventId, no-op
@@ -122,12 +122,12 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
     });
     if (appVisit) {
       await prisma.visit.update({ where: { id: appVisit.id }, data: { kisiEventId: input.kisiEventId, ...(door && !appVisit.doorId ? { doorId: door.id } : {}) } }).catch(() => {});
-      if (door) await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
+      if (door && !opts?.silent) await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
       return { visitId: appVisit.id, deduped: true };
     }
   }
 
-  if (door) {
+  if (door && !opts?.silent) {
     await prisma.door.update({ where: { id: door.id }, data: { lastUnlockAt: input.unlockedAt } }).catch(() => {});
   }
 
@@ -196,8 +196,8 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
       });
       bayId = bay?.id ?? null;
 
-      // Mark booking as checked-in if not already
-      if (!booking.checkedInAt) {
+      // Mark booking as checked-in if not already (skip on historical backfill)
+      if (!booking.checkedInAt && !opts?.silent) {
         await prisma.booking.update({
           where: { id: booking.id },
           data: { checkedInAt: input.unlockedAt },
@@ -227,7 +227,7 @@ export async function ingestKisiUnlock(input: IngestKisiUnlockInput): Promise<{ 
   // Door unlocks are how nearly every visit is recorded at a 24/7 facility, so they must
   // drive the same "visit.checked-in" automations as a front-desk check-in. Only the first
   // unlock of a visit gets here (later unlocks are deduped above), so this fires once per visit.
-  if (member) {
+  if (member && !opts?.silent) {
     void emitMemberEvent("visit.checked-in", {
       memberId: member.id,
       locationId,

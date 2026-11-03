@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, CalendarClock, PauseCircle, Users, XCircle } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, PauseCircle, UserPlus, Users, XCircle } from "lucide-react";
 import { Button, Card, CardHeader, Input, Modal, Textarea } from "@/components/ui";
 import { ChangePlanModal } from "./ChangePlanModal";
 import type { PendingChangeView } from "@/services/portal-membership.service";
@@ -21,6 +21,7 @@ export function MembershipActions({
   maxGuests,
   frozen,
   recurring,
+  family,
 }: {
   canRequest: boolean;
   cancelPending: boolean;
@@ -28,6 +29,8 @@ export function MembershipActions({
   currentGuestCount: number;
   maxGuests: number;
   frozen: boolean;
+  /** Family add-on: null = plan doesn't offer it; "managed" = this member is on someone else's family plan. */
+  family?: { count: number; max: number; percentOff: number } | "managed" | null;
   recurring: boolean;
 }) {
   const router = useRouter();
@@ -70,7 +73,7 @@ export function MembershipActions({
 
   const canSelfServe = canRequest && recurring && !!currentPlanId;
   const guestTitle = currentGuestCount > 0 ? `${currentGuestCount} guest${currentGuestCount === 1 ? "" : "s"} per visit` : "Add a guest";
-  const guestBody = currentGuestCount > 0 ? "Add another guest or go back to member-only." : "Bring a complimentary guest on every visit for $25/mo.";
+  const guestBody = currentGuestCount > 0 ? "Add another guest or go back to member-only." : "Bring a guest on every visit for $25/mo.";
 
   return (
     <>
@@ -78,9 +81,12 @@ export function MembershipActions({
         <CardHeader title="Manage membership" subtitle="Plan and guest changes apply instantly (upgrades) or at your next renewal (downgrades). Freezes and cancellations are confirmed by the front desk." />
         {done && <div className="mt-3 rounded-apple-sm bg-apple-green/10 px-4 py-3 text-apple-sm text-apple-green">{done}</div>}
         {!canRequest && <p className="mt-3 text-apple-sm text-apple-text-tertiary">Membership changes are disabled while staff are viewing this account.</p>}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ActionTile icon={<ArrowRightLeft className="h-5 w-5" />} title="Change plan" body="Move up or down between memberships." onClick={() => currentPlanId && setSelfServe({ focus: "plan", planId: currentPlanId, guestCount: currentGuestCount })} disabled={!canSelfServe} />
-          <ActionTile icon={<Users className="h-5 w-5" />} title={guestTitle} body={maxGuests > 0 ? guestBody : "Your plan doesn't include guest add-ons."} onClick={() => currentPlanId && setSelfServe({ focus: "guests", planId: currentPlanId, guestCount: Math.min(maxGuests, currentGuestCount > 0 ? currentGuestCount : 1) })} disabled={!canSelfServe || maxGuests === 0} />
+        <div className={`mt-4 grid gap-3 sm:grid-cols-2 ${family ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+          <ActionTile icon={<ArrowRightLeft className="h-5 w-5" />} title="Change plan" body={family === "managed" ? "Your plan is managed by your family's account holder." : "Move up or down between memberships."} onClick={() => currentPlanId && setSelfServe({ focus: "plan", planId: currentPlanId, guestCount: currentGuestCount })} disabled={!canSelfServe || family === "managed"} />
+          <ActionTile icon={<Users className="h-5 w-5" />} title={guestTitle} body={maxGuests > 0 ? guestBody : "Your plan doesn't include guest add-ons."} onClick={() => currentPlanId && setSelfServe({ focus: "guests", planId: currentPlanId, guestCount: Math.min(maxGuests, currentGuestCount > 0 ? currentGuestCount : 1) })} disabled={!canSelfServe || maxGuests === 0 || family === "managed"} />
+          {family && family !== "managed" && (
+            <ActionTile icon={<UserPlus className="h-5 w-5" />} title={family.count > 0 ? `${family.count} family member${family.count === 1 ? "" : "s"}` : "Add a family member"} body={family.count > 0 ? "Manage who's on your family plan." : `Spouse, kids or parents at ${family.percentOff}% off, billed with you.`} onClick={() => router.push("/portal/membership/family")} disabled={!canRequest} />
+          )}
           <ActionTile icon={<PauseCircle className="h-5 w-5" />} title={frozen ? "Membership frozen" : "Request a freeze"} body={frozen ? "Your membership is currently on hold." : "Going away? Pause billing and access for a while."} onClick={() => start("freeze")} disabled={!canRequest || frozen} />
           <ActionTile icon={<XCircle className="h-5 w-5" />} title={cancelPending ? "Cancellation pending" : "Request cancellation"} body={cancelPending ? "We've got your request and will be in touch." : "We'll confirm your final date and any notice period."} onClick={() => start("cancel")} disabled={!canRequest || cancelPending} danger />
         </div>

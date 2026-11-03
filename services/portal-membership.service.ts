@@ -25,7 +25,7 @@ import { emitMemberEvent } from "@/lib/events";
 import { isMigrationFrozen } from "@/lib/migration-freeze";
 import { applyAccessState, computeDesiredAccessState } from "@/lib/access-sync";
 import { addPeriods, guestCentsFor, maxGuestsFor, membershipDisplayName, promoTagLabel } from "@/lib/membership-pricing";
-import { computeDiscountCents, findRecurringDiscountForMember } from "@/services/discount.service";
+import { findRecurringDiscountsForMember, stackedDiscountCents } from "@/services/discount.service";
 import { chargeInvoiceWithDefaultCard, createInvoice, writeOffInvoice } from "@/services/billing.service";
 import { computeProrationCents } from "@/services/membership.service";
 import { PortalError } from "@/services/portal.service";
@@ -91,7 +91,7 @@ export async function listSelfServicePlans(memberId: string): Promise<{ plans: S
   const plans = await prisma.membershipPlan.findMany({ where, orderBy: [{ sortOrder: "asc" }, { priceCents: "asc" }] });
   const visible = plans.filter((p) => !p.allowedLocations || p.allowedLocations.split(",").map((s) => s.trim()).includes(member.locationId));
 
-  const { discount, legacyPromo } = sub ? await standingDiscount(memberId, sub) : { discount: null, legacyPromo: null };
+  const { discount, discounts, legacyPromo } = sub ? await standingDiscount(memberId, sub) : { discount: null, discounts: [], legacyPromo: null };
   return {
     plans: visible.map((p) => ({
       id: p.id,
@@ -101,27 +101,33 @@ export async function listSelfServicePlans(memberId: string): Promise<{ plans: S
       billingCadence: p.billingCadence,
       guestAddonCents: p.guestAddonCents,
       maxGuests: maxGuestsFor(p),
-      netPriceCents: netOf(p.priceCents, discount ?? legacyPromo),
+      netPriceCents: netOf(p.priceCents, discounts.length ? discounts : legacyPromo),
     })),
     discount,
     legacyPromo,
   };
 }
 
-/** Recurring marker discount (gross priceCents) vs legacy promo (net priceCents). */
-async function standingDiscount(memberId: string, sub: SubWithPlan): Promise<{ discount: Discount | null; legacyPromo: Discount | null }> {
+/**
+ * Standing discounts: recurring marker discounts (stack; applied to the gross
+ * priceCents on each invoice) vs a legacy promo baked into a net priceCents.
+ * `discount` is the first marker (for display); `discounts` is the full set used for math.
+ */
+async function standingDiscount(memberId: string, sub: SubWithPlan): Promise<{ discount: Discount | null; discounts: Discount[]; legacyPromo: Discount | null }> {
   const prisma = getPrisma();
-  const marker = await findRecurringDiscountForMember(memberId, sub.planId);
-  if (marker) return { discount: marker, legacyPromo: null };
-  if (!sub.promoDiscountId) return { discount: null, legacyPromo: null };
+  const markers = await findRecurringDiscountsForMember(memberId, sub.planId);
+  if (markers.length) return { discount: markers[0], discounts: markers, legacyPromo: null };
+  if (!sub.promoDiscountId) return { discount: null, discounts: [], legacyPromo: null };
   const promo = await prisma.discount.findUnique({ where: { id: sub.promoDiscountId } });
-  if (!promo || !promo.active || promo.scope !== "FOREVER") return { discount: null, legacyPromo: null };
-  return { discount: null, legacyPromo: promo };
+  if (!promo || !promo.active || promo.scope !== "FOREVER") return { discount: null, discounts: [], legacyPromo: null };
+  return { discount: null, discounts: [], legacyPromo: promo };
 }
 
-function netOf(grossCents: number, d: Discount | null): number {
+function netOf(grossCents: number, d: Discount[] | Discount | null): number {
   if (!d || grossCents <= 0) return Math.max(0, grossCents);
-  return Math.max(0, grossCents - computeDiscountCents(d, grossCents));
+  const list = Array.isArray(d) ? d : [d];
+  if (!list.length) return Math.max(0, grossCents);
+  return Math.max(0, grossCents - stackedDiscountCents(list, grossCents));
 }
 
 /**
@@ -129,9 +135,9 @@ function netOf(grossCents: number, d: Discount | null): number {
  *  - storedPriceCents: what goes in MembershipSubscription.priceCents
  *  - netPriceCents: what the member actually pays per period
  */
-function priceFor(sub: SubWithPlan, target: MembershipPlan, guestCount: number, discount: Discount | null, legacyPromo: Discount | null) {
+function priceFor(sub: SubWithPlan, target: MembershipPlan, guestCount: number, discount: Discount[] | Discount | null, legacyPromo: Discount | null) {
   const guestCents = guestCentsFor(target, guestCount);
-  if (discount) {
+  if (discount && (!Array.isArray(discount) || discount.length)) {
     // Gross stored; marker discounts each invoice.
     const gross = (target.id === sub.planId ? sub.priceCents - sub.guestCents : target.priceCents) + guestCents;
     return { storedPriceCents: gross, guestCents, netPriceCents: netOf(gross, discount), currentNetCents: netOf(sub.priceCents, discount) };
@@ -195,12 +201,13 @@ export async function previewChange(memberId: string, input: { planId?: string |
   const guestCount = Math.max(0, Math.floor(Number(input.guestCount) || 0));
   if (guestCount > maxGuestsFor(target)) throw new PortalError(`${target.name} allows up to ${maxGuestsFor(target)} guest${maxGuestsFor(target) === 1 ? "" : "s"}`);
 
-  const { discount, legacyPromo } = await standingDiscount(memberId, sub);
-  const price = priceFor(sub, target, guestCount, discount, legacyPromo);
+  const { discounts, legacyPromo } = await standingDiscount(memberId, sub);
+  const price = priceFor(sub, target, guestCount, discounts, legacyPromo);
   const delta = price.netPriceCents - price.currentNetCents;
   const kind: ChangePreview["kind"] = target.id === sub.planId && guestCount === sub.guestCount ? "none" : delta > 0 ? "upgrade" : "downgrade";
 
   let requestReason: string | null = null;
+  if (sub.billedToMemberId) throw new PortalError("Your membership is part of a family plan and is managed by the account holder.");
   if (isMigrationFrozen()) requestReason = "Online plan changes open soon — for now a team member will apply this for you.";
   else if (!ACTIVE_FOR_CHANGE.has(sub.status)) requestReason = sub.status === "FROZEN" ? "Your membership is frozen. Ask the front desk to resume it before changing plans." : sub.status === "CANCEL_SCHEDULED" ? "Your membership is set to end. Ask the front desk to undo the cancellation first." : sub.status === "PENDING" ? "Your first payment hasn't cleared yet." : "This membership can't be changed online.";
   else if (sub.plan.productType !== "RECURRING") requestReason = "Day passes can't be changed online.";
@@ -216,7 +223,7 @@ export async function previewChange(memberId: string, input: { planId?: string |
   const effectiveAt = kind === "upgrade" ? now.toISOString() : kind === "downgrade" ? (sub.nextInvoiceDate ?? sub.paidThroughDate)?.toISOString() ?? null : null;
   const hasCard = await hasCardOnFile(memberId);
   const pendingPlan = sub.pendingPlanId ? await prisma.membershipPlan.findUnique({ where: { id: sub.pendingPlanId } }) : null;
-  const d = discount ?? legacyPromo;
+  const all = discounts.length ? discounts : legacyPromo ? [legacyPromo] : [];
 
   return {
     mode: requestReason ? "request" : "self-service",
@@ -230,7 +237,7 @@ export async function previewChange(memberId: string, input: { planId?: string |
     effectiveAt,
     hasCard,
     requiresCard: kind === "upgrade" && dueTodayCents > 0,
-    discount: d ? { label: promoTagLabel(d), name: d.name } : null,
+    discount: all.length ? { label: all.map((d) => promoTagLabel(d)).join(" + "), name: all.map((d) => d.name).join(", ") } : null,
     pendingChange: pendingView(sub, pendingPlan),
   };
 }
@@ -299,8 +306,8 @@ export async function applyChange(
   const target = (await prisma.membershipPlan.findUnique({ where: { id: preview.target.planId } }))!;
   const member = await prisma.member.findUnique({ where: { id: memberId }, select: { id: true, firstName: true, lastName: true, organizationId: true, locationId: true, location: { select: { slug: true } } } });
   if (!member) throw new PortalError("Member not found", 404);
-  const { discount, legacyPromo } = await standingDiscount(memberId, sub);
-  const price = priceFor(sub, target, preview.target.guestCount, discount, legacyPromo);
+  const { discounts, legacyPromo } = await standingDiscount(memberId, sub);
+  const price = priceFor(sub, target, preview.target.guestCount, discounts, legacyPromo);
   const displayName = preview.target.displayName;
   const name = `${member.firstName} ${member.lastName}`.trim();
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { familyAddonFor, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { getPrisma } from "@/lib/db";
 import { Card, CardHeader, Money, StatusBadge } from "@/components/ui";
 import { getCurrentMember, getMemberSession } from "@/lib/member-session";
 import { getMembershipOverview } from "@/services/portal.service";
@@ -13,6 +14,11 @@ export default async function PortalMembershipPage() {
   if (!member) return null;
   const { sub, openInvoice, lastPaid, history, pendingChange } = await getMembershipOverview(member.id);
   const canRequest = session?.role !== "IMPERSONATED";
+  const familyAddon = sub ? familyAddonFor(sub.plan) : null;
+  const familyCount = sub && familyAddon && !sub.billedToMemberId
+    ? await getPrisma().membershipSubscription.count({ where: { familyOfSubscriptionId: sub.id, status: { in: ["PENDING", "ACTIVE", "CANCEL_SCHEDULED", "FROZEN"] } } })
+    : 0;
+  const family = sub?.billedToMemberId ? ("managed" as const) : familyAddon ? { count: familyCount, max: familyAddon.maxAdditional, percentOff: familyAddon.percentOff } : null;
 
   return (
     <div className="space-y-6">
@@ -106,6 +112,7 @@ export default async function PortalMembershipPage() {
           maxGuests={maxGuestsFor(sub.plan)}
           frozen={sub.status === "FROZEN"}
           recurring={sub.plan.productType === "RECURRING"}
+          family={family}
         />
       )}
 

@@ -16,7 +16,7 @@
  * a membership — no new schema needed.
  */
 import { getPrisma } from "@/lib/db";
-import { guestLineLabel, membershipDisplayName } from "@/lib/membership-pricing";
+import { familyLineLabel, guestLineLabel, membershipDisplayName } from "@/lib/membership-pricing";
 import { audit } from "@/lib/audit";
 import { isSquareConfigured } from "@/lib/square";
 import {
@@ -24,7 +24,7 @@ import {
   computeInvoiceMath,
   createInvoice,
 } from "./billing.service";
-import { computeDiscountCents, findRecurringDiscountForMember } from "./discount.service";
+import { computeDiscountCents, findRecurringDiscountsForMember, stackedDiscountCents } from "./discount.service";
 import { applyPendingChangeIfDue } from "./portal-membership.service";
 import type { Prisma } from "@prisma/client";
 
@@ -162,6 +162,21 @@ export async function generateDueInvoices(now = new Date(), opts?: { subscriptio
 
   for (const sub of subs) {
     result.scanned++;
+    if (sub.familyOfSubscriptionId && sub.billedToMemberId) {
+      // Family add-on: billed on the account holder's invoice (see issueInvoiceForSubscription).
+      // If the holder's subscription is gone, the add-on can't be billed — end it.
+      const primary = await prisma.membershipSubscription.findUnique({ where: { id: sub.familyOfSubscriptionId }, select: { status: true } });
+      if (!primary || primary.status === "CANCELLED") {
+        await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { status: "CANCELLED", cancelledAt: now, endDate: sub.paidThroughDate ?? now, autoRenew: false } });
+        void audit({ action: "membership.cancel-immediate", entityType: "MembershipSubscription", entityId: sub.id, metadata: { reason: "account holder's membership ended", familyOfSubscriptionId: sub.familyOfSubscriptionId } });
+        const { applyAccessState, computeDesiredAccessState } = await import("@/lib/access-sync");
+        void computeDesiredAccessState(sub.memberId).then((d) => applyAccessState(sub.memberId, d)).catch(() => {});
+        result.skipped.push({ subscriptionId: sub.id, reason: "family add-on: account holder cancelled" });
+      } else {
+        result.skipped.push({ subscriptionId: sub.id, reason: "family add-on: billed with account holder" });
+      }
+      continue;
+    }
     if (!isRecurringCadence(sub.billingCadence) || sub.plan.productType === "DAY_PASS" || sub.plan.productType === "COMP") {
       result.skipped.push({ subscriptionId: sub.id, reason: "non-recurring plan" });
       continue;
@@ -241,8 +256,22 @@ export async function issueInvoiceForSubscription(
     ? await prisma.paymentMethod.findFirst({ where: { memberId: sub.memberId, status: { not: "EXPIRED" }, squareCardId: { not: null } }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] })
     : null;
 
-  const discount = await findRecurringDiscountForMember(sub.memberId, sub.planId);
-  const discountCents = discount ? computeDiscountCents(discount, sub.priceCents) : 0;
+  // Standing discounts stack (each on the membership subtotal, capped at the subtotal).
+  const discounts = await findRecurringDiscountsForMember(sub.memberId, sub.planId);
+  const discountCents = stackedDiscountCents(discounts, sub.priceCents);
+
+  // Family add-ons ride on this invoice: ACTIVE family subscriptions billed to this member.
+  const familySubs = await prisma.membershipSubscription.findMany({
+    where: { familyOfSubscriptionId: sub.id, billedToMemberId: sub.memberId, status: { in: ["ACTIVE", "CANCEL_SCHEDULED"] } },
+    include: { plan: { select: { name: true } }, member: { select: { firstName: true, lastName: true } } },
+  });
+  const familyLines = familySubs
+    .filter((f) => f.priceCents > 0 && !(f.status === "CANCEL_SCHEDULED" && f.paidThroughDate && f.paidThroughDate <= dayStart))
+    .map((f) => ({
+      description: familyLineLabel(`${f.member.firstName} ${f.member.lastName}`.trim(), f.plan.name, f.familyDiscountPercent ?? 0),
+      unitCents: f.priceCents,
+      familySubscriptionId: f.id,
+    }));
 
   const invoice = await createInvoice(
     {
@@ -250,28 +279,34 @@ export async function issueInvoiceForSubscription(
       locationId: sub.locationId,
       memberId: sub.memberId,
       subscriptionId: sub.id,
-      description: `${membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType)} — ${periodLabel(dayStart, sub.billingCadence)}`,
+      description: `${membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType)}${familyLines.length ? ` + ${familyLines.length} family` : ""} — ${periodLabel(dayStart, sub.billingCadence)}`,
       dueDate: dayStart,
       scheduledFor: dayStart,
       discountCents,
       taxRateBps: sub.location.taxRateBps,
       surchargeBps: sub.location.cardSurchargeBps,
       applySurcharge: Boolean(defaultCard) && sub.location.cardSurchargeBps > 0,
-      lines:
-        sub.guestCount > 0 && sub.guestCents > 0 && sub.guestCents < sub.priceCents
+      lines: [
+        ...(sub.guestCount > 0 && sub.guestCents > 0 && sub.guestCents < sub.priceCents
           ? [
               { description: sub.plan.name, unitCents: sub.priceCents - sub.guestCents },
               { description: `Guest add-on — ${guestLineLabel(sub.guestCount, sub.plan.productType)}`, unitCents: sub.guestCents },
             ]
-          : [{ description: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType), unitCents: sub.priceCents }],
+          : [{ description: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType), unitCents: sub.priceCents }]),
+        ...familyLines.map(({ description, unitCents }) => ({ description, unitCents })),
+      ],
     },
     opts.actorId,
   );
-  if (discount && discountCents > 0) {
-    await prisma.discountApplication.create({ data: { discountId: discount.id, memberId: sub.memberId, invoiceId: invoice.id, amountCents: discountCents } });
+  for (const d of discounts) {
+    const cents = computeDiscountCents(d, sub.priceCents);
+    if (cents > 0) await prisma.discountApplication.create({ data: { discountId: d.id, memberId: sub.memberId, invoiceId: invoice.id, amountCents: Math.min(cents, discountCents) } });
   }
 
   await prisma.membershipSubscription.update({ where: { id: sub.id }, data: { nextInvoiceDate: nextDate } });
+  if (familyLines.length) {
+    await prisma.membershipSubscription.updateMany({ where: { id: { in: familyLines.map((l) => l.familySubscriptionId) } }, data: { nextInvoiceDate: nextDate } });
+  }
 
   void audit({
     organizationId: sub.member.organizationId,
@@ -408,8 +443,12 @@ export async function setNextInvoiceDate(subscriptionId: string, nextInvoiceDate
 }
 
 /** Preview the next invoice amount for a subscription (for the Recurring table). */
-export async function previewNextInvoiceCents(sub: { memberId: string; planId: string; priceCents: number; locationTaxRateBps: number }) {
-  const discount = await findRecurringDiscountForMember(sub.memberId, sub.planId);
-  const discountCents = discount ? computeDiscountCents(discount, sub.priceCents) : 0;
-  return computeInvoiceMath({ subtotalCents: sub.priceCents, discountCents, taxRateBps: sub.locationTaxRateBps }).totalCents;
+export async function previewNextInvoiceCents(sub: { id?: string; memberId: string; planId: string; priceCents: number; locationTaxRateBps: number }) {
+  const discounts = await findRecurringDiscountsForMember(sub.memberId, sub.planId);
+  const discountCents = stackedDiscountCents(discounts, sub.priceCents);
+  const family = sub.id
+    ? await getPrisma().membershipSubscription.aggregate({ _sum: { priceCents: true }, where: { familyOfSubscriptionId: sub.id, billedToMemberId: sub.memberId, status: { in: ["ACTIVE", "CANCEL_SCHEDULED"] } } })
+    : null;
+  const subtotalCents = sub.priceCents + (family?._sum.priceCents ?? 0);
+  return computeInvoiceMath({ subtotalCents, discountCents, taxRateBps: sub.locationTaxRateBps }).totalCents;
 }

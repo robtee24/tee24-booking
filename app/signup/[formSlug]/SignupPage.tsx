@@ -54,6 +54,11 @@ export async function SignupPage({ formSlug, sp, staging = false }: { formSlug: 
   };
 
   const referralCode = typeof sp.ref === "string" ? sp.ref : null;
+  // ?plan=<id|slug-ish> preselects a plan (used by the legacy /daypass redirect and marketing links).
+  const planParam = typeof sp.plan === "string" ? sp.plan.trim().toLowerCase() : "";
+  const preselected = planParam
+    ? plans.find((p) => p.id.toLowerCase() === planParam) ?? plans.find((p) => p.name.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, "-") === planParam || p.name.toLowerCase().includes(planParam))
+    : null;
   const square = form.location ? await getSquarePublicConfig(form.location.id) : publicConfigFromCreds(null);
 
   return (
@@ -63,7 +68,7 @@ export async function SignupPage({ formSlug, sp, staging = false }: { formSlug: 
         slug: form.slug,
         name: form.name,
         description: form.description,
-        defaultPlanId: form.defaultPlanId,
+        defaultPlanId: preselected?.id ?? form.defaultPlanId,
         allowDiscountCode: form.allowDiscountCode,
         photoRequired: form.photoRequired,
         collectTax: form.collectTax,
@@ -97,6 +102,8 @@ export async function SignupPage({ formSlug, sp, staging = false }: { formSlug: 
           maxGuests: p.maxGuests,
           dayPassGuestPricing: p.dayPassGuestPricing,
           visitsPerPeriod: p.visitsPerPeriod,
+          familyBundle: p.familyBundle,
+          familyDiscountConfig: p.familyDiscountConfig,
         };
       })}
       promos={promos}

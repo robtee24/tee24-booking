@@ -201,12 +201,12 @@ export async function sendUpcomingPaymentReminders(now = new Date()) {
   let upcoming = 0;
 
   const subs = await prisma.membershipSubscription.findMany({
-    where: { status: "ACTIVE", autoRenew: true, priceCents: { gt: 0 }, nextInvoiceDate: { gte: start, lt: end } },
+    where: { status: "ACTIVE", autoRenew: true, priceCents: { gt: 0 }, nextInvoiceDate: { gte: start, lt: end }, billedToMemberId: null },
     include: { plan: { select: { name: true } }, location: { select: { taxRateBps: true } }, member: { select: { organizationId: true, firstName: true } } },
     take: 1000,
   });
   for (const s of subs) {
-    const amountCents = await previewNextInvoiceCents({ memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: s.location.taxRateBps });
+    const amountCents = await previewNextInvoiceCents({ id: s.id, memberId: s.memberId, planId: s.planId, priceCents: s.priceCents, locationTaxRateBps: s.location.taxRateBps });
     const card = await prisma.paymentMethod.findFirst({ where: { memberId: s.memberId, isDefault: true }, select: { brand: true, last4: true } });
     await emitMemberEvent("payment.upcoming", {
       memberId: s.memberId,

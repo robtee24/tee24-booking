@@ -34,6 +34,7 @@ import {
 import { audit } from "@/lib/audit";
 import { adminNotify } from "@/lib/admin-notify";
 import { isMigrationFrozen } from "@/lib/migration-freeze";
+import { visitQuotaRevokesAccess } from "@/lib/visit-quota";
 
 export type AccessReason =
   | "signup_success"
@@ -46,7 +47,9 @@ export type AccessReason =
   | "freeze_start"
   | "doc_expired"
   | "membership_cancelled"
-  | "chargeback";
+  | "chargeback"
+  | "visit_quota"
+  | "quota_reset";
 
 export type DesiredState = {
   enabled: boolean;
@@ -54,6 +57,12 @@ export type DesiredState = {
   // Door groups (Kisi group IDs) that should be granted at each location.
   // Empty array = revoke all groups. Used when computing diffs.
   desiredGroupIds?: number[];
+  /**
+   * Temporary revoke (visit quota used up): take the member out of the door
+   * groups but keep their Kisi identity so access comes back at period rollover
+   * without a new credential email.
+   */
+  keepKisiUser?: boolean;
 };
 
 /**
@@ -62,7 +71,8 @@ export type DesiredState = {
  *
  * Returns the resulting state mirror (for caller to log / display).
  */
-export async function applyAccessState(memberId: string, desired: DesiredState): Promise<{ enabled: boolean; reason: string }> {
+export async function applyAccessState(memberId: string, desiredInput: DesiredState): Promise<{ enabled: boolean; reason: string }> {
+  let desired = desiredInput;
   const prisma = getPrisma();
 
   const member = await prisma.member.findUnique({
@@ -90,6 +100,10 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
   }
 
   const wasEnabled = member.kisiAccessEnabled;
+  // Coming back from a quota revoke reads better as "allowance renewed" than "signup completed".
+  if (desired.enabled && !wasEnabled && (member.kisiAccessReason ?? "").startsWith(humanizeReason("visit_quota"))) {
+    desired = { ...desired, reason: "quota_reset" };
+  }
 
   // 1. Ensure Kisi user exists (lazy create on first activation / re-activation).
   //    A member who lost access was deleted from Kisi outright, so re-enabling
@@ -156,7 +170,9 @@ export async function applyAccessState(memberId: string, desired: DesiredState):
   // 2b. Access revoked → remove the person from Kisi entirely. Leaving disabled
   //     users in Kisi is how stale access accumulated under GymDesk. Unlock
   //     history lives in our Visit table and MemberKisiLink keeps the old ids.
-  if (!desired.enabled && kisiUserId) {
+  //     Quota revokes are the exception: the member is back in a few days, so
+  //     only the door groups come off (step 2) and the identity stays.
+  if (!desired.enabled && kisiUserId && !desired.keepKisiUser) {
     try {
       const r = await kisiDeleteMember({ userId: kisiUserId, email: member.email });
       await prisma.member.update({ where: { id: member.id }, data: { kisiUserId: null } });
@@ -261,6 +277,8 @@ function humanizeReason(reason: AccessReason): string {
     case "doc_expired": return "Required document expired";
     case "membership_cancelled": return "Membership cancelled";
     case "chargeback": return "Chargeback received";
+    case "visit_quota": return "Visit limit reached for this period";
+    case "quota_reset": return "Visit allowance renewed for the new period";
     default: return reason;
   }
 }
@@ -310,6 +328,32 @@ export async function computeDesiredAccessState(memberId: string): Promise<Desir
   // computed upstream in the dunning runner; here we simply respect the flag).
   if (member.invoices.length > 0) {
     return { enabled: false, reason: "payment_failed", desiredGroupIds: [] };
+  }
+  // Family add-on: the bill lives on the account holder. If the invoice that
+  // covers this member's subscription is past due there, they lose access too.
+  const familySubs = member.membershipSubscriptions.filter((s) => s.billedToMemberId && s.familyOfSubscriptionId);
+  if (familySubs.length) {
+    const overdue = await prisma.invoice.count({
+      where: {
+        status: { in: ["PAST_DUE", "FAILED"] },
+        OR: familySubs.flatMap((s) => [
+          { memberId: s.billedToMemberId!, subscriptionId: s.familyOfSubscriptionId! },
+          { subscriptionId: s.id },
+        ]),
+      },
+    });
+    if (overdue > 0) return { enabled: false, reason: "payment_failed", desiredGroupIds: [] };
+  }
+
+  // Limited plans (e.g. 3 visits/month): once the last allowed day is over the
+  // member comes out of the door group until the period rolls over. Only when
+  // VISIT_QUOTA_MODE=enforce; the Tee24 app checks the allowance regardless.
+  if (visitQuotaRevokesAccess() && member.membershipSubscriptions.some((s) => s.plan.visitsPerPeriod != null)) {
+    const { getVisitAllowance } = await import("@/services/visit-allowance.service");
+    const allowance = await getVisitAllowance(memberId);
+    if (allowance.blockedCode === "QUOTA_EXCEEDED") {
+      return { enabled: false, reason: "visit_quota", desiredGroupIds: [], keepKisiUser: true };
+    }
   }
 
   // Enabled — collect Kisi groups from all active subscriptions

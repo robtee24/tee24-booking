@@ -91,6 +91,50 @@ export function earlyCancelFeeDue(sub: CommitmentFields, now = new Date()): numb
   return ends.getTime() > now.getTime() ? sub.earlyCancelFeeCents : 0;
 }
 
+/* ────────────────────────────── Family add-on ──────────────────────────────
+ * Recurring memberships let the account holder add family members at a
+ * percentage off the plan's base price. Each family member is a full member
+ * (own profile, photo, waiver, phone login) with their own subscription, but
+ * that subscription is billed to the account holder on the same invoice.
+ * Config comes from the plan: `familyBundle` (on/off) and, if present, the
+ * GymDesk-imported `familyDiscountConfig.additionalMembers`.
+ */
+export type FamilyPlanFields = {
+  productType: string;
+  billingType?: string | null;
+  familyBundle?: boolean | null;
+  familyDiscountConfig?: unknown;
+};
+
+export type FamilyAddon = { percentOff: number; maxAdditional: number };
+
+export const FAMILY_DEFAULT_PERCENT_OFF = 50;
+export const FAMILY_DEFAULT_MAX = 3;
+
+export function familyAddonFor(plan: FamilyPlanFields): FamilyAddon | null {
+  if (plan.productType === "DAY_PASS") return null;
+  if (plan.billingType && plan.billingType !== "RECURRING") return null;
+  const cfg = (plan.familyDiscountConfig as { additionalMembers?: { type?: string; value?: number; appliesToMemberNumbers?: number[] } } | null)?.additionalMembers;
+  if (!plan.familyBundle && !cfg) return null;
+  let percentOff = FAMILY_DEFAULT_PERCENT_OFF;
+  if (cfg && (cfg.type ?? "PERCENT").toUpperCase() === "PERCENT" && Number.isFinite(Number(cfg.value)) && Number(cfg.value) > 0 && Number(cfg.value) <= 100) {
+    percentOff = Math.round(Number(cfg.value));
+  }
+  const maxAdditional = Array.isArray(cfg?.appliesToMemberNumbers) && cfg!.appliesToMemberNumbers!.length
+    ? Math.max(1, Math.min(FAMILY_DEFAULT_MAX, cfg!.appliesToMemberNumbers!.length))
+    : FAMILY_DEFAULT_MAX;
+  return { percentOff, maxAdditional };
+}
+
+/** Per-period price of one family member on `plan` (base price only — guests stay on the account holder). */
+export function familyMemberCents(basePriceCents: number, percentOff: number): number {
+  return Math.max(0, Math.round(basePriceCents * (100 - percentOff) / 100));
+}
+
+export function familyLineLabel(name: string, planName: string, percentOff: number): string {
+  return `Family member — ${name} (${percentOff}% off ${planName})`;
+}
+
 /** Promo fields exposed to the public signup form. */
 export type SignupPromo = {
   id: string;

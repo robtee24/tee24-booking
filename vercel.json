@@ -41,6 +41,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron?job=enforce-visit-quota",
+      "schedule": "7,37 * * * *"
+    },
+    {
       "path": "/api/cron?job=sync-kisi-doors",
       "schedule": "*/15 * * * *"
     },

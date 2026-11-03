@@ -39,6 +39,7 @@ export type MemberEventKind =
   | "document.signed"
   | "document.expired"
   | "visit.checked-in"
+  | "visit.quota-reached" // limited plan: last allowed visit of the period used
   | "lead.created"
   | "sale.completed";
 

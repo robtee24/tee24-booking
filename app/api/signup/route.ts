@@ -6,14 +6,15 @@ import { audit } from "@/lib/audit";
 import { emitMemberEvent } from "@/lib/events";
 import { isSquareConfigured } from "@/lib/square";
 import { createInvoice, ensurePayToken, publicPayUrl, runCharge, vaultCard } from "@/services/billing.service";
-import { computeDiscountCents, describeDiscount, redeemDiscountForMember, validateDiscount } from "@/services/discount.service";
+import { computeDiscountCents, describeDiscount, redeemDiscountForMember, stackedDiscountCents, validateDiscount } from "@/services/discount.service";
 import { recordReferral } from "@/services/referral.service";
 import { requiredSignupInputKeys } from "@/lib/signup-form-config";
 import { SIGNUP_PHONE_AUDIENCE, verifyPhoneVerificationToken } from "@/lib/phone-verification";
 import { parseImageDataUrl, saveMemberPhoto, PhotoError } from "@/services/member-photo.service";
 import { signDocument } from "@/services/document.service";
 import { isRecurringCadence } from "@/services/recurring-billing.service";
-import { addPeriods, guestCentsFor, guestLineLabel, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { addPeriods, familyAddonFor, guestCentsFor, guestLineLabel, maxGuestsFor, membershipDisplayName } from "@/lib/membership-pricing";
+import { assertFamilyMemberUnique, createFamilyMemberRecord, FamilyAddonError, parseFamilyMemberInput, type FamilyMemberInput } from "@/services/family-addon.service";
 import { parseUploadDataUrl, saveMemberUpload, UploadError } from "@/services/member-upload.service";
 
 const GENDERS = new Set(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"]);
@@ -79,6 +80,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     code: r.discount.code,
+    id: r.discount.id,
+    scope: r.discount.scope,
     description: describeDiscount(r.discount),
     amountCents: subtotal != null ? computeDiscountCents(r.discount, subtotal) : null,
   });
@@ -94,6 +97,7 @@ export async function POST(req: NextRequest) {
       smsConsent, emailConsent, utm, referralCode,
       discountCode, sourceId, verificationToken, customFields,
       guestCount: guestCountRaw, promoDiscountId, promoIdDataUrl, promoAcknowledged,
+      promoDiscountIds, discountCodes, familyMembers,
       staging,
     } = body;
 
@@ -186,36 +190,95 @@ export async function POST(req: NextRequest) {
     const priceCents = basePriceCents + guestCents;
     const displayName = membershipDisplayName(plan.name, guestCount, plan.productType);
 
-    // Discount: a signup promotion, an explicit code (if allowed), or the form's auto-apply discount — one at most.
-    let discount: Awaited<ReturnType<typeof validateDiscount>> | null = null;
-    let promo: Awaited<ReturnType<typeof prisma.discount.findUnique>> = null;
-    if (promoDiscountId) {
-      promo = await prisma.discount.findUnique({ where: { id: String(promoDiscountId) } });
+    // Discounts stack: any number of signup promotions + discount codes (+ the form's
+    // auto-apply discount). Each is computed on the membership subtotal; the total is
+    // capped at the subtotal. Legacy singular fields are still accepted.
+    type Validated = Extract<Awaited<ReturnType<typeof validateDiscount>>, { ok: true }>;
+    const applied: Array<{ discount: Validated["discount"]; promo: NonNullable<Awaited<ReturnType<typeof prisma.discount.findUnique>>> | null }> = [];
+    const seenDiscountIds = new Set<string>();
+    const promoIds = [
+      ...(Array.isArray(promoDiscountIds) ? promoDiscountIds : []),
+      ...(promoDiscountId ? [promoDiscountId] : []),
+    ].map(String).filter((v, i, a) => v && a.indexOf(v) === i);
+    const promoIdUploads: Record<string, string> = body.promoIdDataUrls && typeof body.promoIdDataUrls === "object" ? body.promoIdDataUrls : {};
+    for (const pid of promoIds) {
+      const promo = await prisma.discount.findUnique({ where: { id: pid } });
       if (!promo || !promo.active || !promo.showOnSignup) return NextResponse.json({ error: "That promotion isn't available" }, { status: 400 });
-      discount = await validateDiscount(promo.code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
-      if (!discount.ok) return NextResponse.json({ error: discount.reason }, { status: 400 });
+      const v = await validateDiscount(promo.code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
+      if (!v.ok) return NextResponse.json({ error: v.reason }, { status: 400 });
       if (promo.requiresIdUpload) {
-        if (typeof promoIdDataUrl !== "string" || !promoIdDataUrl) return NextResponse.json({ error: `${promo.idUploadLabel ?? "An ID upload"} is required for this promotion.` }, { status: 400 });
+        const upload = promoIdUploads[pid] ?? (promoIds.length === 1 ? promoIdDataUrl : null);
+        if (typeof upload !== "string" || !upload) return NextResponse.json({ error: `${promo.idUploadLabel ?? "An ID upload"} is required for ${promo.signupTitle ?? promo.name}.` }, { status: 400 });
         try {
-          parseUploadDataUrl(promoIdDataUrl);
+          parseUploadDataUrl(upload);
         } catch (e) {
           return NextResponse.json({ error: e instanceof UploadError ? e.message : "Invalid ID upload" }, { status: 400 });
         }
+        promoIdUploads[pid] = upload;
       }
       if (promo.commitmentMonths && promo.commitmentAcknowledgement && promoAcknowledged !== true) {
         return NextResponse.json({ error: "Please confirm you understand the promotion terms." }, { status: 400 });
       }
-    } else if (discountCode && form.allowDiscountCode) {
-      discount = await validateDiscount(String(discountCode), { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
-      if (!discount.ok) return NextResponse.json({ error: discount.reason }, { status: 400 });
-    } else if (form.autoApplyDiscountId) {
-      const auto = await prisma.discount.findUnique({ where: { id: form.autoApplyDiscountId } });
-      if (auto?.active) discount = await validateDiscount(auto.code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
-      if (discount && !discount.ok) discount = null;
+      if (seenDiscountIds.has(v.discount.id)) continue;
+      seenDiscountIds.add(v.discount.id);
+      applied.push({ discount: v.discount, promo });
     }
-    const discountCents = discount?.ok ? computeDiscountCents(discount.discount, priceCents) : 0;
+    const codes = [
+      ...(Array.isArray(discountCodes) ? discountCodes : []),
+      ...(discountCode ? [discountCode] : []),
+    ].map((c) => String(c).trim()).filter((v, i, a) => v && a.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === i);
+    if (codes.length && form.allowDiscountCode) {
+      for (const code of codes) {
+        const v = await validateDiscount(code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
+        if (!v.ok) return NextResponse.json({ error: v.reason }, { status: 400 });
+        if (seenDiscountIds.has(v.discount.id)) continue;
+        seenDiscountIds.add(v.discount.id);
+        applied.push({ discount: v.discount, promo: null });
+      }
+    }
+    if (form.autoApplyDiscountId && !seenDiscountIds.has(form.autoApplyDiscountId)) {
+      const auto = await prisma.discount.findUnique({ where: { id: form.autoApplyDiscountId } });
+      if (auto?.active) {
+        const v = await validateDiscount(auto.code, { planId: plan.id, signupFormId: form.id, organizationId: location.organizationId });
+        if (v.ok) {
+          seenDiscountIds.add(v.discount.id);
+          applied.push({ discount: v.discount, promo: null });
+        }
+      }
+    }
+    const discountCents = stackedDiscountCents(applied.map((a) => a.discount), priceCents);
+    const promos = applied.filter((a) => a.promo).map((a) => a.promo!);
+    const promo = promos[0] ?? null; // kept on the subscription for the admin "promo" tag
     const isRecurringPlan = isRecurringCadence(plan.billingCadence) && plan.productType === "RECURRING";
-    const commitmentMonths = isRecurringPlan && promo?.commitmentMonths ? promo.commitmentMonths : null;
+    const commitmentMonths = isRecurringPlan ? promos.reduce<number | null>((m, p) => (p.commitmentMonths && p.commitmentMonths > (m ?? 0) ? p.commitmentMonths : m), null) : null;
+    const earlyCancelFeeCents = commitmentMonths
+      ? Math.min(discountCents, promos.filter((p) => p.commitmentMonths && p.earlyCancelPolicy !== "NONE").reduce((sum, p) => sum + computeDiscountCents(p, priceCents), 0))
+      : null;
+
+    // Family add-on: extra members at a % off the plan's base price, billed to this account.
+    const familyAddon = familyAddonFor(plan);
+    const familyRaw: unknown[] = Array.isArray(familyMembers) ? familyMembers : [];
+    if (familyRaw.length && !familyAddon) return NextResponse.json({ error: `${plan.name} doesn't include a family add-on` }, { status: 400 });
+    if (familyRaw.length && isMinor) return NextResponse.json({ error: "The account holder must be 18 or older to add family members." }, { status: 400 });
+    if (familyAddon && familyRaw.length > familyAddon.maxAdditional) return NextResponse.json({ error: `${plan.name} allows up to ${familyAddon.maxAdditional} family members` }, { status: 400 });
+    const familyInputs: FamilyMemberInput[] = [];
+    try {
+      const seen = { emails: new Set<string>([normalizedEmail]), phones: new Set<string>([phoneDigits]) };
+      for (let i = 0; i < familyRaw.length; i++) {
+        const fi = parseFamilyMemberInput(familyRaw[i], {
+          requiredFields,
+          requiredDocs,
+          index: i,
+          // The account holder signs for their minors unless the form collected a separate guardian.
+          defaultGuardian: guardianInput ?? { name: `${String(firstName).trim()} ${String(lastName).trim()}`, signatureSvg: sigByDoc.values().next().value ?? "" },
+        });
+        await assertFamilyMemberUnique(location.id, fi, seen);
+        familyInputs.push(fi);
+      }
+    } catch (e) {
+      if (e instanceof FamilyAddonError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
 
     // Optional referrer lookup
     const referrer = referralCode
@@ -268,8 +331,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Promotion ID (military / first responder / student / senior …) for staff review
-    if (promo?.requiresIdUpload && typeof promoIdDataUrl === "string" && promoIdDataUrl) {
-      await saveMemberUpload({ memberId: member.id, kind: "PROMO_ID", label: promo.idUploadLabel ?? promo.signupTitle ?? promo.name, discountId: promo.id, dataUrl: promoIdDataUrl });
+    for (const p of promos) {
+      const upload = promoIdUploads[p.id];
+      if (p.requiresIdUpload && upload) {
+        await saveMemberUpload({ memberId: member.id, kind: "PROMO_ID", label: p.idUploadLabel ?? p.signupTitle ?? p.name, discountId: p.id, dataUrl: upload });
+      }
     }
 
     // Waivers: assign + sign in one go (signatures were collected on the form)
@@ -320,9 +386,29 @@ export async function POST(req: NextRequest) {
         promoDiscountId: promo?.id ?? null,
         commitmentMonths,
         commitmentEndsAt: commitmentMonths ? addPeriods(startDate, plan.billingCadence, commitmentMonths) : null,
-        earlyCancelFeeCents: commitmentMonths && promo?.earlyCancelPolicy !== "NONE" ? discountCents : null,
+        earlyCancelFeeCents: earlyCancelFeeCents && earlyCancelFeeCents > 0 ? earlyCancelFeeCents : null,
       },
     });
+
+    // Family members: full member records, each with a subscription billed to this account.
+    const familyCreated: Awaited<ReturnType<typeof createFamilyMemberRecord>>[] = [];
+    const primaryForFamily = await prisma.member.findUniqueOrThrow({ where: { id: member.id } });
+    for (const fi of familyInputs) {
+      familyCreated.push(await createFamilyMemberRecord({
+        primary: primaryForFamily,
+        primarySub: sub,
+        plan,
+        basePriceCents,
+        input: fi,
+        requiredDocs,
+        status: "PENDING",
+        startDate,
+        ip,
+        userAgent: ua,
+        source: utm?.source ?? "signup_form",
+      }));
+      primaryForFamily.familyAccountId = primaryForFamily.familyAccountId ?? (await prisma.member.findUnique({ where: { id: member.id }, select: { familyAccountId: true } }))?.familyAccountId ?? null;
+    }
     // One-off plans (passes, prepaid blocks) are good for plan.durationDays, not a billing period.
     const oneOffPaidThrough = !isRecurringCadence(plan.billingCadence) || plan.productType !== "RECURRING"
       ? new Date(startDate.getTime() + Math.max(1, plan.durationDays ?? 30) * 86_400_000)
@@ -337,13 +423,14 @@ export async function POST(req: NextRequest) {
     const payingByCard = squareReady && Boolean(sourceId);
     const lines = [{ description: oneOffPaidThrough ? plan.name : `${plan.name} — first ${plan.billingCadence === "YEARLY" ? "year" : plan.billingCadence === "WEEKLY" ? "week" : "month"}`, unitCents: basePriceCents }];
     if (guestCents > 0) lines.push({ description: `Guest add-on — ${guestLineLabel(guestCount, plan.productType)}`, unitCents: guestCents });
+    for (const fc of familyCreated) lines.push({ description: fc.lineLabel, unitCents: fc.priceCents });
     if (signupFeeCents > 0) lines.push({ description: "Signup fee", unitCents: signupFeeCents });
     const invoice = await createInvoice({
       organizationId: location.organizationId,
       locationId: location.id,
       memberId: member.id,
       subscriptionId: sub.id,
-      description: `${displayName} — signup`,
+      description: `${displayName}${familyCreated.length ? ` + ${familyCreated.length} family` : ""} — signup`,
       dueDate: startDate,
       scheduledFor: startDate,
       discountCents,
@@ -353,11 +440,15 @@ export async function POST(req: NextRequest) {
       lines,
     });
     let discountAppliedId: string | null = null;
-    if (discount?.ok && discountCents > 0) {
-      const app = await prisma.discountApplication.create({ data: { discountId: discount.discount.id, memberId: member.id, invoiceId: invoice.id, amountCents: discountCents } });
-      discountAppliedId = app.id;
-      if (discount.discount.scope !== "ONE_TIME") await redeemDiscountForMember(discount.discount.id, member.id);
-      else await prisma.discount.update({ where: { id: discount.discount.id }, data: { totalRedemptions: { increment: 1 } } });
+    let remainingDiscount = discountCents;
+    for (const { discount: d } of applied) {
+      const cents = Math.min(remainingDiscount, computeDiscountCents(d, priceCents));
+      if (cents <= 0) continue;
+      remainingDiscount -= cents;
+      const app = await prisma.discountApplication.create({ data: { discountId: d.id, memberId: member.id, invoiceId: invoice.id, amountCents: cents } });
+      discountAppliedId ??= app.id;
+      if (d.scope !== "ONE_TIME") await redeemDiscountForMember(d.id, member.id);
+      else await prisma.discount.update({ where: { id: d.id }, data: { totalRedemptions: { increment: 1 } } });
     }
 
     // Visitor record for funnel
@@ -399,7 +490,7 @@ export async function POST(req: NextRequest) {
       entityType: "MembershipSubscription",
       entityId: sub.id,
       after: { memberId: member.id, planId: plan.id, status: "PENDING", invoiceId: invoice.id },
-      metadata: { signupFormId: form.id, utm, referralCode, discountCode: discount?.ok ? discount.discount.code : null, promoDiscountId: promo?.id ?? null, guestCount, commitmentMonths, payingByCard },
+      metadata: { signupFormId: form.id, utm, referralCode, discountCodes: applied.map((a) => a.discount.code), promoDiscountIds: promos.map((p) => p.id), guestCount, familyMemberIds: familyCreated.map((f) => f.member.id), commitmentMonths, payingByCard },
     });
 
     await emitMemberEvent("member.signup", {
@@ -435,12 +526,13 @@ export async function POST(req: NextRequest) {
         const message = e instanceof Error ? e.message : "Payment failed";
         const desired = await computeDesiredAccessState(member.id);
         void applyAccessState(member.id, desired);
+        for (const fc of familyCreated) void computeDesiredAccessState(fc.member.id).then((d) => applyAccessState(fc.member.id, d)).catch(() => {});
         return NextResponse.json(
           { error: `We couldn't process your card: ${message}`, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, payToken, payUrl, paid: false, redirectUrl },
           { status: 402 },
         );
       }
-      return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl });
+      return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl, familyMemberIds: familyCreated.map((f) => f.member.id) });
     }
 
     // Nothing to pay (free pass / 100% discount): activate right away.
@@ -448,12 +540,13 @@ export async function POST(req: NextRequest) {
       const { onInvoicePaid } = await import("@/services/billing.service");
       await onInvoicePaid(invoice.id, { paidCents: 0, method: "COMP", receipt: false });
       await fixOneOffDates();
-      return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl });
+      return NextResponse.json({ ok: true, memberId: member.id, subscriptionId: sub.id, invoiceId: invoice.id, paid: true, payUrl, redirectUrl, familyMemberIds: familyCreated.map((f) => f.member.id) });
     }
 
     // Not paying online: PENDING, access computed (disabled until payment + docs)
     const desired = await computeDesiredAccessState(member.id);
     void applyAccessState(member.id, desired);
+    for (const fc of familyCreated) void computeDesiredAccessState(fc.member.id).then((d) => applyAccessState(fc.member.id, d)).catch(() => {});
 
     return NextResponse.json({
       ok: true,
