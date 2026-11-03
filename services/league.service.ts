@@ -515,8 +515,9 @@ export async function getScorecardImage(imageId: string) {
 /** Public rules page for a league (used by the kiosk QR / link and the app). */
 export function leagueRulesUrl(league: { id: string; rulesUrl: string | null }) {
   if (league.rulesUrl) return league.rulesUrl;
-  const base = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://reservations.tee24.golf").replace(/\/$/, "");
-  return `${base}/league/${league.id}/rules`;
+  // The public league site (league.tee24.golf) renders the same rules from this backend.
+  const site = (process.env.LEAGUE_SITE_URL || "https://league.tee24.golf").replace(/\/$/, "");
+  return `${site}/rules`;
 }
 
 /** Step-by-step kiosk tutorial, rendered on the kiosk and in the app. */
