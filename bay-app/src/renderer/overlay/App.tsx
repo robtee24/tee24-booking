@@ -6,6 +6,7 @@ import { ScheduleView } from '../shared/ScheduleView';
 import { ExportFlow } from '../shared/ExportFlow';
 import { LeagueOverlay } from './LeagueOverlay';
 import { PlayersFlow } from './PlayersFlow';
+import { Logo } from '../shared/Logo';
 import { CloseIcon, LockIcon, DeleteIcon, CheckIcon } from '../shared/Icons';
 
 /**
@@ -112,13 +113,16 @@ function RestartNotice({ deadline }: { deadline: string }) {
   );
 }
 
-export function Modal({ title, eyebrow, children, onClose, wide, footer }: { title: string; eyebrow?: string; children: React.ReactNode; onClose?: () => void; wide?: boolean; footer?: React.ReactNode }) {
+export function Modal({ title, eyebrow, children, onClose, wide, footer, logo }: { title: string; eyebrow?: string; children: React.ReactNode; onClose?: () => void; wide?: boolean; footer?: React.ReactNode; logo?: boolean }) {
   return (
     <div className={`modal ${wide ? 'modal-wide' : ''}`}>
       <div className="modal-head row between" style={{ alignItems: 'flex-start' }}>
-        <div>
-          {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-          <h1>{title}</h1>
+        <div className="row" style={{ gap: 14, alignItems: 'center' }}>
+          {logo && <Logo height={40} />}
+          <div>
+            {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+            <h1>{title}</h1>
+          </div>
         </div>
         {onClose && (
           <button className="btn btn-ghost" onClick={onClose} aria-label="Close"><CloseIcon size={26} /></button>

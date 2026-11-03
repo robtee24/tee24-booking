@@ -34,7 +34,12 @@ export function Shell({ children, title, back, subtitle, right }: { children: Re
             <Link href={back.href} className="rounded-full px-3 py-1.5 text-sm" style={{ color: L.text2, background: L.surface2 }}>
               ← {back.label}
             </Link>
-          ) : null}
+          ) : (
+            <Link href="/league" aria-label="Tee24 League" className="shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/tee24-logo.png" alt="Tee24 Indoor Golf Center" style={{ height: 40, width: "auto", display: "block" }} />
+            </Link>
+          )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-xl tracking-tight" style={{ fontFamily: "var(--font-league-serif), Georgia, serif" }}>{title}</div>
             {subtitle ? <div className="truncate text-xs" style={{ color: L.text2 }}>{subtitle}</div> : null}

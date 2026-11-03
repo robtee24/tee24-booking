@@ -70,6 +70,16 @@ export function RulesBody({ s, championshipAt, leagueName }: { s: RulesSettings;
   const champ = championshipAt ? new Date(championshipAt).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : null;
   return (
     <div className="space-y-1">
+      <SectionTitle>Joining</SectionTitle>
+      <Card>
+        <Ol>
+          <li>Open to Tee24 members at every location — it&apos;s one league. Join any time during the season from the Tee24 app (Events → League → Join) or at the bay kiosk (League → Join). There&apos;s no sign-up fee; you only pay for the weeks you play.</li>
+          <li>Keep a card on file in the Tee24 app (Settings → Membership → Payment method). It&apos;s what gets charged for each week&apos;s entry.</li>
+          <li>Players under {s.minorAge} are flagged on the leaderboard, play every week free, earn points and can qualify for the championship, but can&apos;t win money.</li>
+          <li>Join late and you simply start earning points from your first week; weeks you didn&apos;t play score nothing.</li>
+        </Ol>
+      </Card>
+
       <SectionTitle>How it works</SectionTitle>
       <Card>
         <Ol>
@@ -91,8 +101,9 @@ export function RulesBody({ s, championshipAt, leagueName }: { s: RulesSettings;
           <Kv k="Top 10" v={`${s.pointsTop10} pts`} />
           <Kv k="Top 15" v={`${s.pointsTop15} pts`} />
           <Kv k="Team win" v={`${s.pointsTeamWin} pts`} />
+          <Kv k="Team tie" v={`${s.pointsTeamTie} pt each`} />
         </Grid>
-        <P>Finish top 5 straight and top 10 handicapped, and your team wins: {s.pointsTop5 + s.pointsTop10 + s.pointsTeamWin} points that week. Tap any player on the leaderboard to see every scorecard, stats and winnings.</P>
+        <P>Finish top 5 straight and top 10 handicapped, and your team wins: {s.pointsTop5 + s.pointsTop10 + s.pointsTeamWin} points that week. Everyone is on one leaderboard, ranked by total points; ties on points share the rank. Tap any player on the leaderboard to see every scorecard, stats, weekly teams and winnings.</P>
       </Card>
 
       <SectionTitle>Handicaps</SectionTitle>
@@ -137,9 +148,10 @@ export function RulesBody({ s, championshipAt, leagueName }: { s: RulesSettings;
         <Ol>
           <li>Before you tee off, open <b>League Settings</b> in GSPro and set gimmes to {s.gimmeDistanceFt}&apos;, mulligans <b>OFF</b>, {s.greenSpeed.toLowerCase()} greens, and tees for your age group.</li>
           <li>Finish all 18 holes and bring up the scorecard screen.</li>
-          <li>Tap <b>League</b> on the bay toolbar. Enter your phone number and your name exactly as it appears on the scorecard. Add up to 5 players.</li>
+          <li>Tap <b>League</b> on the bay toolbar. Enter your phone number and your name <b>exactly as it appears on the GSPro scorecard</b> — that&apos;s how your line on the card is matched to you. Add up to 5 players from the same card; each is charged separately.</li>
           <li>Tap Submit and confirm. The kiosk takes a screenshot of the scorecard, reads the scores, checks the settings and charges each member {money(s.weeklyFeeCents)}.</li>
           <li>If mulligans are on, the card can&apos;t be read, or a card is declined, that score isn&apos;t accepted and nothing is charged. Fix it and resubmit before Sunday 11:59 PM.</li>
+          <li>One score per player per week — the first accepted submission counts. Rounds played without the league settings don&apos;t count. The kiosk keeps the scorecard screenshot so staff can review any disputed card.</li>
         </Ol>
       </Card>
       <div className="pt-4 text-center text-xs" style={{ color: L.text3 }}>{leagueName}</div>

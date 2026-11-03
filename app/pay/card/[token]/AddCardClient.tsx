@@ -28,10 +28,8 @@ export function AddCardClient({ token, square, member, existing, location }: Pro
     <div className="min-h-screen bg-apple-bg py-10">
       <div className="mx-auto max-w-lg px-4">
         <header className="mb-6 flex items-center gap-3">
-          {location.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={location.logoUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
-          ) : null}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={location.logoUrl ?? "/tee24-logo.png"} alt="Tee24" className={location.logoUrl ? "h-10 w-10 rounded-full object-cover" : "h-10 w-auto"} />
           <div>
             <h1 className="text-apple-xl font-semibold tracking-tight text-apple-text">{location.name}</h1>
             <p className="text-apple-sm text-apple-text-secondary">Card on file</p>

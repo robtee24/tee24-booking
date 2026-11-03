@@ -16,7 +16,7 @@ export function LeagueOverlay({ onClose }: { onClose: () => void }) {
 
   if (panel === 'tutorial' && league) {
     return (
-      <Modal title="How to submit a league round" eyebrow={league.name} wide onClose={() => setPanel('submit')}>
+      <Modal title="How to submit a league round" eyebrow={league.name} wide logo onClose={() => setPanel('submit')}>
         <div className="league-theme league-two-col">
           <LeagueTutorial league={league} />
           <div className="stack">
@@ -36,7 +36,7 @@ export function LeagueOverlay({ onClose }: { onClose: () => void }) {
 
   if (panel === 'rules' && league) {
     return (
-      <Modal title="League rules" eyebrow={league.name} wide onClose={() => setPanel('submit')}>
+      <Modal title="League rules" eyebrow={league.name} wide logo onClose={() => setPanel('submit')}>
         <div className="league-theme stack">
           <LeagueRulesSummary league={league} />
           <div className="muted league-note">Full rules: <span className="league-url">{league.rulesUrl.replace(/^https?:\/\//, '')}</span> · also under League → Rules in the Tee24 app.</div>
@@ -49,7 +49,7 @@ export function LeagueOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title={league ? weekTitle(league) : 'League'} eyebrow={league?.name ?? 'Tee24 League'} wide onClose={onClose}>
+    <Modal title={league ? weekTitle(league) : 'League'} eyebrow={league?.name ?? 'Tee24 League'} wide logo onClose={onClose}>
       <div className="league-theme">
         {!leagues && !err && <div className="muted">Loading…</div>}
         {err && <div className="error">{err}</div>}

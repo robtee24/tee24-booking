@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { KioskState, LeagueInfo } from '../shared/types';
 import { BackIcon } from '../shared/Icons';
+import { Logo } from '../shared/Logo';
 import { LeagueJoin, LeagueRulesSummary, LeagueSettings, LeagueTutorial, championshipLabel, money, useLeagues, weekTitle } from '../shared/LeagueFlow';
 
 type Tab = 'how' | 'rules' | 'settings' | 'join';
@@ -21,6 +22,7 @@ export function League({ state, onClose }: { state: KioskState; onClose: () => v
     <div className="page league-theme">
       <div className="page-header">
         <button className="btn btn-ghost" onClick={onClose}><BackIcon size={20} /> Back</button>
+        <Logo height={44} />
         <h1 className="league-serif">Tee24 League</h1>
         {league && (
           <div className="row league-tabs" style={{ marginLeft: 'auto' }}>
