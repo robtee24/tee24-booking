@@ -138,8 +138,23 @@ export async function runLeagueNotifications(now = new Date()) {
   const prisma = getPrisma();
   const leagues = await prisma.league.findMany({ where: { status: { in: ["OPEN", "ACTIVE"] } }, include: { location: { select: { timezone: true } }, weeks: { orderBy: { weekNumber: "asc" } } } });
   const out: { weekId: string; kind: "OPEN" | "RESULTS"; recipients: number; sent: number }[] = [];
+  let autoJoined = 0;
   for (const l of leagues) {
     const tz = l.location.timezone;
+    // Members who signed up on the website before this league existed asked to be added
+    // "when the season opens" — do that now, before the week-open text goes out.
+    const pending = await prisma.leagueSubscriber.findMany({
+      where: { memberId: { not: null }, joinRequested: true, joinedLeagueId: null, OR: [{ organizationId: l.organizationId }, { organizationId: null }] },
+    });
+    for (const s of pending) {
+      try {
+        await joinLeague({ leagueId: l.id, memberId: s.memberId!, via: "APP" });
+        await prisma.leagueSubscriber.update({ where: { id: s.id }, data: { joinedLeagueId: l.id } });
+        autoJoined++;
+      } catch (e) {
+        console.error("[league] auto-join failed", s.phone, e instanceof Error ? e.message : e);
+      }
+    }
     for (const w of l.weeks) {
       // Week just opened (and is still open): announce the course + deadline.
       if (!w.openNotifiedAt && w.opensAt <= now && w.deadlineAt > now) {
@@ -163,5 +178,5 @@ export async function runLeagueNotifications(now = new Date()) {
       }
     }
   }
-  return { notifications: out };
+  return { notifications: out, autoJoined };
 }
