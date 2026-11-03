@@ -29,7 +29,7 @@ export default async function LeagueIndex() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-lg font-semibold">{l.name}</div>
-                      <div className="text-xs" style={{ color: L.text2 }}>{l.location.name} · {l._count.players} players</div>
+                      <div className="text-xs" style={{ color: L.text2 }}>All Tee24 locations · {l._count.players} players</div>
                     </div>
                     <Pill tone={l.status === "COMPLETE" ? "neutral" : "green"}>{l.status === "COMPLETE" ? "Finished" : "Live"}</Pill>
                   </div>

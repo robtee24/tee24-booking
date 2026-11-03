@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { kioskCheck, kioskJoin, kioskLeagueInfo, kioskLookup, kioskSubmit, LeagueError, type KioskSubmitInput } from "@/services/league.service";
+import { kioskCheck, kioskJoin, kioskLeagueInfo, kioskLookup, kioskSubmit, LeagueError, type KioskSubmitInput, leagueScopeForLocations } from "@/services/league.service";
 import type { OcrLine } from "@/lib/league/ocr";
 
 export const runtime = "nodejs";
@@ -49,8 +49,8 @@ export async function POST(req: Request) {
     if (!deviceId) return NextResponse.json({ error: "deviceId required" }, { status: 400 });
     const locationId = await locationForDevice(deviceId);
     if (!leagueId) return NextResponse.json({ error: "leagueId required" }, { status: 400 });
-    const league = await getPrisma().league.findFirst({ where: { id: leagueId, locationId }, select: { id: true } });
-    if (!league) return NextResponse.json({ error: "League not found at this location", code: "LEAGUE_NOT_FOUND" }, { status: 404 });
+    const league = await getPrisma().league.findFirst({ where: { id: leagueId, ...(await leagueScopeForLocations([locationId])) }, select: { id: true } });
+    if (!league) return NextResponse.json({ error: "League not found", code: "LEAGUE_NOT_FOUND" }, { status: 404 });
 
     if (action === "lookup") return NextResponse.json(await kioskLookup(leagueId, String(body.phone ?? ""), typeof body.weekId === "string" ? body.weekId : null));
     if (action === "join") return NextResponse.json(await kioskJoin(leagueId, String(body.phone ?? ""), typeof body.displayName === "string" ? body.displayName : null));

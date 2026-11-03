@@ -25,7 +25,7 @@ export default async function LeaguePage({ params, searchParams }: { params: Pro
     { key: "settings", label: "Settings & Rules" },
   ];
   return (
-    <Shell title={hub.league.name} subtitle={`${hub.league.location.name} · ${hub.standings.length} players`} back={{ href: "/league", label: "Leagues" }}>
+    <Shell title={hub.league.name} subtitle={`All Tee24 locations · ${hub.standings.length} players`} back={{ href: "/league", label: "Leagues" }}>
       {cur ? (
         <Card tone={cur.status === "OPEN" ? "green" : undefined}>
           <div className="flex items-start justify-between gap-3">

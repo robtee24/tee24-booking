@@ -9,7 +9,7 @@ import { canAccessLocation } from "@/lib/access";
 import { getPrisma } from "@/lib/db";
 import {
   adminLeagueDetail, adminSetScore, awardChampionship, computeWeek, createLeague, joinLeague, LeagueError, listLeagues,
-  markPayoutPaid, regenerateTeams, reviewScore, updateLeague, updatePlayer, updateWeek, waiveEntry,
+  leagueScopeForLocations, markPayoutPaid, regenerateTeams, reviewScore, updateLeague, updatePlayer, updateWeek, waiveEntry,
 } from "@/services/league.service";
 
 export const runtime = "nodejs";
@@ -23,9 +23,9 @@ function visibleLocationIds(admin: Admin): string[] | null {
 }
 
 async function assertLeague(admin: Admin, leagueId: string) {
-  const league = await getPrisma().league.findUnique({ where: { id: leagueId }, select: { locationId: true } });
+  const ids = visibleLocationIds(admin);
+  const league = await getPrisma().league.findFirst({ where: { id: leagueId, ...(ids ? await leagueScopeForLocations(ids) : {}) }, select: { id: true } });
   if (!league) throw new LeagueError("League not found", 404, "LEAGUE_NOT_FOUND");
-  if (!canAccessLocation(admin.role as "ROOT" | "FULL" | "SCOPED", admin.locations.map((l) => l.locationId), league.locationId)) throw new LeagueError("Forbidden", 403, "FORBIDDEN");
 }
 
 function fail(err: unknown) {

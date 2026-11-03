@@ -17,7 +17,7 @@ export default async function LeagueAdminPage() {
   ]);
   return (
     <div className="space-y-6">
-      <PageHeader title="League Manager" description="Winter league: weekly scores, entries, handicaps, teams, points and payouts. Members join and submit from the app or the bay kiosk." />
+      <PageHeader title="League Manager" description="One league for all Tee24 locations: weekly scores, entries, handicaps, teams, points and payouts. Members join from the app or kiosk and submit scores at the bay kiosk." />
       <LeagueListClient
         leagues={leagues.map((l) => ({
           id: l.id,

@@ -21,7 +21,7 @@ export function League({ state, onClose }: { state: KioskState; onClose: () => v
     <div className="page league-theme">
       <div className="page-header">
         <button className="btn btn-ghost" onClick={onClose}><BackIcon size={20} /> Back</button>
-        <h1 className="league-serif">{state.settings.locationName ?? 'Tee24'} League</h1>
+        <h1 className="league-serif">Tee24 League</h1>
         {league && (
           <div className="row league-tabs" style={{ marginLeft: 'auto' }}>
             <button className={`btn ${tab === 'how' ? 'btn-primary' : ''}`} onClick={() => setTab('how')}>How to submit</button>

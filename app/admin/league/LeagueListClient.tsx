@@ -88,7 +88,7 @@ export function LeagueListClient({ leagues, locations }: { leagues: LeagueListRo
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-apple-lg font-semibold text-apple-text">{l.name}</div>
-                    <div className="text-apple-sm text-apple-text-secondary">{l.location} · {l.playerCount} players · {l.weeks} weeks</div>
+                    <div className="text-apple-sm text-apple-text-secondary">All locations · {l.playerCount} players · {l.weeks} weeks</div>
                   </div>
                   <Badge tone={l.status === "ACTIVE" || l.status === "OPEN" ? "success" : l.status === "COMPLETE" ? "muted" : "warn"}>{l.status}</Badge>
                 </div>
@@ -116,7 +116,7 @@ export function LeagueListClient({ leagues, locations }: { leagues: LeagueListRo
         open={open}
         onClose={() => setOpen(false)}
         title="New league"
-        description="Weeks run Monday 12:00 AM → Sunday 11:59 PM in the location's time zone. Weeks 1–2 are played straight; handicaps apply from week 3. Scores are submitted at the bay kiosk only."
+        description="One league for every Tee24 location — members at any location play together. Weeks run Monday 12:00 AM → Sunday 11:59 PM. Weeks 1–2 are played straight; handicaps apply from week 3. Scores are submitted at the bay kiosk only."
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
@@ -125,10 +125,12 @@ export function LeagueListClient({ leagues, locations }: { leagues: LeagueListRo
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Select label="Location" value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })}>
-            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </Select>
           <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          {locations.length > 1 ? (
+            <Select label="Time zone / billing location" value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} hint="Only sets the deadline time zone — every location plays in this league">
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </Select>
+          ) : null}
           <Input label="First week starts (Monday)" type="date" value={form.firstWeekStart} onChange={(e) => setForm({ ...form, firstWeekStart: e.target.value })} />
           <Input label="Number of weeks" type="number" min={1} max={30} value={form.weekCount} onChange={(e) => setForm({ ...form, weekCount: e.target.value })} />
           <Input label="Weekly entry ($)" type="number" min={0} step="1" value={form.weeklyFee} onChange={(e) => setForm({ ...form, weeklyFee: e.target.value })} />

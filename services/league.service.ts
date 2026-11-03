@@ -58,6 +58,26 @@ async function loadLeague(leagueId: string): Promise<LeagueRow> {
   return league;
 }
 
+/**
+ * The league is organization-wide: one league shared by every Tee24 location.
+ * `League.locationId` is only the "home" location used for the time zone and
+ * invoice bookkeeping. These helpers decide whether a kiosk / admin at a given
+ * location can see a league.
+ */
+export async function leagueScopeForLocations(locationIds: string[]): Promise<Prisma.LeagueWhereInput> {
+  if (locationIds.length === 0) return { id: "__none__" };
+  const locs = await getPrisma().location.findMany({ where: { id: { in: locationIds } }, select: { organizationId: true } });
+  const orgIds = Array.from(new Set(locs.map((l) => l.organizationId).filter((x): x is string => !!x)));
+  return { OR: [{ locationId: { in: locationIds } }, ...(orgIds.length ? [{ organizationId: { in: orgIds } }] : [])] };
+}
+
+async function assertLeagueVisibleAt(league: { id: string; locationId: string; organizationId: string | null }, locationId: string) {
+  if (league.locationId === locationId) return;
+  const loc = await getPrisma().location.findUnique({ where: { id: locationId }, select: { organizationId: true } });
+  if (loc?.organizationId && loc.organizationId === league.organizationId) return;
+  throw new LeagueError("This league isn't available at this location", 403, "WRONG_LOCATION");
+}
+
 function hcSettings(l: { handicapCap: number; throwOutEvery: number; openingWeeks: number }): HandicapSettings {
   return { handicapCap: l.handicapCap, throwOutEvery: l.throwOutEvery, openingWeeks: l.openingWeeks };
 }
@@ -102,6 +122,11 @@ export async function createLeague(input: CreateLeagueInput, actorId?: string) {
   if (!loc) throw new LeagueError("Location not found", 404, "LOCATION_NOT_FOUND");
   if (!input.name.trim()) throw new LeagueError("Name is required");
   if (!Number.isInteger(input.weekCount) || input.weekCount < 1 || input.weekCount > 30) throw new LeagueError("Week count must be 1–30");
+  const running = await prisma.league.findFirst({
+    where: { status: { in: ["OPEN", "ACTIVE"] }, ...(await leagueScopeForLocations([loc.id])) },
+    select: { id: true, name: true },
+  });
+  if (running) throw new LeagueError(`"${running.name}" is already running. There is one league for all Tee24 locations — complete it before starting another.`, 409, "LEAGUE_ALREADY_RUNNING");
   const weeks = buildWeeks(input.firstWeekStart, input.weekCount, loc.timezone, !!input.withChampionshipWeek);
   const league = await prisma.league.create({
     data: {
@@ -196,7 +221,7 @@ export async function updateWeek(weekId: string, patch: { courseName?: string | 
 export async function listLeagues(locationIds?: string[] | null) {
   const prisma = getPrisma();
   const rows = await prisma.league.findMany({
-    where: locationIds ? { locationId: { in: locationIds } } : {},
+    where: locationIds ? await leagueScopeForLocations(locationIds) : {},
     include: {
       location: { select: { id: true, name: true, slug: true, timezone: true } },
       weeks: { orderBy: { weekNumber: "asc" }, select: { id: true, weekNumber: true, courseName: true, opensAt: true, deadlineAt: true, finalizedAt: true, revealedAt: true, potCents: true, isChampionship: true } },
@@ -507,11 +532,11 @@ export function kioskTutorialSteps(league: { gimmeDistanceFt: number; mulligans:
   ];
 }
 
-/** League(s) at the kiosk's location with the week that is open right now. */
+/** League(s) the kiosk can see (organization-wide) with the week that is open right now. */
 export async function kioskLeagueInfo(locationId: string, now = new Date()) {
   const prisma = getPrisma();
   const leagues = await prisma.league.findMany({
-    where: { locationId, status: { in: ["OPEN", "ACTIVE"] } },
+    where: { status: { in: ["OPEN", "ACTIVE"] }, ...(await leagueScopeForLocations([locationId])) },
     include: { location: { select: { timezone: true, name: true } }, weeks: { orderBy: { weekNumber: "asc" }, include: { _count: { select: { scores: { where: { status: { not: "REJECTED" } } } } } } }, _count: { select: { players: { where: { active: true } } } } },
   });
   return leagues.map((l) => {
@@ -594,7 +619,7 @@ export type KioskCheckResult = {
  */
 export async function kioskCheck(locationId: string, leagueId: string, lines: OcrLine[]): Promise<KioskCheckResult> {
   const league = await loadLeague(leagueId);
-  if (league.locationId !== locationId) throw new LeagueError("This league belongs to another location", 403, "WRONG_LOCATION");
+  await assertLeagueVisibleAt(league, locationId);
   const parsed = parseScorecard(lines ?? []);
   const check = checkSettings(parsed.settings, { mulligans: league.mulligans, gimmeDistanceFt: league.gimmeDistanceFt, greenSpeed: null });
   const isScorecard = parsed.isScorecard && parsed.players.length > 0;
@@ -658,7 +683,7 @@ export type KioskSubmitResult = {
 export async function kioskSubmit(locationId: string, input: KioskSubmitInput): Promise<KioskSubmitResult> {
   const prisma = getPrisma();
   const league = await loadLeague(input.leagueId);
-  if (league.locationId !== locationId) throw new LeagueError("This league belongs to another location", 403, "WRONG_LOCATION");
+  await assertLeagueVisibleAt(league, locationId);
   const weeks = await prisma.leagueWeek.findMany({ where: { leagueId: league.id } });
   const week = input.weekId ? weeks.find((w) => w.id === input.weekId) ?? null : currentWeekOf(weeks);
   if (!week) throw new LeagueError("No league week is open right now", 409, "NO_OPEN_WEEK");
