@@ -5,13 +5,18 @@ import { after } from "next/server";
 import type { Prisma, SwingAnalysis } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { mintUploadTicket, signFileUrl, signProThumbUrl, swinglab, swinglabConfig, TICKET_TTL_S, type SwinglabJob, type SwinglabPro, type SwinglabReport } from "@/lib/swinglab";
-import { blobSize, blobUrl, deleteJob as deleteJobBlobs, jobPath, presignClipUpload, purgeJobMedia, readJobRecord, SOURCE_CLIP, swingBlobEnabled } from "@/lib/swing-blob";
+import { blobSize, blobUrl, deleteJob as deleteJobBlobs, jobPath, presignClipUpload, purgeJobFiles, purgeJobMedia, readJobRecord, SOURCE_CLIP, swingBlobEnabled } from "@/lib/swing-blob";
+import { adminNotify } from "@/lib/admin-notify";
 import type { FocusAreaKey } from "@/lib/practice/drills";
 import type { SwingFlag } from "@/lib/practice/swing-analysis";
 import { regeneratePlan } from "@/services/mobile-practice.service";
 import { MobileError } from "@/services/mobile-auth.service";
 
-export const SWING_LIMITS = { maxSeconds: 20, maxBytes: 120 * 1024 * 1024, ticketTtlS: TICKET_TTL_S };
+/** Clips over 10 s or shot in slow motion (>60 fps) are turned away before any model work runs. */
+export const SWING_LIMITS = { maxSeconds: 10, maxFps: 60, maxBytes: 60 * 1024 * 1024, ticketTtlS: TICKET_TTL_S };
+
+/** Media retention: the source clip goes after a week, rendered videos after 90 idle days. Stills and the report stay. */
+export const SWING_RETENTION = { clipDays: 7, videoIdleDays: 90 };
 
 /** An UPLOADED row with no word from the analyzer for this long is written off. */
 const RUNNING_TIMEOUT_MS = 20 * 60 * 1000;
@@ -273,7 +278,7 @@ export async function markUploaded(memberId: string, id: string, jobId: string |
     if (a.status === "UPLOADED" || a.status === "DONE") return { analysis: present(a) };
     const size = await blobSize(jobPath(a.jobId, SOURCE_CLIP));
     if (!size) throw new MobileError("The video didn't finish uploading. Try again.", 409, "UPLOAD_MISSING");
-    if (size > SWING_LIMITS.maxBytes) throw new MobileError("That video is too large. Trim it to one swing.", 413, "TOO_LARGE");
+    if (size > SWING_LIMITS.maxBytes) throw new MobileError(`That video is too large. Trim it to one swing under ${SWING_LIMITS.maxSeconds} seconds.`, 413, "TOO_LARGE");
     const updated = await prisma.swingAnalysis.update({ where: { id: a.id }, data: { status: "UPLOADED", error: null, completedAt: null } });
     after(() => runAnalysis(updated.id));
     return { analysis: present(updated) };
@@ -338,7 +343,37 @@ async function failed(id: string, err: unknown) {
   const friendly = /abort|timeout|timed out/i.test(msg)
     ? "The analysis took too long. Try a shorter clip."
     : friendlyError(msg.replace(/^swinglab \d+: /, ""));
-  await prisma.swingAnalysis.updateMany({ where: { id, status: "UPLOADED" }, data: { status: "ERROR", error: friendly, completedAt: new Date() } });
+  const r = await prisma.swingAnalysis.updateMany({ where: { id, status: "UPLOADED" }, data: { status: "ERROR", error: friendly, completedAt: new Date() } });
+  if (r.count) await alertSwingFailure(id, msg, friendly);
+}
+
+/** Clip rejections are the member's to fix; anything else is ours and lands in the admin inbox. */
+function isClipRejection(raw: string) {
+  return /CLIP_TOO_LONG|CLIP_SLOW_MOTION|CLIP_TOO_SHORT|too short to analyze/i.test(raw);
+}
+
+async function alertSwingFailure(id: string, raw: string, friendly: string) {
+  try {
+    const a = await prisma.swingAnalysis.findUnique({ where: { id }, include: { member: { select: { firstName: true, lastName: true, organizationId: true, locationId: true } } } });
+    if (!a) return;
+    const who = `${a.member.firstName} ${a.member.lastName}`.trim();
+    const link = `/admin/locations/${a.member.locationId}/members/list/${a.memberId}`;
+    const common = { organizationId: a.member.organizationId, locationId: a.member.locationId, link, data: { analysisId: a.id, jobId: a.jobId, error: raw.slice(0, 500) } };
+    if (isClipRejection(raw)) {
+      await adminNotify({ ...common, kind: "swinglab.rejected", severity: "INFO", title: `Swing Lab turned away a clip from ${who}`, body: friendly });
+      return;
+    }
+    await adminNotify({ ...common, kind: "swinglab.failed", severity: "ERROR", title: `Swing Lab analysis failed for ${who}`, body: `${friendly} (${raw.slice(0, 200)})` });
+    // Several real failures in a short window usually means the analyzer itself is unwell.
+    const since = new Date(Date.now() - 15 * 60 * 1000);
+    const recent = await prisma.adminNotification.count({ where: { kind: "swinglab.failed", createdAt: { gte: since } } });
+    const rolled = await prisma.adminNotification.count({ where: { kind: "swinglab.burst", createdAt: { gte: since } } });
+    if (recent >= 3 && rolled === 0) {
+      await adminNotify({ ...common, kind: "swinglab.burst", severity: "ERROR", title: `Swing Lab: ${recent} analyses failed in the last 15 minutes`, body: "Check the analyzer (tee24-swinglab on Vercel) and its runtime logs.", link: "/admin/notifications" });
+    }
+  } catch (e) {
+    console.warn("[swing] alert failed", e instanceof Error ? e.message : e);
+  }
 }
 
 /** Analyzer callback: the camera angle read off the clip right after it landed. */
@@ -374,6 +409,10 @@ export async function listAnalyses(memberId: string, limit = 30) {
 export async function getAnalysis(memberId: string, id: string) {
   const a = await prisma.swingAnalysis.findFirst({ where: { id, memberId } });
   if (!a) throw new MobileError("Analysis not found", 404, "NOT_FOUND");
+  // Opening a swing keeps its videos alive (see SWING_RETENTION); throttle the write to once an hour.
+  if (!a.lastOpenedAt || Date.now() - a.lastOpenedAt.getTime() > 60 * 60 * 1000) {
+    void prisma.swingAnalysis.update({ where: { id: a.id }, data: { lastOpenedAt: new Date() } }).catch(() => {});
+  }
   const fresh = await refresh(a).catch((err) => {
     console.warn("[swing] refresh failed", err instanceof Error ? err.message : err);
     return a;
@@ -407,7 +446,7 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
       return { analysis: present(updated) };
     }
     if (!(await blobSize(jobPath(a.jobId, SOURCE_CLIP)))) {
-      // The member purged the server copy; the phone keeps the original.
+      // Retention or the member removed the server copy; the phone keeps the original.
       const up = await presignClipUpload(a.jobId, SWING_LIMITS.maxBytes, TICKET_TTL_S);
       throw new MobileError("Send the clip from this phone so the new comparison can be rendered.", 409, "CLIP_GONE", {
         upload: { url: up.url, method: up.method, field: "video", fields: {}, headers: up.headers, expiresAt: up.expiresAt.toISOString(), limits: SWING_LIMITS },
@@ -415,7 +454,7 @@ export async function recompareAnalysis(memberId: string, id: string, proId: str
     }
     const updated = await prisma.swingAnalysis.update({
       where: { id: a.id },
-      data: { status: "UPLOADED", proId: auto ? null : clean, error: null, completedAt: null },
+      data: { status: "UPLOADED", proId: auto ? null : clean, error: null, completedAt: null, clipPurgedAt: null, mediaPurgedAt: null },
     });
     after(() => runRecompare(updated.id, auto ? "auto" : clean));
     return { analysis: present(updated) };
@@ -540,7 +579,10 @@ async function refresh(a: SwingAnalysis): Promise<SwingAnalysis> {
 function friendlyError(raw: string | undefined) {
   const s = raw ?? "Analysis failed";
   if (/no pose|pose_low_confidence|could not detect/i.test(s)) return "We couldn't see a full body in the clip. Film the whole swing with your body in frame.";
-  if (/too (long|short)|duration/i.test(s)) return "The clip is too long. Trim it to one swing (under 20 seconds).";
+  if (/CLIP_SLOW_MOTION/.test(s)) return "Slow-motion clips aren't supported. Record at normal speed and try again.";
+  if (/CLIP_TOO_LONG/.test(s)) return `That clip is over ${SWING_LIMITS.maxSeconds} seconds. Trim it to one swing in Photos and try again.`;
+  if (/too short/i.test(s)) return "That clip is too short to analyze. Film the whole swing, address to finish.";
+  if (/too long|duration/i.test(s)) return `The clip is too long. Trim it to one swing (under ${SWING_LIMITS.maxSeconds} seconds).`;
   return s.replace(/^[A-Za-z]+Error:\s*/, "").slice(0, 300);
 }
 
@@ -580,6 +622,8 @@ async function applyReport(a: SwingAnalysis, job: SwinglabJob): Promise<SwingAna
         seconds: job.seconds ?? null,
         error: null,
         completedAt: new Date(),
+        clipPurgedAt: null,
+        mediaPurgedAt: null,
       },
     });
   });
@@ -616,11 +660,12 @@ function assets(a: SwingAnalysis) {
   const o = report.outputs;
   const str = (k: string) => (typeof o[k] === "string" ? signFileUrl(a.jobId!, o[k] as string) : null);
   const stills = (o.stills && typeof o.stills === "object" ? o.stills : {}) as Record<string, string>;
+  const video = (k: string) => (a.mediaPurgedAt ? null : str(k));
   return {
-    annotatedVideo: str("annotated_video"),
-    clubPathVideo: str("club_path_video"),
-    clubCompareVideo: str("club_compare_video"),
-    sideBySideVideo: str("side_by_side_video"),
+    annotatedVideo: video("annotated_video"),
+    clubPathVideo: video("club_path_video"),
+    clubCompareVideo: video("club_compare_video"),
+    sideBySideVideo: video("side_by_side_video"),
     phaseGrid: str("phase_grid"),
     wristPlot: str("wrist_plot"),
     stills: Object.fromEntries(
@@ -665,6 +710,8 @@ function base(a: SwingAnalysis) {
     sessionId: a.sessionId,
     score: report ? swingScore(report) : null,
     detectedView: knownView(report?.metrics?.view) ?? knownView(report?.view) ?? a.detectedView ?? null,
+    /** Rendered videos were removed after 90 idle days; stills and feedback remain. */
+    videosExpired: !!a.mediaPurgedAt,
   };
 }
 
@@ -699,4 +746,93 @@ function present(a: SwingAnalysis) {
         }
       : null,
   };
+}
+
+// ----------------------------------------------------------------- retention
+
+/**
+ * Nightly: drop source clips a week after the analysis finished, and rendered
+ * videos once nobody has opened the swing in 90 days. Stills, the report and the
+ * pose cache stay, so the swing still reads fine in the app; a pro swap after
+ * this asks the phone for the clip again.
+ */
+export async function runSwingRetention(now = new Date()) {
+  if (!swingBlobEnabled()) return { clips: 0, videos: 0, skipped: "blob disabled" as const };
+  const day = 24 * 60 * 60 * 1000;
+  const clipCutoff = new Date(now.getTime() - SWING_RETENTION.clipDays * day);
+  const videoCutoff = new Date(now.getTime() - SWING_RETENTION.videoIdleDays * day);
+  let clips = 0;
+  let videos = 0;
+
+  const staleVideos = await prisma.swingAnalysis.findMany({
+    where: {
+      status: { in: ["DONE", "ERROR"] },
+      jobId: { not: null },
+      mediaPurgedAt: null,
+      completedAt: { lt: videoCutoff },
+      OR: [{ lastOpenedAt: null }, { lastOpenedAt: { lt: videoCutoff } }],
+    },
+    select: { id: true, jobId: true },
+    take: 200,
+  });
+  for (const a of staleVideos) {
+    try {
+      await purgeJobFiles(a.jobId!, "videos");
+      await prisma.swingAnalysis.update({ where: { id: a.id }, data: { mediaPurgedAt: now, clipPurgedAt: now } });
+      videos++;
+    } catch (err) {
+      console.warn("[swing] retention (videos) failed", a.id, err instanceof Error ? err.message : err);
+    }
+  }
+
+  const staleClips = await prisma.swingAnalysis.findMany({
+    where: { status: { in: ["DONE", "ERROR"] }, jobId: { not: null }, clipPurgedAt: null, completedAt: { lt: clipCutoff } },
+    select: { id: true, jobId: true },
+    take: 500,
+  });
+  for (const a of staleClips) {
+    try {
+      await purgeJobFiles(a.jobId!, "clip");
+      await prisma.swingAnalysis.update({ where: { id: a.id }, data: { clipPurgedAt: now } });
+      clips++;
+    } catch (err) {
+      console.warn("[swing] retention (clip) failed", a.id, err instanceof Error ? err.message : err);
+    }
+  }
+  return { clips, videos };
+}
+
+// ----------------------------------------------------------------- health watch
+
+const HEALTH_KIND_DOWN = "integration.alert";
+const HEALTH_KIND_UP = "integration.recovered";
+const HEALTH_TAG = "swinglab-health";
+
+/**
+ * Every 10 minutes: probe the analyzer. One inbox alert when it stops
+ * answering, one when it comes back — not one per tick.
+ */
+export async function checkSwinglabHealth() {
+  if (!swinglabConfig().enabled) return { skipped: "disabled" as const };
+  let up = false;
+  let detail = "";
+  try {
+    const h = await swinglab.health();
+    up = h.status === "ok";
+    detail = up ? "" : `status=${h.status}`;
+  } catch (err) {
+    detail = err instanceof Error ? err.message : String(err);
+  }
+  const last = await prisma.adminNotification.findFirst({
+    where: { kind: { in: [HEALTH_KIND_DOWN, HEALTH_KIND_UP] }, data: { path: ["tag"], equals: HEALTH_TAG } },
+    orderBy: { createdAt: "desc" },
+    select: { kind: true },
+  });
+  const wasDown = last?.kind === HEALTH_KIND_DOWN;
+  if (!up && !wasDown) {
+    await adminNotify({ kind: HEALTH_KIND_DOWN, severity: "ERROR", title: "Swing Lab analyzer is not responding", body: `Members can't analyze swings until it's back. ${detail}`.trim(), link: "/admin/notifications", data: { tag: HEALTH_TAG, detail } });
+  } else if (up && wasDown) {
+    await adminNotify({ kind: HEALTH_KIND_UP, severity: "INFO", title: "Swing Lab analyzer is back", body: "Health check passing again.", data: { tag: HEALTH_TAG } });
+  }
+  return { up, changed: up === wasDown };
 }

@@ -109,6 +109,24 @@ export async function purgeJobMedia(jobId: string) {
   return victims.length;
 }
 
+const VIDEO_SUFFIXES = new Set([".mp4", ".mov", ".m4v"]);
+
+/**
+ * Retention purges. `clip` removes only the member's source clip (a pro swap
+ * then needs a re-upload); `videos` removes the clip and every rendered video
+ * but keeps stills, the report and the pose cache.
+ */
+export async function purgeJobFiles(jobId: string, what: "clip" | "videos") {
+  const victims = (await listJob(jobId)).filter((b) => {
+    const base = b.pathname.split("/").pop() ?? "";
+    if (base.startsWith("swing.") && VIDEO_SUFFIXES.has(base.slice(base.lastIndexOf(".")).toLowerCase())) return true;
+    if (what === "clip") return false;
+    return !MEDIA_KEEP.has(base) && VIDEO_SUFFIXES.has(base.slice(base.lastIndexOf(".")).toLowerCase());
+  });
+  if (victims.length) await del(victims.map((b) => b.url));
+  return victims.length;
+}
+
 export async function deleteJob(jobId: string) {
   const all = await listJob(jobId);
   if (all.length) await del(all.map((b) => b.url));

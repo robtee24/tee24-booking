@@ -59,6 +59,14 @@
     {
       "path": "/api/cron?job=league-deadlines",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron?job=swing-retention",
+      "schedule": "45 7 * * *"
+    },
+    {
+      "path": "/api/cron?job=swinglab-health",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

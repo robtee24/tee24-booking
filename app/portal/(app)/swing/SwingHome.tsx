@@ -106,7 +106,7 @@ export function SwingHome({ readOnly }: { readOnly: boolean }) {
           </div>
         </Card>
         <Card>
-          <CardHeader title="Analyze a swing video" subtitle="One swing, under 20 seconds, whole body in frame." />
+          <CardHeader title="Analyze a swing video" subtitle="One swing, under 10 seconds at normal speed, whole body in frame." />
           <div className="mt-3">
             <Button variant="secondary" iconLeft={<Video className="h-4 w-4" />} onClick={() => setVideoOpen(true)} disabled={readOnly || analyses?.enabled === false}>Upload video</Button>
             {analyses?.enabled === false && <p className="mt-2 text-apple-xs text-apple-text-tertiary">Video analysis isn&apos;t available right now.</p>}
@@ -362,7 +362,7 @@ function UploadVideoModal({ open, onClose, onDone }: { open: boolean; onClose: (
       open={open}
       onClose={onClose}
       title="Analyze a swing video"
-      description="Film one swing from face-on or down-the-line with your whole body in frame. Under 20 seconds."
+      description="Film one swing from face-on or down-the-line with your whole body in frame. Under 10 seconds, normal speed (no slow-mo)."
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>

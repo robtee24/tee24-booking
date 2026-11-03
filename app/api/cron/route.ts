@@ -19,6 +19,8 @@
  *  - upcoming-payment-reminders  : daily — payment.upcoming (3 days ahead) + card expiry notices
  *  - league-deadlines            : every 15 min — reveal + finalize league weeks whose Sunday deadline passed,
  *                                  then send "week open" / "results in" texts that haven't gone out
+ *  - swing-retention             : nightly — drop swing clips after 7 days and rendered videos after 90 idle days
+ *  - swinglab-health             : every 10 min — probe the swing analyzer, alert the admin inbox on down/up
  */
 import { NextRequest, NextResponse } from "next/server";
 import { applyScheduledCancellations, applyScheduledFreezeTransitions } from "@/services/membership.service";
@@ -35,6 +37,7 @@ import { syncDoorsFromKisi, syncKisiUnlockEvents } from "@/services/door.service
 import { isMigrationFrozen, MIGRATION_FREEZE_SKIP } from "@/lib/migration-freeze";
 import { runLeagueDeadlines } from "@/services/league.service";
 import { runLeagueNotifications } from "@/services/league-notify.service";
+import { checkSwinglabHealth, runSwingRetention } from "@/services/mobile-swing.service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -131,6 +134,14 @@ async function run(req: NextRequest) {
         const r = await runLeagueDeadlines();
         const n = await runLeagueNotifications();
         return NextResponse.json({ ok: true, ...r, ...n });
+      }
+      case "swing-retention": {
+        const r = await runSwingRetention();
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "swinglab-health": {
+        const r = await checkSwinglabHealth();
+        return NextResponse.json({ ok: true, ...r });
       }
       default:
         return NextResponse.json({ error: `Unknown job '${job}'` }, { status: 400 });

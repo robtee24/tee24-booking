@@ -2243,38 +2243,45 @@ model DrillLog {
 /// straight to swinglab with a ticket we mint; we store the compact report here
 /// and mirror the derived flags into a PracticeSession so the plan can use them.
 model SwingAnalysis {
-  id           String    @id @default(cuid())
-  memberId     String
-  sessionId    String?   @unique
+  id            String    @id @default(cuid())
+  memberId      String
+  sessionId     String?   @unique
   /// PENDING (ticket minted) | UPLOADED (job started) | DONE | ERROR | EXPIRED
-  status       String    @default("PENDING")
-  jobId        String?
+  status        String    @default("PENDING")
+  jobId         String?
   /// RH | LH
-  handedness   String    @default("RH")
+  handedness    String    @default("RH")
   /// face_on | down_the_line | auto
-  view         String    @default("auto")
-  club         String?
+  view          String    @default("auto")
+  club          String?
   /// Pro bank swing id the member chose for the side-by-side (null = auto pick)
-  proId        String?
+  proId         String?
   /// Camera angle swinglab read off the clip right after upload: face_on | down_the_line | unknown
-  detectedView String?
-  title        String?
-  notes        String?
+  detectedView  String?
+  title         String?
+  notes         String?
   /// Compact swinglab report (metrics, phases, feedback, output names)
-  report       Json?
+  report        Json?
   /// Derived plan flags (SwingFlag[])
-  flags        Json?
-  error        String?
-  seconds      Float?
-  recordedAt   DateTime  @default(now())
-  completedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  flags         Json?
+  error         String?
+  seconds       Float?
+  recordedAt    DateTime  @default(now())
+  completedAt   DateTime?
+  /// Last time the member opened this analysis (drives media retention)
+  lastOpenedAt  DateTime?
+  /// Source clip removed from storage (retention); a pro swap needs a re-upload after this
+  clipPurgedAt  DateTime?
+  /// Rendered videos removed from storage (retention); stills and the report stay
+  mediaPurgedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   member  Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
   session PracticeSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([memberId, createdAt])
+  @@index([status, completedAt])
   @@index([jobId])
 }
 
