@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     const gate = await otpSendAllowed(e164, clientIp(req.headers));
     if (!gate.ok) return fail(`Please wait ${gate.retryInSeconds}s before requesting another code.`, 429, "RATE_LIMITED", { retryInSeconds: gate.retryInSeconds });
 
-    // App Store review account: fixed code, no SMS.
-    if (isAppReviewPhone(e164)) return ok({ phone: e164 });
+    // App Store review account: no SMS and no code — the app skips straight to /verify.
+    if (isAppReviewPhone(e164)) return ok({ phone: e164, review: true });
 
     const member = await findMemberByPhone(e164);
     if (member) await otpService.requestOtp(e164, "mobile_login");
