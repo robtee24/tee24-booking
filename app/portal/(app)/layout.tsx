@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentMember, getMemberSession } from "@/lib/member-session";
-import { Eye, AlertOctagon } from "lucide-react";
+import { Eye, AlertOctagon, LogOut } from "lucide-react";
+import { PortalNav } from "@/components/portal/PortalNav";
 
 export const dynamic = "force-dynamic";
 
@@ -14,22 +15,10 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   const isImpersonating = session?.role === "IMPERSONATED";
-  const tabs = [
-    { href: "/portal", label: "Home" },
-    { href: "/portal/profile", label: "Profile" },
-    { href: "/portal/membership", label: "Membership" },
-    { href: "/portal/card", label: "Card" },
-    { href: "/portal/billing", label: "Billing" },
-    { href: "/portal/attendance", label: "Attendance" },
-    { href: "/portal/swing", label: "Swing Lab" },
-    { href: "/portal/schedule", label: "Schedule" },
-    { href: "/portal/documents", label: "Documents" },
-    { href: "/portal/contact", label: "Contact" },
-    { href: "/portal/settings", label: "Settings" },
-  ];
+  const initials = `${member.firstName?.[0] ?? ""}${member.lastName?.[0] ?? ""}`.toUpperCase() || "T";
 
   return (
-    <div className="min-h-screen bg-apple-bg">
+    <div className="min-h-screen bg-[#f3f7f4]">
       {isImpersonating && (
         <div className="flex items-center justify-center gap-3 bg-apple-red/10 px-4 py-2 text-center text-apple-sm font-medium text-apple-red">
           <span>
@@ -44,30 +33,39 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
       )}
 
-      <header className="border-b border-apple-divider bg-white/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <Link href="/portal" className="text-apple-lg font-semibold tracking-tight text-apple-text">
-            {member.location?.name ?? "Tee24"}
+      <header className="bg-[#0b3d2e] bg-[radial-gradient(ellipse_at_top_left,_rgba(34,197,94,0.35),_transparent_55%)] text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 pb-3 pt-4">
+          <Link href="/portal" className="flex items-center gap-3" aria-label="Tee24 clubhouse home">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/tee24-logo.png" alt="Tee24 Indoor Golf Center" className="h-12 w-auto sm:h-14" />
+            <span className="hidden text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 sm:block">
+              {member.location?.name ?? "Clubhouse"}
+            </span>
           </Link>
-          <div className="flex items-center gap-3 text-apple-sm">
-            <span className="text-apple-text-secondary">Hi, {member.firstName}</span>
-            <Link href="/portal/logout" className="text-apple-text-secondary hover:text-apple-text">Sign out</Link>
+          <div className="flex items-center gap-2 text-apple-sm">
+            <Link href="/portal/profile" className="flex items-center gap-2 rounded-apple-pill py-1 pl-1 pr-3 transition-colors hover:bg-white/10" title="Your profile">
+              {member.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={member.photoUrl} alt="" className="h-8 w-8 rounded-full object-cover ring-2 ring-white/40" />
+              ) : (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#22c55e] text-[12px] font-bold text-[#0b3d2e] ring-2 ring-white/30">{initials}</span>
+              )}
+              <span className="hidden font-medium sm:inline">{member.firstName}</span>
+            </Link>
+            <Link href="/portal/logout" className="flex items-center gap-1.5 rounded-apple-pill px-3 py-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white" title="Sign out">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign out</span>
+            </Link>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4">
-          {tabs.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className="whitespace-nowrap px-3 py-2.5 text-apple-sm font-medium text-apple-text-secondary transition-colors hover:text-apple-text"
-            >
-              {t.label}
-            </Link>
-          ))}
-        </nav>
+        <PortalNav />
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+
+      <footer className="mx-auto max-w-5xl px-4 pb-8 pt-4 text-center text-apple-xs text-apple-text-tertiary">
+        Tee24 Indoor Golf Center · open 24/7 for members · <Link href="/portal/contact" className="hover:underline">Need a hand?</Link>
+      </footer>
 
       {isImpersonating && (
         <div className="fixed bottom-3 right-3 flex items-center gap-2 rounded-apple-pill bg-apple-red/10 px-3 py-1.5 text-apple-xs text-apple-red shadow-apple">

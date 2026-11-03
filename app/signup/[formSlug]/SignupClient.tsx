@@ -541,6 +541,8 @@ export function SignupClient({ form, plans, promos, customFields, documents, utm
     <div className="min-h-screen bg-apple-bg py-8 sm:py-10">
       <div className="mx-auto max-w-3xl px-4">
         <header className="mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tee24-logo.png" alt="Tee24 Indoor Golf Center" className="mb-4 h-16 w-auto" />
           <h1 className="text-apple-3xl font-semibold tracking-tight text-apple-text">{form.name}</h1>
           {form.description && <p className="mt-2 text-apple-base text-apple-text-secondary">{form.description}</p>}
           {form.location && <p className="mt-1 text-apple-sm text-apple-text-tertiary">{form.location.name}</p>}

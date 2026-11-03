@@ -5,12 +5,11 @@ import { usePathname } from "next/navigation";
 import { CreditCard, IdCard, Settings, UserRound, Home } from "lucide-react";
 
 /**
- * Secondary nav for the account pages this module owns. The primary tab bar
- * lives in app/portal/layout.tsx (owned elsewhere); until Settings / Card /
- * Membership / Profile are added there, this strip keeps them reachable.
+ * Secondary "My account" strip shown on the account pages (profile, membership,
+ * card, settings). The primary clubhouse nav lives in PortalNav.
  */
 const ITEMS = [
-  { href: "/portal", label: "Home", icon: Home, exact: true },
+  { href: "/portal", label: "Clubhouse", icon: Home, exact: true },
   { href: "/portal/profile", label: "Profile", icon: UserRound },
   { href: "/portal/membership", label: "Membership", icon: CreditCard },
   { href: "/portal/card", label: "Member card", icon: IdCard },
@@ -27,7 +26,7 @@ export function PortalSubNav() {
           <Link
             key={it.href}
             href={it.href}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-apple-pill px-3 py-1.5 text-apple-sm font-medium transition-colors ${active ? "bg-apple-text text-white" : "bg-white text-apple-text-secondary ring-1 ring-apple-border hover:text-apple-text"}`}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-apple-pill px-3 py-1.5 text-apple-sm font-medium transition-colors ${active ? "bg-[#0b3d2e] text-white" : "bg-white text-apple-text-secondary ring-1 ring-apple-border hover:text-[#0b3d2e] hover:ring-[#22c55e]"}`}
             aria-current={active ? "page" : undefined}
           >
             <it.icon className="h-4 w-4" />

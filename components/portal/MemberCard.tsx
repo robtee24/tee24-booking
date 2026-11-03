@@ -29,12 +29,8 @@ export function MemberCard({ card, qrSvg }: { card: CardDTO; qrSvg: string }) {
           <div className="pointer-events-none absolute -bottom-20 -left-10 h-52 w-52 rounded-full bg-black/10" />
           <div className="relative flex items-start justify-between">
             <div className="flex items-center gap-3">
-              {card.location?.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={card.location.logoUrl} alt="" className="h-9 w-9 rounded-apple-sm bg-white/90 object-contain p-1" />
-              ) : (
-                <span className="flex h-9 w-9 items-center justify-center rounded-apple-sm bg-white text-[11px] font-bold text-[#0f5a3f]">T24</span>
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={card.location?.logoUrl ?? "/tee24-logo.png"} alt="Tee24" className="h-10 w-10 rounded-apple-sm bg-white object-contain p-1" />
               <div>
                 <div className="text-apple-sm font-semibold leading-tight">{card.location?.businessName ?? card.location?.name ?? "Tee24"}</div>
                 <div className="text-[11px] uppercase tracking-[0.18em] text-white/70">Member</div>
@@ -74,7 +70,7 @@ export function MemberCard({ card, qrSvg }: { card: CardDTO; qrSvg: string }) {
 
       <Card className="mx-auto max-w-md print:hidden">
         <p className="text-apple-sm text-apple-text-secondary">
-          Your digital member card. Door access works through the Kisi app on your phone — this card is for identification and staff lookups.
+          Your digital member card. The door unlocks from the Tee24 app on your phone — this card is for identification and staff lookups.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button variant="secondary" iconLeft={<Printer className="h-4 w-4" />} onClick={() => window.print()}>

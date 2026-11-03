@@ -1094,7 +1094,7 @@ async function loadInvoiceForEmail(invoiceId: string) {
 function emailShell(location: { name: string; businessName: string | null; addressLine1: string | null; city: string | null; state: string | null; zip: string | null; email: string | null; phone: string | null }, inner: string) {
   const biz = location.businessName ?? location.name;
   const addr = [location.addressLine1, [location.city, location.state].filter(Boolean).join(", "), location.zip].filter(Boolean).join(" · ");
-  return `<div style="font-family:-apple-system,Helvetica,sans-serif;padding:24px;color:#0f172a;max-width:560px;margin:auto">
+  return `<div style="font-family:-apple-system,Helvetica,sans-serif;color:#0f172a;">
   ${inner}
   <p style="margin-top:24px;font-size:12px;color:#94a3b8;">${esc(biz)}${addr ? ` · ${esc(addr)}` : ""}${location.phone ? ` · ${esc(location.phone)}` : ""}</p>
 </div>`;

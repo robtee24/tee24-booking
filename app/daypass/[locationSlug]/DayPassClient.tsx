@@ -95,6 +95,8 @@ export function DayPassClient({ location, dayPasses, square }: Props) {
     <div className="min-h-screen bg-apple-bg py-12">
       <div className="mx-auto max-w-2xl px-4">
         <header className="mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tee24-logo.png" alt="Tee24 Indoor Golf Center" className="mb-4 h-16 w-auto" />
           <h1 className="text-apple-2xl font-semibold tracking-tight text-apple-text">Day Pass</h1>
           <p className="mt-1 text-apple-sm text-apple-text-secondary">{location.name}</p>
         </header>

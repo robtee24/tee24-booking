@@ -84,10 +84,15 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-screen bg-apple-bg">
-      <div className="mx-auto max-w-md px-4 py-16">
-        <h1 className="mb-6 text-center text-apple-2xl font-semibold tracking-tight">Sign in</h1>
-        <Card>
+    <div className="min-h-screen bg-[#0b3d2e] bg-[radial-gradient(ellipse_at_top,_rgba(34,197,94,0.35),_transparent_60%)]">
+      <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
+        <div className="mb-8 text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tee24-logo.png" alt="Tee24 Indoor Golf Center" className="mx-auto h-28 w-auto drop-shadow-[0_6px_20px_rgba(0,0,0,0.35)]" />
+          <h1 className="mt-5 text-apple-2xl font-semibold tracking-tight text-white">Welcome to the clubhouse</h1>
+          <p className="mt-1 text-apple-sm text-white/70">Sign in to book a bay, see your membership and manage your account.</p>
+        </div>
+        <Card className="shadow-xl shadow-black/20">
           {mode === "phone" ? (
             <>
               <CardHeader title="Member sign-in" subtitle={stage === "enter" ? "We'll text a 6-digit code to the mobile number on your account." : `Enter the code we texted to ${phone}.`} />
@@ -146,7 +151,7 @@ function LoginInner() {
             </>
           )}
         </Card>
-        <p className="mt-4 text-center text-apple-xs text-apple-text-tertiary">By signing in you agree to our terms of service.</p>
+        <p className="mt-5 text-center text-apple-xs text-white/50">By signing in you agree to our terms of service.</p>
       </div>
     </div>
   );

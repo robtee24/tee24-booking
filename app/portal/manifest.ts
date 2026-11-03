@@ -6,14 +6,14 @@ import { type MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Tee24 Member Portal",
+    name: "Tee24 Clubhouse",
     short_name: "Tee24",
-    description: "Manage your membership, bookings, and access.",
+    description: "Book bays, unlock the door and manage your Tee24 membership.",
     start_url: "/portal",
     scope: "/portal",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#16a34a",
+    background_color: "#0b0f0b",
+    theme_color: "#0b3d2e",
     icons: [
       {
         src: "/icon-192.png",

@@ -22,8 +22,10 @@ export default async function PublicSignPage({ params }: { params: Promise<{ tok
     <div className="min-h-screen bg-apple-bg">
       <header className="border-b border-apple-divider bg-white/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link href={loggedIn ? "/portal" : "/"} className="text-apple-lg font-semibold tracking-tight text-apple-text">
-            {view.locationName ?? "Tee24"}
+          <Link href={loggedIn ? "/portal" : "/"} className="flex items-center gap-3 text-apple-lg font-semibold tracking-tight text-apple-text">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/tee24-logo.png" alt="Tee24" className="h-10 w-auto" />
+            <span className="text-apple-sm font-medium text-apple-text-secondary">{view.locationName ?? "Tee24"}</span>
           </Link>
           {loggedIn ? (
             <Link href="/portal/documents" className="text-apple-sm text-apple-text-secondary hover:text-apple-text">My documents</Link>

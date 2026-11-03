@@ -18,8 +18,8 @@ export default async function DesktopAppPage() {
     <main className="min-h-dvh bg-apple-bg text-apple-text">
       <div className="mx-auto max-w-3xl px-5 py-12 sm:py-20">
         <div className="flex items-center gap-2 text-apple-sm font-semibold text-apple-blue">
-          <span className="flex h-7 w-7 items-center justify-center rounded-apple-sm bg-apple-blue text-[11px] font-bold text-white">T24</span>
-          Tee24
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tee24-logo.png" alt="Tee24" className="h-10 w-auto" />
         </div>
         <h1 className="mt-4 text-apple-3xl font-semibold tracking-tight sm:text-apple-hero">Tee24 Bay Kiosk</h1>
         <p className="mt-3 max-w-xl text-apple-lg text-apple-text-secondary">

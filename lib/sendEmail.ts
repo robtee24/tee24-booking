@@ -11,6 +11,7 @@
 import { Resend } from 'resend';
 import { recordOutbound, type LedgerOption } from '@/lib/message-ledger';
 import { defaultReplyTo } from '@/lib/inbound-email';
+import { memberBaseUrl } from '@/lib/public-url';
 
 type SendEmailResult = {
   ok: boolean;
@@ -39,7 +40,32 @@ export type SendEmailOptions = {
    * `false` when the caller logs its own row or the body contains a secret.
    */
   ledger?: LedgerOption;
+  /** Skip the Tee24 logo header (default: added to every email). */
+  brand?: false;
 };
+
+/**
+ * Every outbound email carries the Tee24 logo on a clubhouse-green band above
+ * the body, so receipts, booking confirmations, welcome mail and campaigns all
+ * look like they came from the same place. Idempotent: skipped when the body
+ * already includes the logo.
+ */
+export function brandEmailHtml(html: string): string {
+  if (/tee24-logo\.png/.test(html)) return html;
+  const logo = `${memberBaseUrl()}/tee24-logo.png`;
+  // Full HTML documents (e.g. POS receipts): drop the logo band in right after <body> instead of wrapping.
+  if (/<body[\s>]/i.test(html)) {
+    return html.replace(/(<body[^>]*>)/i, `$1<div style="background:#0b3d2e;padding:18px 24px;text-align:center;"><img src="${logo}" alt="Tee24 Indoor Golf Center" height="64" style="height:64px;width:auto;display:inline-block;" /></div>`);
+  }
+  return `<div style="max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="background:#0b3d2e;border-radius:16px 16px 0 0;padding:18px 24px;text-align:center;">
+    <img src="${logo}" alt="Tee24 Indoor Golf Center" height="64" style="height:64px;width:auto;display:inline-block;" />
+  </div>
+  <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 16px 16px;padding:20px 24px 24px;font-size:15px;line-height:1.5;color:#0f172a;">
+${html}
+  </div>
+</div>`;
+}
 
 const API_KEY = process.env.RESEND_API_KEY || '';
 // Prefer RESEND_FROM, fallback to FROM_EMAIL so confirmations & reminders behave the same
@@ -115,7 +141,7 @@ async function sendEmailInner(opts: SendEmailOptions): Promise<SendEmailResult> 
       from: FROM_HEADER, // e.g., 'Tee24 Reservations <reservations@tee24.golf>'
       to: opts.to,
       subject: opts.subject,
-      html: opts.html,
+      html: opts.brand === false ? opts.html : brandEmailHtml(opts.html),
     };
     if (opts.text) payload.text = opts.text;
     if (opts.bcc) payload.bcc = opts.bcc;
