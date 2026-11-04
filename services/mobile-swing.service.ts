@@ -350,7 +350,7 @@ async function failed(id: string, err: unknown) {
 
 /** Clip rejections are the member's to fix; anything else is ours and lands in the admin inbox. */
 function isClipRejection(raw: string) {
-  return /CLIP_TOO_LONG|CLIP_SLOW_MOTION|CLIP_TOO_SHORT|too short to analyze/i.test(raw);
+  return /CLIP_TOO_LONG|CLIP_SLOW_MOTION|CLIP_TOO_SHORT|SWING_OUT_OF_FRAME|too short to analyze/i.test(raw);
 }
 
 async function alertSwingFailure(id: string, raw: string, friendly: string) {
@@ -606,6 +606,11 @@ function friendlyError(raw: string | undefined) {
   const s = raw ?? "Analysis failed";
   if (/no pose|pose_low_confidence|could not detect/i.test(s)) return "We couldn't see a full body in the clip. Film the whole swing with your body in frame.";
   if (/CLIP_SLOW_MOTION/.test(s)) return "Slow-motion clips aren't supported. Record at normal speed and try again.";
+  if (/SWING_OUT_OF_FRAME/.test(s)) {
+    if (/at the top/.test(s)) return "The club goes out of the picture at the top of your swing. Step the camera back a little so the whole swing stays in frame, then try again.";
+    if (/upright/.test(s)) return "This clip is wider than it is tall, and your swing doesn't fit an upright frame. Film holding the phone upright so your whole swing and the ball stay in view.";
+    return "Part of your swing is outside the picture. Step the camera back so your whole swing and the ball stay in frame, then try again.";
+  }
   if (/CLIP_TOO_LONG/.test(s)) return `That clip is over ${SWING_LIMITS.maxSeconds} seconds. Trim it to one swing in Photos and try again.`;
   if (/too short/i.test(s)) return "That clip is too short to analyze. Film the whole swing, address to finish.";
   if (/too long|duration/i.test(s)) return `The clip is too long. Trim it to one swing (under ${SWING_LIMITS.maxSeconds} seconds).`;
