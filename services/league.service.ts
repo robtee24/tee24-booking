@@ -21,7 +21,7 @@ import { weeklyPayouts, type PayoutKind } from "@/lib/league/payouts";
 import { bestBall, drawTeams, pairKey, playMatch, type HoleCard } from "@/lib/league/teams";
 import { ageAt, buildWeeks, fmtDeadline } from "@/lib/league/schedule";
 import { bestNameMatch, normName } from "@/lib/league/names";
-import { checkSettings, parseScorecard, type OcrLine, type ParsedPlayerRow } from "@/lib/league/ocr";
+import { checkSettings, courseOnCard, isPlaceholderCourse, parseScorecard, type OcrLine, type ParsedPlayerRow } from "@/lib/league/ocr";
 
 export class LeagueError extends Error {
   constructor(message: string, public status = 400, public code = "BAD_REQUEST", public extra?: Record<string, unknown>) {
@@ -396,9 +396,12 @@ type SubmitCore = {
   allowLate?: boolean;
 };
 
+/**
+ * Any week may be played ahead: scores are accepted from the moment the week
+ * exists until its own Sunday deadline (and stay hidden until then).
+ */
 function assertWeekOpen(week: SubmitCore["week"], allowLate = false, now = new Date()) {
   if (week.finalizedAt) throw new LeagueError("This week is finalized", 409, "WEEK_FINALIZED");
-  if (now < week.opensAt) throw new LeagueError(`Week ${week.weekNumber} opens ${week.opensAt.toLocaleDateString()}`, 409, "WEEK_NOT_OPEN");
   if (now > week.deadlineAt && !allowLate) throw new LeagueError(`The deadline for week ${week.weekNumber} has passed. There are no make-up rounds.`, 409, "WEEK_CLOSED");
 }
 
@@ -545,9 +548,9 @@ export function leaguePreseasonDefaults() {
 export function kioskTutorialSteps(league: { gimmeDistanceFt: number; mulligans: boolean; greenSpeed: string; weeklyFeeCents: number }) {
   return [
     { title: "Set up the round", body: `Before you tee off, set Gimmes to ${league.gimmeDistanceFt} ft, Mulligans ${league.mulligans ? "ON" : "OFF"} and Greens to ${league.greenSpeed}. Open League Settings on this screen to double-check. A card showing mulligans on is rejected.` },
-    { title: "Play all 18 on this week's course", body: "Everyone on the bay can play in the same round. Each player's name on the GSPro scorecard is what we match to your membership." },
+    { title: "Play all 18 on the week's course", body: "Every week has its own course, and you can play any week ahead of time — just finish before that week's Sunday deadline. Everyone on the bay can play in the same round. Each player's name on the GSPro scorecard is what we match to your membership." },
     { title: "Finish and open the scorecard", body: "After the 18th hole leave the GSPro scorecard on screen. Don't start a new round yet." },
-    { title: "Tap League → Submit score", body: "Enter your phone number and the name exactly as it shows on the scorecard. Add up to 5 players from the same card." },
+    { title: "Tap League → Submit score", body: "Pick the week and course you played (e.g. Week 1 - Pebble Beach), then enter your phone number and the name exactly as it shows on the scorecard. Add up to 5 players from the same card. The kiosk checks that the course on the card matches the week you picked." },
     { title: "Confirm", body: `Each player is charged $${(league.weeklyFeeCents / 100).toFixed(0)} to the card on file (under 18 play free). 100% of the money collected is paid out — weekly prizes plus the season championship pot.` },
     { title: "We read the card", body: "The kiosk takes a screenshot of GSPro, reads every score and settings line, and saves one score per player. You'll see each player's gross so you can confirm it read correctly." },
     { title: "Scores reveal Sunday 11:59 PM", body: "Until then everyone shows as Submitted. Teams for next week are drawn right after the reveal. No make-up rounds — the deadline is hard." },
@@ -562,7 +565,26 @@ export async function kioskLeagueInfo(locationId: string, now = new Date()) {
     include: { location: { select: { timezone: true, name: true } }, weeks: { orderBy: { weekNumber: "asc" }, include: { _count: { select: { scores: { where: { status: { not: "REJECTED" } } } } } } }, _count: { select: { players: { where: { active: true } } } } },
   });
   return leagues.map((l) => {
-    const week = currentWeekOf(l.weeks, now);
+    const current = currentWeekOf(l.weeks, now);
+    const view = (w: (typeof l.weeks)[number]) => {
+      const courseTba = isPlaceholderCourse(w.courseName);
+      return {
+        id: w.id,
+        weekNumber: w.weekNumber,
+        courseName: courseTba ? null : w.courseName,
+        opensAt: w.opensAt.toISOString(),
+        deadlineAt: w.deadlineAt.toISOString(),
+        deadlineLabel: fmtDeadline(w.deadlineAt, l.location.timezone),
+        isOpen: !w.finalizedAt && w.deadlineAt >= now,
+        potCents: w.potCents,
+        submittedCount: w._count.scores,
+        courseTba,
+        submittable: !w.finalizedAt && w.deadlineAt >= now && !courseTba,
+        isCurrent: w.opensAt <= now && w.deadlineAt >= now,
+      };
+    };
+    // Default selection: this calendar week, else the first week still taking scores.
+    const week = current && current.deadlineAt >= now ? current : l.weeks.find((w) => !w.finalizedAt && w.deadlineAt >= now) ?? null;
     return {
       id: l.id,
       name: l.name,
@@ -575,21 +597,21 @@ export async function kioskLeagueInfo(locationId: string, now = new Date()) {
       tutorialSteps: kioskTutorialSteps(l),
       championshipAt: l.championshipAt?.toISOString() ?? null,
       championshipPotCents: l.championshipPotCents,
-      week: week
-        ? {
-            id: week.id,
-            weekNumber: week.weekNumber,
-            courseName: week.courseName,
-            opensAt: week.opensAt.toISOString(),
-            deadlineAt: week.deadlineAt.toISOString(),
-            deadlineLabel: fmtDeadline(week.deadlineAt, l.location.timezone),
-            isOpen: week.opensAt <= now && week.deadlineAt >= now,
-            potCents: week.potCents,
-            submittedCount: week._count.scores,
-          }
-        : null,
+      week: week ? view(week) : null,
+      weeks: l.weeks.map(view),
     };
   });
+}
+
+/** The week a kiosk submission is for: the one the players picked, else the default. */
+function pickKioskWeek<T extends { id: string; opensAt: Date; deadlineAt: Date; weekNumber: number; finalizedAt: Date | null }>(weeks: T[], weekId: string | null | undefined, now = new Date()): T | null {
+  if (weekId) return weeks.find((w) => w.id === weekId) ?? null;
+  const cur = currentWeekOf(weeks, now);
+  return cur && cur.deadlineAt >= now ? cur : [...weeks].sort((a, b) => a.weekNumber - b.weekNumber).find((w) => !w.finalizedAt && w.deadlineAt >= now) ?? null;
+}
+
+function courseLabel(week: { weekNumber: number; courseName: string | null }) {
+  return `Week ${week.weekNumber}${isPlaceholderCourse(week.courseName) ? "" : ` – ${week.courseName}`}`;
 }
 
 /** Look a member up by phone for the kiosk flows. */
@@ -628,29 +650,50 @@ export type KioskCheckResult = {
   isScorecard: boolean;
   cardNames: string[];
   settings: { mulligans: boolean | null; gimmeFt: number | null; greens: string | null };
+  /** The chosen week's course vs. what the screen shows. */
+  course: { expected: string | null; found: boolean };
   ok: boolean;
   hard: string[];
   soft: string[];
   warnings: string[];
 };
 
+/** Hard-failure reasons for the chosen week: closed, course not announced, or a different course on screen. */
+function courseProblems(week: { weekNumber: number; courseName: string | null; deadlineAt: Date; finalizedAt: Date | null }, lines: OcrLine[] | string[], now = new Date()) {
+  const hard: string[] = [];
+  if (week.finalizedAt || week.deadlineAt < now) hard.push(`The deadline for week ${week.weekNumber} has passed. There are no make-up rounds.`);
+  if (isPlaceholderCourse(week.courseName)) {
+    hard.push(`The course for week ${week.weekNumber} hasn't been announced yet, so it can't be submitted.`);
+    return { hard, found: false };
+  }
+  const found = courseOnCard(week.courseName!, lines);
+  if (!found) hard.push(`This scorecard isn't for ${week.courseName}. ${courseLabel(week)} must be played on ${week.courseName} — pick the week that matches the course you played.`);
+  return { hard, found };
+}
+
 /**
  * Pre-flight: read the current screen (OCR lines only, no image) and tell
  * the kiosk whether a scorecard is up, which names are on it and whether the
  * visible settings pass. Nothing is saved or charged.
  */
-export async function kioskCheck(locationId: string, leagueId: string, lines: OcrLine[]): Promise<KioskCheckResult> {
+export async function kioskCheck(locationId: string, leagueId: string, lines: OcrLine[], weekId?: string | null): Promise<KioskCheckResult> {
   const league = await loadLeague(leagueId);
   await assertLeagueVisibleAt(league, locationId);
+  const weeks = await getPrisma().leagueWeek.findMany({ where: { leagueId: league.id } });
+  const week = pickKioskWeek(weeks, weekId);
+  if (!week) throw new LeagueError("No league week is taking scores right now", 409, "NO_OPEN_WEEK");
   const parsed = parseScorecard(lines ?? []);
   const check = checkSettings(parsed.settings, { mulligans: league.mulligans, gimmeDistanceFt: league.gimmeDistanceFt, greenSpeed: null });
+  const course = courseProblems(week, lines ?? []);
   const isScorecard = parsed.isScorecard && parsed.players.length > 0;
+  const hard = [...course.hard, ...check.hard];
   return {
     isScorecard,
     cardNames: parsed.players.map((p) => p.name),
     settings: { mulligans: parsed.settings.mulligans, gimmeFt: parsed.settings.gimmeFt, greens: parsed.settings.greens },
-    ok: isScorecard && check.ok,
-    hard: check.hard,
+    course: { expected: isPlaceholderCourse(week.courseName) ? null : week.courseName, found: course.found },
+    ok: isScorecard && hard.length === 0,
+    hard,
     soft: check.soft,
     warnings: parsed.warnings,
   };
@@ -707,8 +750,8 @@ export async function kioskSubmit(locationId: string, input: KioskSubmitInput): 
   const league = await loadLeague(input.leagueId);
   await assertLeagueVisibleAt(league, locationId);
   const weeks = await prisma.leagueWeek.findMany({ where: { leagueId: league.id } });
-  const week = input.weekId ? weeks.find((w) => w.id === input.weekId) ?? null : currentWeekOf(weeks);
-  if (!week) throw new LeagueError("No league week is open right now", 409, "NO_OPEN_WEEK");
+  const week = pickKioskWeek(weeks, input.weekId);
+  if (!week) throw new LeagueError("No league week is taking scores right now", 409, "NO_OPEN_WEEK");
   assertWeekOpen(week);
   if (!Array.isArray(input.entries) || input.entries.length === 0) throw new LeagueError("Add at least one player", 400, "ENTRIES_REQUIRED");
   if (input.entries.length > 5) throw new LeagueError("Up to 5 players per scorecard", 400, "TOO_MANY_ENTRIES");
@@ -717,6 +760,7 @@ export async function kioskSubmit(locationId: string, input: KioskSubmitInput): 
   const warnings = [...parsed.warnings];
   const rejectReasons: string[] = [];
   if (!parsed.isScorecard || parsed.players.length === 0) rejectReasons.push("We couldn't read a scorecard on the screen. Open the scorecard in GSPro (after the 18th hole) and try again.");
+  rejectReasons.push(...courseProblems(week, input.ocr?.lines ?? []).hard);
   const check = checkSettings(parsed.settings, { mulligans: league.mulligans, gimmeDistanceFt: league.gimmeDistanceFt, greenSpeed: null });
   rejectReasons.push(...check.hard);
   warnings.push(...check.soft);

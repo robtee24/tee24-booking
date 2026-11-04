@@ -146,7 +146,7 @@ function registerIpc() {
   // League
   handle('kiosk:leagues', (force?: boolean) => league.getLeagues(!!force));
   handle('kiosk:leagueLookup', (leagueId: string, phone: string, weekId?: string | null) => api.leagueLookup(leagueId, phone, weekId ?? null));
-  handle('kiosk:leagueCheck', (leagueId: string) => league.check(leagueId));
+  handle('kiosk:leagueCheck', (leagueId: string, weekId?: string | null) => league.check(leagueId, weekId ?? null));
   handle('kiosk:leagueJoin', (leagueId: string, phone: string, displayName?: string | null) => api.leagueJoin(leagueId, phone, displayName));
   handle('kiosk:leagueSubmit', (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => league.submit(input));
 

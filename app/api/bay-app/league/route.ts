@@ -13,7 +13,7 @@ export const maxDuration = 60;
  *   GET  /api/bay-app/league?deviceId=                           → { leagues: [{ id, name, week, settings, ... }] }
  *   POST /api/bay-app/league { deviceId, action: 'lookup', leagueId, phone, weekId? }   → member, card, minor, alreadySubmitted
  *   POST /api/bay-app/league { deviceId, action: 'join',   leagueId, phone, displayName? }
- *   POST /api/bay-app/league { deviceId, action: 'check',  leagueId, ocr: { lines } }    → pre-flight: is a scorecard up, names, settings
+ *   POST /api/bay-app/league { deviceId, action: 'check',  leagueId, weekId?, ocr: { lines } } → pre-flight: is a scorecard up, names, settings, course
  *   POST /api/bay-app/league { deviceId, action: 'submit', leagueId, weekId?, imageBase64, imageMime?, ocr: { w, h, lines }, entries: [{ phone, name }] }
  */
 async function locationForDevice(deviceId: string) {
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     if (action === "join") return NextResponse.json(await kioskJoin(leagueId, String(body.phone ?? ""), typeof body.displayName === "string" ? body.displayName : null));
     if (action === "check") {
       const ocr = body.ocr as { lines?: OcrLine[] } | undefined;
-      return NextResponse.json(await kioskCheck(locationId, leagueId, Array.isArray(ocr?.lines) ? ocr!.lines! : []));
+      return NextResponse.json(await kioskCheck(locationId, leagueId, Array.isArray(ocr?.lines) ? ocr!.lines! : [], typeof body.weekId === "string" ? body.weekId : null));
     }
     if (action === "submit") {
       const input: KioskSubmitInput = {

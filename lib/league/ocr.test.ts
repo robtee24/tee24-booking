@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkSettings, parseScorecard, type OcrLine } from "./ocr";
+import { checkSettings, courseOnCard, isPlaceholderCourse, parseScorecard, type OcrLine } from "./ocr";
 import { bestNameMatch } from "./names";
 
 /** Build OCR lines for a GSPro-style card: header row, par row, player rows, settings footer. */
@@ -100,5 +100,27 @@ describe("bestNameMatch", () => {
   });
   it("returns null when nothing is close", () => {
     expect(bestNameMatch("Zelda Q", cands, (c) => c.names)).toBeNull();
+  });
+});
+
+describe("course check", () => {
+  it("treats TBA / TBD / empty as placeholders", () => {
+    expect(isPlaceholderCourse("Course TBA")).toBe(true);
+    expect(isPlaceholderCourse("TBD")).toBe(true);
+    expect(isPlaceholderCourse("")).toBe(true);
+    expect(isPlaceholderCourse(null)).toBe(true);
+    expect(isPlaceholderCourse("Pebble Beach")).toBe(false);
+  });
+  it("finds the scheduled course however GSPro spells it", () => {
+    expect(courseOnCard("Pebble Beach", ["Pebble Beach Golf Links - Blue Tees", "1 2 3"])).toBe(true);
+    expect(courseOnCard("Pebble Beach", ["PEBBLE BEACH GL"])).toBe(true);
+    expect(courseOnCard("Pebble Beach", ["PebbleBeach_GSP"])).toBe(true);
+    expect(courseOnCard("Pebble Beach", ["Pebb1e Beach"])).toBe(true);
+    expect(courseOnCard("Pebble Beach Golf Links", ["Pebble Beach"])).toBe(true);
+  });
+  it("rejects a different course", () => {
+    expect(courseOnCard("Pebble Beach", ["Bootleggers"])).toBe(false);
+    expect(courseOnCard("Pebble Beach", ["Spyglass Hill", "Beach Road"])).toBe(false);
+    expect(courseOnCard("Pebble Beach", [])).toBe(false);
   });
 });

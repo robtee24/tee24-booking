@@ -230,17 +230,27 @@ export interface LeagueInfo {
   tutorialSteps: { title: string; body: string }[];
   championshipAt: string | null;
   championshipPotCents: number;
-  week: {
-    id: string;
-    weekNumber: number;
-    courseName: string | null;
-    opensAt: string;
-    deadlineAt: string;
-    deadlineLabel: string;
-    isOpen: boolean;
-    potCents: number;
-    submittedCount: number;
-  } | null;
+  week: LeagueWeekInfo | null;
+  /** Every week of the season; players may submit for any week before its deadline (play ahead). */
+  weeks?: LeagueWeekInfo[];
+}
+
+export interface LeagueWeekInfo {
+  id: string;
+  weekNumber: number;
+  courseName: string | null;
+  opensAt: string;
+  deadlineAt: string;
+  deadlineLabel: string;
+  isOpen: boolean;
+  potCents: number;
+  submittedCount: number;
+  /** Course not announced yet: shown, but can't be submitted for. */
+  courseTba?: boolean;
+  /** Before its deadline, not finalized, course announced. */
+  submittable?: boolean;
+  /** The week that runs this calendar week. */
+  isCurrent?: boolean;
 }
 
 export interface LeagueLookup {
@@ -263,6 +273,8 @@ export interface LeagueCheckResult {
   isScorecard: boolean;
   cardNames: string[];
   settings: { mulligans: boolean | null; gimmeFt: number | null; greens: string | null };
+  /** Course of the chosen week vs. the course name read off the screen. */
+  course?: { expected: string | null; found: boolean };
   ok: boolean;
   hard: string[];
   soft: string[];
@@ -314,9 +326,9 @@ export function leagueLookup(leagueId: string, phone: string, weekId?: string | 
   return request<LeagueLookup>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'lookup', leagueId, phone, weekId: weekId ?? null });
 }
 
-export function leagueCheck(leagueId: string, ocr: OcrPayload) {
+export function leagueCheck(leagueId: string, weekId: string | null, ocr: OcrPayload) {
   const s = getSettings();
-  return request<LeagueCheckResult>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'check', leagueId, ocr }, null, 30_000);
+  return request<LeagueCheckResult>('POST', '/api/bay-app/league', { deviceId: s.deviceId, action: 'check', leagueId, weekId, ocr }, null, 30_000);
 }
 
 export function leagueJoin(leagueId: string, phone: string, displayName?: string | null) {

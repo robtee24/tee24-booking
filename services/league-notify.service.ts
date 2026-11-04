@@ -10,6 +10,7 @@
 import { getPrisma } from "@/lib/db";
 import { deliverMemberMessage, deliverSms } from "@/lib/notify";
 import { findMemberByPhone } from "@/services/mobile-auth.service";
+import { isPlaceholderCourse } from "@/lib/league/ocr";
 import { joinLeague, LeagueError, leagueScopeForLocations } from "@/services/league.service";
 
 export const LEAGUE_SITE_URL = (process.env.LEAGUE_SITE_URL || "https://league.tee24.golf").replace(/\/$/, "");
@@ -59,7 +60,7 @@ export async function leagueSignup(input: LeagueSignupInput) {
   const cur = league ? league.weeks.find((w) => w.opensAt <= new Date() && w.deadlineAt >= new Date()) ?? null : null;
   const lines = [
     `Tee24 League: you're on the list, ${firstName}.`,
-    joined ? `You're in the league${cur ? ` — Week ${cur.weekNumber}${cur.courseName ? ` (${cur.courseName})` : ""} is open now. Submit at the bay by Sunday 11:59 PM.` : "."}` : member ? (league ? "" : "We'll text you when the season opens and add you then.") : "That number isn't on a Tee24 membership yet — join at the front desk or in the app and you'll be added automatically.",
+    joined ? `You're in the league${cur ? ` — Week ${cur.weekNumber}${!isPlaceholderCourse(cur.courseName) ? ` (${cur.courseName})` : ""} is open now. Submit at the bay by Sunday 11:59 PM.` : "."}` : member ? (league ? "" : "We'll text you when the season opens and add you then.") : "That number isn't on a Tee24 membership yet — join at the front desk or in the app and you'll be added automatically.",
     notifyWeekly ? `Weekly updates are on. ${LEAGUE_SITE_URL}  Stop: ${LEAGUE_SITE_URL}/unsubscribe?t=${sub.token}` : "",
   ].filter(Boolean);
   void deliverSms({ to: `+1${phone}`, text: lines.join(" "), category: "TRANSACTIONAL", organizationId: sub.organizationId }).catch((e) => console.error("[league] signup sms", e));
@@ -162,7 +163,7 @@ export async function runLeagueNotifications(now = new Date()) {
         const claimed = await prisma.leagueWeek.updateMany({ where: { id: w.id, openNotifiedAt: null }, data: { openNotifiedAt: now } });
         if (claimed.count === 0) continue;
         const label = w.isChampionship ? "Championship week" : `Week ${w.weekNumber}`;
-        const text = `Tee24 League — ${label} is open${w.courseName ? `: ${w.courseName}` : ""}. Play 18 and submit at the bay kiosk by ${fmtDeadline(w.deadlineAt, tz)}. ${LEAGUE_SITE_URL}/weeks`;
+        const text = `Tee24 League — ${label} is open${!isPlaceholderCourse(w.courseName) ? `: ${w.courseName}` : ""}. Play 18 and submit at the bay kiosk by ${fmtDeadline(w.deadlineAt, tz)}. ${LEAGUE_SITE_URL}/weeks`;
         const r = await broadcast(l.id, `${label} is open`, text, { screen: "league", leagueId: l.id, weekId: w.id });
         out.push({ weekId: w.id, kind: "OPEN", ...r });
       }
@@ -172,7 +173,7 @@ export async function runLeagueNotifications(now = new Date()) {
         if (claimed.count === 0) continue;
         const label = w.isChampionship ? "Championship" : `Week ${w.weekNumber}`;
         const next = l.weeks.find((x) => x.weekNumber === w.weekNumber + 1);
-        const text = `Tee24 League — ${label} results are in${next ? ` and Week ${next.weekNumber} teams are drawn${next.courseName ? ` (${next.courseName})` : ""}` : ""}. ${LEAGUE_SITE_URL}/weeks?week=${w.id}`;
+        const text = `Tee24 League — ${label} results are in${next ? ` and Week ${next.weekNumber} teams are drawn${!isPlaceholderCourse(next.courseName) ? ` (${next.courseName})` : ""}` : ""}. ${LEAGUE_SITE_URL}/weeks?week=${w.id}`;
         const r = await broadcast(l.id, `${label} results are in`, text, { screen: "league", leagueId: l.id, weekId: w.id });
         out.push({ weekId: w.id, kind: "RESULTS", ...r });
       }

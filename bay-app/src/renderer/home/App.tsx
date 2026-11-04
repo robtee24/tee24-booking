@@ -6,9 +6,8 @@ import { Home } from './Home';
 import { Setup } from './Setup';
 import { Settings } from './Settings';
 import { SetupHelp } from './SetupHelp';
-import { League } from './League';
 
-type Screen = 'home' | 'setup-help' | 'settings' | 'league';
+type Screen = 'home' | 'setup-help' | 'settings';
 type Phase = UpdatePhase | { phase: 'done'; version: string } | { phase: 'boot' };
 
 export function App() {
@@ -42,6 +41,5 @@ export function App() {
 
   if (screen === 'settings') return <Settings state={state} onClose={() => setScreen('home')} />;
   if (screen === 'setup-help') return <SetupHelp state={state} onClose={() => setScreen('home')} />;
-  if (screen === 'league') return <League state={state} onClose={() => setScreen('home')} />;
-  return <Home state={state} onSetupHelp={() => setScreen('setup-help')} onSettings={() => setScreen('settings')} onLeague={() => setScreen('league')} />;
+  return <Home state={state} onSetupHelp={() => setScreen('setup-help')} onSettings={() => setScreen('settings')} />;
 }

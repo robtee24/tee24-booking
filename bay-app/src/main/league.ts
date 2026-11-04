@@ -58,13 +58,13 @@ export type CheckResult = api.LeagueCheckResult | { ok: false; isScorecard: fals
  * server whether a scorecard is up and the settings pass. Nothing is saved
  * or charged. Lets the player fix GSPro before anyone is billed.
  */
-export async function check(leagueId: string): Promise<CheckResult> {
+export async function check(leagueId: string, weekId: string | null): Promise<CheckResult> {
   const cap = await captureScorecard();
   if (!cap.ok) {
     return { ok: false, isScorecard: false, cardNames: [], settings: { mulligans: null, gimmeFt: null, greens: null }, hard: [`We couldn't read the screen (${cap.error}).`], soft: [], warnings: [] };
   }
-  const r = await api.leagueCheck(leagueId, { w: cap.w, h: cap.h, lines: cap.lines });
-  log.info(`[league] check: scorecard=${r.isScorecard} names=[${r.cardNames.join(', ')}] ok=${r.ok}${r.hard.length ? ` HARD ${r.hard.join(' | ')}` : ''}`);
+  const r = await api.leagueCheck(leagueId, weekId, { w: cap.w, h: cap.h, lines: cap.lines });
+  log.info(`[league] check: scorecard=${r.isScorecard} names=[${r.cardNames.join(', ')}] course=${r.course ? `${r.course.expected}:${r.course.found}` : '-'} ok=${r.ok}${r.hard.length ? ` HARD ${r.hard.join(' | ')}` : ''}`);
   return r;
 }
 

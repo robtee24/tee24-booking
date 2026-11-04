@@ -285,6 +285,62 @@ function pickHolesInOrder(nums: Token[]): { holes: number[]; outCell: number | n
   return { holes: [...front, ...back], outCell, inCell, totalCell };
 }
 
+/* ───────────── Course ───────────── */
+
+/** Schedule slots whose course hasn't been announced ("Course TBA", "TBD", empty). */
+export function isPlaceholderCourse(name: string | null | undefined): boolean {
+  const n = (name ?? "").trim();
+  return !n || /^(course\s*)?(tba|tbd)\b/i.test(n);
+}
+
+/** Words that GSPro course names add or drop freely ("Pebble Beach Golf Links" vs "Pebble Beach GL"). */
+const COURSE_FILLER = new Set(["the", "golf", "links", "club", "course", "country", "cc", "gc", "gl", "resort", "and", "at", "of", "gsp", "gspro"]);
+
+function courseWords(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+}
+
+/** Levenshtein distance ≤ 1 (OCR drops or swaps the odd letter). */
+function nearlyEqual(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/**
+ * Does the screen show the expected course? Every significant word of the
+ * scheduled name must appear on screen (long words may be one letter off), or
+ * the words run together ("PebbleBeach").
+ */
+export function courseOnCard(expected: string, lines: OcrLine[] | string[]): boolean {
+  const text = (lines as (OcrLine | string)[]).map((l) => (typeof l === "string" ? l : l.text)).join(" ");
+  const all = courseWords(expected);
+  const want = all.filter((w) => !COURSE_FILLER.has(w));
+  const need = want.length ? want : all;
+  if (!need.length) return false;
+  const seen = courseWords(text);
+  const squashed = seen.join("");
+  if (squashed.includes(need.join(""))) return true;
+  return need.every((w) => seen.some((s) => s === w || (w.length >= 5 && nearlyEqual(s, w))));
+}
+
 /* ───────────── Settings policy ───────────── */
 
 export type SettingsCheck = { ok: boolean; hard: string[]; soft: string[] };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { kiosk, isErr, formatPhoneInput } from './bridge';
-import type { LeagueInfo, LeagueLookup, LeagueCheckResult, LeagueSubmitResult } from './types';
+import type { LeagueInfo, LeagueLookup, LeagueCheckResult, LeagueSubmitResult, LeagueWeekInfo } from './types';
 import { CheckIcon, CloseIcon, DeleteIcon, PhoneIcon } from './Icons';
 
 /**
@@ -12,8 +12,8 @@ import { CheckIcon, CloseIcon, DeleteIcon, PhoneIcon } from './Icons';
  *  - <LeagueSettings>      the "League Settings" card (gimmes, mulligans, greens, tees)
  *  - <LeagueTutorial>      step-by-step tutorial (server-provided steps)
  *  - <LeagueRulesSummary>  three leagues / points / money / championship
- *  - <LeagueJoin>          join by phone (home screen)
- *  - <LeagueSubmitFlow>    players → read the card (pre-check) → confirm → charge + save → results
+ *  - <LeagueJoin>          join by phone (not currently shown; submitting joins new players)
+ *  - <LeagueSubmitFlow>    week → players → read the card (pre-check: settings + course) → confirm → charge + save → results
  */
 
 export function useLeagues(force = false) {
@@ -38,7 +38,7 @@ export const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 
 
 export function weekTitle(l: LeagueInfo): string {
   if (!l.week) return l.name;
-  return `Submit your score for Week ${l.week.weekNumber}${l.week.courseName ? ` | ${l.week.courseName}` : ''}`;
+  return 'Submit a league score';
 }
 
 export function championshipLabel(l: LeagueInfo): string | null {
@@ -273,27 +273,51 @@ function nameOnCard(name: string, cardNames: string[]): boolean {
   });
 }
 
+/** Weeks still taking scores (any week can be played ahead), plus announced-later ones shown greyed out. */
+function selectableWeeks(league: LeagueInfo): LeagueWeekInfo[] {
+  const all = league.weeks ?? (league.week ? [league.week] : []);
+  return all.filter((w) => w.isOpen);
+}
+
+export function weekOptionLabel(w: LeagueWeekInfo): string {
+  return `Week ${w.weekNumber} - ${w.courseTba || !w.courseName ? 'Course TBA' : w.courseName}`;
+}
+
 export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: LeagueInfo; onClose: () => void; onOpenRules?: () => void }) {
   const [entries, setEntries] = useState<Entry[]>([blank()]);
   const [stage, setStage] = useState<Stage>('players');
   const [check, setCheck] = useState<LeagueCheckResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<LeagueSubmitResult | null>(null);
-  const week = league.week;
+  const weeks = selectableWeeks(league);
+  const defaultWeek = weeks.find((w) => w.id === league.week?.id && (w.submittable ?? w.isOpen)) ?? weeks.find((w) => w.submittable ?? w.isOpen) ?? null;
+  const [weekId, setWeekId] = useState<string | null>(defaultWeek?.id ?? null);
+  const week = weeks.find((w) => w.id === weekId) ?? defaultWeek;
+  const weekOk = !!week && (week.submittable ?? week.isOpen);
 
   function update(i: number, patch: Partial<Entry>) {
     setEntries((es) => es.map((e, j) => (j === i ? { ...e, ...patch } : e)));
   }
 
-  async function lookup(i: number) {
-    const e = entries[i];
+  async function lookup(i: number, forWeek = week?.id ?? null, base = entries[i]) {
+    const e = base;
+    if (!e) return;
     const digits = digitsOf(e.phone);
     if (digits.length !== 10) return;
     update(i, { busy: true, error: null });
-    const r = await kiosk.leagueLookup(league.id, digits, week?.id ?? null);
+    const r = await kiosk.leagueLookup(league.id, digits, forWeek);
     if (isErr(r)) return update(i, { busy: false, error: r.error, lookup: null });
     const lk = r as LeagueLookup;
     update(i, { busy: false, lookup: lk, name: e.name || lk.player?.displayName || `${lk.member.firstName} ${lk.member.lastName}` });
+  }
+
+  /** "Already submitted" is per week, so re-check everyone when the week changes. */
+  function chooseWeek(id: string) {
+    setWeekId(id);
+    setCheck(null);
+    entries.forEach((e, i) => {
+      if (digitsOf(e.phone).length === 10) void lookup(i, id, e);
+    });
   }
 
   const phoneCounts = entries.reduce<Record<string, number>>((m, e) => {
@@ -306,12 +330,12 @@ export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: Lea
 
   const ready = entries.filter((e) => digitsOf(e.phone).length === 10 && e.name.trim() && e.lookup && !blocked(e));
   const allResolved = entries.every((e) => e.lookup && !e.busy);
-  const canContinue = ready.length > 0 && ready.length === entries.length && allResolved && !!week?.isOpen;
+  const canContinue = ready.length > 0 && ready.length === entries.length && allResolved && weekOk;
 
   async function readCard() {
     setErr(null);
     setStage('checking');
-    const r = await kiosk.leagueCheck(league.id);
+    const r = await kiosk.leagueCheck(league.id, week?.id ?? null);
     if (isErr(r)) {
       setStage('players');
       return setErr(r.error);
@@ -335,8 +359,8 @@ export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: Lea
   if (!week) {
     return (
       <div className="league-theme league-done">
-        <h2>No league week is open right now</h2>
-        <p className="muted">Check back when the next week opens.</p>
+        <h2>No league week is taking scores right now</h2>
+        <p className="muted">Check back when the next course is announced.</p>
         <button className="btn btn-lg" style={{ marginTop: 20 }} onClick={onClose}>Close</button>
       </div>
     );
@@ -428,6 +452,7 @@ export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: Lea
               {check.isScorecard && <div className="muted" style={{ fontSize: 15 }}>{check.cardNames.join(' · ')}</div>}
             </div>
             <div className="league-check-settings">
+              {check.course?.expected && <SettingPill label="Course" value={check.course.found ? check.course.expected : `Not ${check.course.expected}`} bad={!check.course.found} />}
               <SettingPill label="Mulligans" value={check.settings.mulligans == null ? '?' : check.settings.mulligans ? 'ON' : 'OFF'} bad={check.settings.mulligans === true} unknown={check.settings.mulligans == null} />
               <SettingPill label="Gimmes" value={check.settings.gimmeFt == null ? '?' : `${check.settings.gimmeFt}'`} bad={check.settings.gimmeFt != null && check.settings.gimmeFt !== league.settings.gimmeDistanceFt} unknown={check.settings.gimmeFt == null} />
               {check.settings.greens && <SettingPill label="Greens" value={check.settings.greens} />}
@@ -436,7 +461,7 @@ export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: Lea
           {check.hard.length > 0 && (
             <div className="error" style={{ marginTop: 12 }}>
               {check.hard.map((h, i) => <div key={i}>{h}</div>)}
-              <div className="muted" style={{ marginTop: 6, fontSize: 15 }}>The card will be rejected and no one charged. Fix the setting in GSPro and read the card again.</div>
+              <div className="muted" style={{ marginTop: 6, fontSize: 15 }}>The card will be rejected and no one charged. Fix it (pick the right week, or the setting in GSPro) and read the card again.</div>
             </div>
           )}
           {check.soft.length > 0 && (
@@ -486,14 +511,25 @@ export function LeagueSubmitFlow({ league, onClose, onOpenRules }: { league: Lea
   /* ── Players ── */
   return (
     <div className="league-theme stack">
+      <div className="field">
+        <label>Which week are you submitting for?</label>
+        <select className="input input-xl" value={week.id} onChange={(ev) => chooseWeek(ev.target.value)}>
+          {weeks.map((w) => (
+            <option key={w.id} value={w.id} disabled={!(w.submittable ?? w.isOpen)}>
+              {weekOptionLabel(w)}{w.courseTba ? ' (coming soon)' : ` · due ${w.deadlineLabel}`}{w.isCurrent ? ' · this week' : ''}
+            </option>
+          ))}
+        </select>
+        <div className="hint">Any week can be played ahead of time. Pick the week for the course you just played — the kiosk checks that the course on the scorecard matches.</div>
+      </div>
       <div className="league-week-banner">
         <div>
-          <div className="eyebrow">Week {week.weekNumber}{week.courseName ? ` · ${week.courseName}` : ''}</div>
-          <div className="muted" style={{ fontSize: 15 }}>Deadline {week.deadlineLabel} · this week&apos;s pot <b>{money(week.potCents)}</b> · {week.submittedCount} submitted</div>
+          <div className="eyebrow">{weekOptionLabel(week)}</div>
+          <div className="muted" style={{ fontSize: 15 }}>Deadline {week.deadlineLabel} · pot <b>{money(week.potCents)}</b> · {week.submittedCount} submitted</div>
         </div>
         <LeagueSettings league={league} compact />
       </div>
-      {!week.isOpen && <div className="error">Week {week.weekNumber} isn&apos;t open for submissions right now.</div>}
+      {!weekOk && <div className="error">{week.courseTba ? `The course for week ${week.weekNumber} hasn't been announced yet.` : `Week ${week.weekNumber} isn't taking scores any more.`}</div>}
 
       <div className="hint league-warning">Finish all 18 holes and leave the GSPro scorecard on screen. <b>Mulligans must be OFF</b> — a card showing mulligans on is rejected and nobody is charged.</div>
 

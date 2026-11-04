@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { kiosk, isErr, useServerNow, formatCountdown } from '../shared/bridge';
 import type { KioskState } from '../shared/types';
-import { PlayIcon, WrenchIcon, GearIcon, HelpIcon, CalendarIcon, TrophyIcon } from '../shared/Icons';
+import { PlayIcon, WrenchIcon, GearIcon, HelpIcon, CalendarIcon } from '../shared/Icons';
 import { Logo } from '../shared/Logo';
 
-export function Home({ state, onSetupHelp, onSettings, onLeague }: { state: KioskState; onSetupHelp: () => void; onSettings: () => void; onLeague: () => void }) {
+export function Home({ state, onSetupHelp, onSettings }: { state: KioskState; onSetupHelp: () => void; onSettings: () => void }) {
   const [launching, setLaunching] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const now = useServerNow(state.serverOffsetMs);
@@ -58,7 +58,7 @@ export function Home({ state, onSetupHelp, onSettings, onLeague }: { state: Kios
 
       <div className="home-center">
         <div style={{ width: 'min(980px, 100%)' }}>
-          <div className="home-actions home-actions-3">
+          <div className="home-actions">
             <button className="tile tile-play" onClick={play} disabled={busy}>
               <span className="tile-icon">{busy ? <span className="spinner" /> : <PlayIcon size={34} />}</span>
               <h2>{starting ? 'Starting GSPro…' : 'Play'}</h2>
@@ -67,11 +67,6 @@ export function Home({ state, onSetupHelp, onSettings, onLeague }: { state: Kios
                   ? 'Give it a few seconds. The screen switches to GSPro as soon as it opens.'
                   : /IDRAMonitor\.exe$/i.test(s.launchMonitorPath) ? 'Starts GSPro with the IDRA launch monitor.' : 'Starts the launch monitor and GSPro.'}
               </p>
-            </button>
-            <button className="tile tile-league" onClick={onLeague}>
-              <span className="tile-icon"><TrophyIcon size={30} /></span>
-              <h2>League</h2>
-              <p>This week's challenge, how to submit your score, league settings, and join.</p>
             </button>
             <button className="tile" onClick={onSetupHelp}>
               <span className="tile-icon"><WrenchIcon size={30} /></span>

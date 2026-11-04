@@ -43,7 +43,7 @@ const api = {
   // League
   leagues: (force?: boolean) => ipcRenderer.invoke('kiosk:leagues', !!force),
   leagueLookup: (leagueId: string, phone: string, weekId?: string | null) => ipcRenderer.invoke('kiosk:leagueLookup', leagueId, phone, weekId ?? null),
-  leagueCheck: (leagueId: string) => ipcRenderer.invoke('kiosk:leagueCheck', leagueId),
+  leagueCheck: (leagueId: string, weekId?: string | null) => ipcRenderer.invoke('kiosk:leagueCheck', leagueId, weekId ?? null),
   leagueJoin: (leagueId: string, phone: string, displayName?: string | null) => ipcRenderer.invoke('kiosk:leagueJoin', leagueId, phone, displayName ?? null),
   leagueSubmit: (input: { leagueId: string; weekId: string | null; entries: { phone: string; name: string }[] }) => ipcRenderer.invoke('kiosk:leagueSubmit', input),
 
