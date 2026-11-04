@@ -214,6 +214,13 @@ Settings → **Lockdown & exit** (`bay-app/src/main/lockdown.ts`). Windows gives
 - The registry is the source of truth (status is read live; nothing is re-applied at kiosk start). Not covered: Ctrl+Esc (Start), Alt+Tab, physical power button. A complete lock-out would need Windows Assigned Access, which also blocks GSPro's windows.
 - Same tab: **Close kiosk and go to desktop** (`admin:quit`, admin sign-in required) and **Restart kiosk**. The kiosk comes back at the next sign-in (scheduled task) or from the Start menu. The older "Quit to Windows" ghost button under App & updates does the same thing.
 
+### League season one (kiosk 1.4.3, 4 Nov 2026)
+
+- Created by migration `20261104190000_league_season_one` (only if no league is OPEN/ACTIVE): "Tee24 Winter League" on Clarksville, 16 weeks Mon 00:00 → Sun 23:59:59 local starting Mon 9 Nov 2026. Week 1 = **Pebble Beach**, due Sun 15 Nov; weeks 2–16 are "Course TBA" — set real courses in Admin → League → week → Save week. Championship Sat 6 Mar 2027 noon.
+- Any week can be played ahead: `assertWeekOpen` no longer checks `opensAt`, only finalized/deadline. Scores stay hidden until that week's reveal as before.
+- Kiosk: the home **League** tile is gone; the toolbar League button opens the submit flow, which starts with a "Week N - Course" picker (TBA weeks are listed but disabled). The server's check/submit reject the card unless the chosen week's course name is found in the OCR text (`courseOnCard` in `lib/league/ocr.ts`: filler words like Golf/Links/GL ignored, one-letter OCR slips tolerated). Placeholder detection is `isPlaceholderCourse` (empty, "TBA", "TBD", "Course TBA").
+- Unverified: that GSPro's scorecard screen actually shows the course name. If real cards get rejected for "isn't for Pebble Beach", loosen `courseProblems` in `services/league.service.ts` (server-only, no kiosk release).
+
 ### Remote-support server (deployed 27 Oct 2026)
 
 - MeshCentral runs on Fly.io: app `tee24-remote`, region `ord`, one machine, volume `meshcentral_data` (config and DB live on the volume, so the Dockerfile’s `config.json` is only used on first boot). Public URL **https://remote.tee24.golf** (Fly cert issued; CNAME at Bluehost → `tee24-remote.fly.dev`). The site is served by Fly, not Vercel — Vercel is serverless and cannot hold the agents’ persistent WebSockets.
