@@ -201,6 +201,19 @@ Remote desktop from the admin console is optional. On the kiosk: **Settings → 
 
 Downloaded GSPro courses fill the bay drives. At the **first inactivity close after Monday 00:01 local**, the kiosk deletes everything in `C:\GSProV1\Core\GSP\Courses` except `Bootleggers_GSP`, `gsp_practicearea` and `multi_range_gsp`, then restarts Windows (same 30-second notice as the Nth-close restart; it also resets that counter). GSPro is already closed when the wipe runs. If the bay is unused all Monday, the cleanup happens at the first idle close later that week — it is "due" until it has run once since the most recent Monday 00:01, so the first idle close after installing 1.4.1 runs it too, whatever the day. `bay-app/src/main/maintenance.ts`; per-PC switch and a **Clean now** button in kiosk Settings → Launch paths; last run is stored as `lastCourseWipeAt` in the settings JSON. The folder's ACL gives Authenticated Users Modify, so no elevation is needed.
 
+### Restart-notice watchdog (kiosk 1.4.2, 4 Nov 2026)
+
+The maintenance restart is `shutdown.exe /r /f /t 30`. If anything aborts it afterwards (`shutdown /a`, a policy, or Windows refusing), the kiosk used to keep the "restarting" notice up indefinitely. `poller.ts` now clears `restartAt` and logs `[restart] still running 90s after the deadline` once the PC is still alive 90 s past the deadline, so the home screen comes back on its own. The staff **Cancel** on the notice still runs `shutdown /a` immediately.
+
+### Customer lockdown and exit (kiosk 1.4.2, 4 Nov 2026)
+
+Settings → **Lockdown & exit** (`bay-app/src/main/lockdown.ts`). Windows gives an app no way to swallow the Windows key or Ctrl+Alt+Del, so **Turn lockdown on** changes the registry through one elevated PowerShell (one UAC prompt), and **Turn lockdown off** reverses it exactly:
+
+- Per-user policies, written under `HKU\<sid>` so they land on the signed-in user even if UAC asks for a different admin account: `Policies\System` `DisableTaskMgr`, `DisableLockWorkstation`, `DisableChangePassword`, `HideFastUserSwitching`; `Policies\Explorer` `NoLogoff`, `NoClose`, `NoWinKeys`. Effect: the Ctrl+Alt+Del screen only offers Cancel (no Task Manager, Lock, Sign out, Switch user, power) and the Win+letter shortcuts are dead. Immediate. (The `Policies` keys are ACL'd — even the owning user cannot write them without elevation, which is why the HKCU half also needs UAC.)
+- `HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout\Scancode Map` = `00000000 00000000 03000000 00005BE0 00005CE0 00000000` disables both Windows keys at the keyboard-driver level. Read at sign-in, so it applies after the next restart.
+- The registry is the source of truth (status is read live; nothing is re-applied at kiosk start). Not covered: Ctrl+Esc (Start), Alt+Tab, physical power button. A complete lock-out would need Windows Assigned Access, which also blocks GSPro's windows.
+- Same tab: **Close kiosk and go to desktop** (`admin:quit`, admin sign-in required) and **Restart kiosk**. The kiosk comes back at the next sign-in (scheduled task) or from the Start menu. The older "Quit to Windows" ghost button under App & updates does the same thing.
+
 ### Remote-support server (deployed 27 Oct 2026)
 
 - MeshCentral runs on Fly.io: app `tee24-remote`, region `ord`, one machine, volume `meshcentral_data` (config and DB live on the volume, so the Dockerfile’s `config.json` is only used on first boot). Public URL **https://remote.tee24.golf** (Fly cert issued; CNAME at Bluehost → `tee24-remote.fly.dev`). The site is served by Fly, not Vercel — Vercel is serverless and cannot hold the agents’ persistent WebSockets.

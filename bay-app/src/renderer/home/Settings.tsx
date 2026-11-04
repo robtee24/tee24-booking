@@ -7,7 +7,7 @@ import { labelLM } from '../shared/TroubleshootFlow';
 import { BackIcon, WrenchIcon, UploadIcon } from '../shared/Icons';
 
 type Session = Omit<AdminSession, 'token'>;
-type Tab = 'bay' | 'assignment' | 'launch' | 'idra' | 'remote' | 'app';
+type Tab = 'bay' | 'assignment' | 'launch' | 'idra' | 'lockdown' | 'remote' | 'app';
 type IdraTool = 'calibration' | 'updates';
 type PathsExist = { launchMonitor: boolean; gspro: boolean; golfinLauncher: boolean; idraCalibration: boolean; idraUpdates: boolean };
 
@@ -56,6 +56,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
                 ['assignment', 'Bay assignment'],
                 ['launch', 'Play button'],
                 ['idra', 'IDRA tools'],
+                ['lockdown', 'Lockdown & exit'],
                 ['remote', 'Remote support'],
                 ['app', 'App & updates'],
               ] as [Tab, string][]).map(([k, label]) => (
@@ -69,6 +70,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
               {tab === 'assignment' && <Assignment state={state} session={session} onChanged={async () => setSession((await kiosk.adminSession()) as Session)} />}
               {tab === 'launch' && <LaunchPaths state={state} />}
               {tab === 'idra' && <IdraTools state={state} />}
+              {tab === 'lockdown' && <Lockdown />}
               {tab === 'remote' && <Remote />}
               {tab === 'app' && <AppUpdates state={state} />}
             </div>
@@ -528,6 +530,84 @@ function Remote() {
         <button className="btn btn-ghost" onClick={refresh}>Refresh</button>
       </div>
       <div className="hint">Windows will ask for permission (UAC) during install. The device id is reported to the admin console automatically.</div>
+    </div>
+  );
+}
+
+// ---------- Customer lockdown ----------
+
+type LockdownStatus = { supported: boolean; userPolicies: boolean; winKeysDisabled: boolean; on: boolean };
+
+function Lockdown() {
+  const [st, setSt] = useState<LockdownStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function refresh() {
+    const r = await kiosk.adminLockdownStatus();
+    if (!isErr(r)) setSt(r as LockdownStatus);
+  }
+  useEffect(() => { refresh(); }, []);
+
+  async function toggle(on: boolean) {
+    if (on && !confirm('Lock this computer down for customers? Ctrl+Alt+Del will only offer Cancel, and both Windows keys stop working after the next restart. Staff can still open Start with Ctrl+Esc and use these Settings.')) return;
+    setBusy(true); setErr(null); setNote(null);
+    const r = await kiosk.adminLockdownSet(on);
+    setBusy(false);
+    if (isErr(r)) return setErr(r.error);
+    setSt(r as LockdownStatus);
+    setNote(on
+      ? 'Lockdown on. Ctrl+Alt+Del and Win+shortcuts are restricted now; the Windows keys go dead at the next restart or sign-out.'
+      : 'Lockdown off. Ctrl+Alt+Del options are back; the Windows keys work again after the next restart or sign-out.');
+  }
+
+  const partial = !!st && st.userPolicies !== st.winKeysDisabled;
+  return (
+    <div className="stack">
+    <div className="card stack">
+      <div>
+        <div className="card-title">Exit to the Windows desktop</div>
+        <div className="card-sub">Closes the kiosk so staff can use the computer normally. GSPro is left as it is. The kiosk starts again at the next sign-in, or from the Start menu.</div>
+      </div>
+      <div className="row">
+        <button className="btn btn-danger" onClick={() => { if (confirm('Close the Tee24 Kiosk and go to the Windows desktop?')) kiosk.adminQuit(); }}>Close kiosk and go to desktop</button>
+        <button className="btn btn-ghost" onClick={() => kiosk.adminRestart()}>Restart kiosk</button>
+      </div>
+    </div>
+    <div className="card stack">
+      <div>
+        <div className="card-title">Customer lockdown</div>
+        <div className="card-sub">
+          Makes it hard for customers to leave the kiosk or GSPro. Windows won’t let an app block the Windows key or Ctrl+Alt+Del itself, so this changes Windows settings instead (one permission prompt, fully reversible). Staff keep access through these Settings, remote support, and <b>Ctrl+Esc</b> for the Start menu.
+        </div>
+      </div>
+      {!st ? (
+        <div className="row muted"><span className="spinner" /> Checking…</div>
+      ) : (
+        <dl className="kv">
+          <dt>Ctrl+Alt+Del</dt>
+          <dd>{st.userPolicies ? <span className="badge badge-ok"><span className="dot" /> Cancel only — no Task Manager, Lock, Sign out, Switch user or power</span> : <span className="badge badge-warn">Normal</span>}</dd>
+          <dt>Win+shortcuts</dt>
+          <dd>{st.userPolicies ? <span className="badge badge-ok"><span className="dot" /> Off (Win+D, Win+E, Win+R…)</span> : <span className="badge badge-warn">Normal</span>}</dd>
+          <dt>Windows keys</dt>
+          <dd>{st.winKeysDisabled ? <span className="badge badge-ok"><span className="dot" /> Disabled (from next sign-in)</span> : <span className="badge badge-warn">Enabled</span>}</dd>
+        </dl>
+      )}
+      {partial && <div className="hint">Only part of the lockdown is in place. Press the button to apply it fully, or turn it off.</div>}
+      {note && <div className="success">{note}</div>}
+      {err && <div className="error">{err}</div>}
+      <div className="row">
+        {!st?.on
+          ? <button className="btn btn-primary" disabled={busy || !st?.supported} onClick={() => toggle(true)}>{busy ? <span className="spinner" /> : 'Turn lockdown on'}</button>
+          : <button className="btn btn-danger" disabled={busy} onClick={() => toggle(false)}>{busy ? <span className="spinner" /> : 'Turn lockdown off'}</button>}
+        <button className="btn btn-ghost" disabled={busy} onClick={refresh}>Refresh</button>
+      </div>
+      <div className="hint">
+        Windows will ask for permission (UAC). The Ctrl+Alt+Del and Win+shortcut changes apply immediately; the Windows keys themselves are read at sign-in, so they stop working after the next restart (the regular maintenance restart is enough).
+        Not covered: Ctrl+Esc (Start), Alt+Tab and the physical power button — a full lock-out needs Windows Assigned Access, which also blocks GSPro’s own windows.
+      </div>
+    </div>
     </div>
   );
 }

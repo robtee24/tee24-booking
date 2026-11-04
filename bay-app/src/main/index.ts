@@ -10,6 +10,7 @@ import * as poller from './poller';
 import * as remote from './remote';
 import * as tools from './tools';
 import { wipeCourses } from './maintenance';
+import * as lockdown from './lockdown';
 import * as windows from './windows';
 import * as autostart from './autostart';
 import * as screenWatch from './screen';
@@ -229,6 +230,12 @@ function registerIpc() {
     applyAutostart();
     poller.forcePublish();
     return s;
+  });
+  // ---- Customer lockdown (Ctrl+Alt+Del trimmed, Windows keys off) ----
+  handle('admin:lockdownStatus', () => lockdown.getLockdownStatus());
+  handle('admin:lockdownSet', async (on: boolean) => {
+    requireAdmin();
+    return lockdown.setLockdown(!!on);
   });
   handle('admin:browseExe', async (title: string) => {
     requireAdmin();

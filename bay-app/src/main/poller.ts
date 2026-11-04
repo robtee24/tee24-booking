@@ -138,6 +138,8 @@ function evaluateIdle(promptShowing: boolean): KioskState['overlay'] | null {
 // ---------- Maintenance restart ----------
 
 const RESTART_COUNTDOWN_S = 30;
+/** How long past the deadline we tolerate still being alive before assuming the restart failed. */
+const RESTART_GRACE_MS = 90_000;
 let restartAt: string | null = null;
 
 /**
@@ -180,9 +182,9 @@ function scheduleRestart(reason: string) {
   restartAt = new Date(Date.now() + RESTART_COUNTDOWN_S * 1000).toISOString();
   log.warn(`[restart] restarting Windows in ${RESTART_COUNTDOWN_S}s (${reason})`);
   // Hand the restart to Windows now so it happens even if the kiosk dies first.
-  execFile('shutdown.exe', ['/r', '/f', '/t', String(RESTART_COUNTDOWN_S), '/c', 'Tee24 bay maintenance restart'], { windowsHide: true }, (err) => {
+  execFile('shutdown.exe', ['/r', '/f', '/t', String(RESTART_COUNTDOWN_S), '/c', 'Tee24 bay maintenance restart'], { windowsHide: true }, (err, _stdout, stderr) => {
     if (err) {
-      log.error('[restart] shutdown.exe failed', err.message);
+      log.error('[restart] shutdown.exe failed', err.message, String(stderr || '').trim());
       restartAt = null;
       publish();
     }
@@ -438,7 +440,17 @@ function evaluate() {
   if (idle) overlay = idle;
 
   // Maintenance restart countdown beats everything (the PC is going down).
-  if (restartAt) overlay = { mode: 'restart', booking: null, deadline: restartAt };
+  if (restartAt) {
+    // Windows should have taken us down by the deadline. If we are still here
+    // well past it, the restart was aborted (shutdown /a from outside, or
+    // blocked by a policy) — drop the notice rather than leave it stuck.
+    if (Date.now() > new Date(restartAt).getTime() + RESTART_GRACE_MS) {
+      log.error(`[restart] still running ${RESTART_GRACE_MS / 1000}s after the deadline — restart was aborted or blocked; clearing the notice`);
+      restartAt = null;
+    } else {
+      overlay = { mode: 'restart', booking: null, deadline: restartAt };
+    }
+  }
 
   const changed =
     overlay.mode !== state.overlay.mode ||
