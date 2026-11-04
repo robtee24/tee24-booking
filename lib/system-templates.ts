@@ -119,6 +119,14 @@ export const SYSTEM_TEMPLATES: SystemTemplateDef[] = [
     sms: { defaultOn: false, body: `Your {plan_name} membership at {location_name} has ended. Come back any time: ${portal}` },
   },
   {
+    eventKey: "membership.cancelled-nonpayment",
+    group: "Memberships",
+    label: "Membership ended — unpaid",
+    description: "Sent when the previous invoice was still unpaid at renewal: the invoice is voided and the membership ends.",
+    email: { defaultOn: true, subject: "Your {location_name} membership has ended", body: `Hi {first_name},<br><br>We weren't able to collect <strong>{amount}</strong> for your {plan_name} membership after several attempts, so the membership has ended and the unpaid invoice has been cleared — you don't owe anything.<br><br>Want back in? Rejoin any time with a new card and you'll be back on the sim the same day: <a href="${portal}">${portal}</a>` },
+    sms: { defaultOn: true, body: `Hi {first_name}, we couldn't collect {amount} for your {plan_name} membership, so it has ended (nothing owed). Rejoin any time: ${portal}` },
+  },
+  {
     eventKey: "membership.frozen",
     group: "Memberships",
     label: "Membership frozen",

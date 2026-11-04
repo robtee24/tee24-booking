@@ -43,6 +43,7 @@ export const AUTOMATION_TRIGGER_OPTIONS: { value: string; label: string; group: 
   { value: "membership.renewed", label: "Membership renewed", group: "Memberships" },
   { value: "membership.cancel-scheduled", label: "Cancellation scheduled", group: "Memberships" },
   { value: "membership.cancelled", label: "Membership cancelled", group: "Memberships" },
+  { value: "membership.cancelled-nonpayment", label: "Membership ended — unpaid", group: "Memberships" },
   { value: "membership.frozen", label: "Membership frozen", group: "Memberships" },
   { value: "membership.resumed", label: "Membership resumed", group: "Memberships" },
   { value: "membership.expiring", label: "Membership expiring soon", group: "Memberships" },

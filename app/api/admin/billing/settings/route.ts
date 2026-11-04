@@ -31,6 +31,7 @@ export async function PATCH(req: NextRequest) {
         dunningRetryDays: body.dunningRetryDays,
         lateFeeCents: body.lateFeeCents,
         overdueBlockDays: body.overdueBlockDays,
+        unpaidRenewalAction: body.unpaidRenewalAction,
       },
       g.actorId,
     );

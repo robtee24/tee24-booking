@@ -301,6 +301,8 @@ export type CancelNowInput = {
   refundLastPayment: boolean;
   /** Partial refund override (cents). Defaults to the full refundable amount. */
   refundAmountCents?: number;
+  /** Automatic end for an unpaid renewal — sends `membership.cancelled-nonpayment` instead of the generic message. */
+  nonPayment?: { unpaidCents: number };
 };
 
 /**
@@ -357,13 +359,18 @@ export async function cancelNowAndRefund(input: CancelNowInput, actorId?: string
     }
   }
 
-  void emitMemberEvent("membership.cancelled", {
+  void emitMemberEvent(input.nonPayment ? "membership.cancelled-nonpayment" : "membership.cancelled", {
     memberId: sub.memberId,
     locationId: sub.locationId,
     organizationId: sub.member.organizationId,
     actorAdminId: actorId ?? null,
     refs: { subscriptionId: sub.id },
-    vars: { planName: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType), reason: input.reason, dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), amount: refund ? `$${(refund.amountCents / 100).toFixed(2)}` : "" },
+    vars: {
+      planName: membershipDisplayName(sub.plan.name, sub.guestCount, sub.plan.productType),
+      reason: input.reason,
+      dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      amount: input.nonPayment ? `$${(input.nonPayment.unpaidCents / 100).toFixed(2)}` : refund ? `$${(refund.amountCents / 100).toFixed(2)}` : "",
+    },
   });
 
   return { subscription: cancelled, voidedInvoices: open.length, refund, refundError };

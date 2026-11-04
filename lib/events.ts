@@ -17,6 +17,7 @@ export type MemberEventKind =
   | "membership.renewed"
   | "membership.cancel-scheduled"
   | "membership.cancelled"
+  | "membership.cancelled-nonpayment" // ended automatically: previous invoice unpaid at renewal
   | "membership.frozen"
   | "membership.resumed"
   | "membership.freeze-scheduled"

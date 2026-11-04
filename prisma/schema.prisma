@@ -137,9 +137,13 @@ model Location {
   currency         String @default("USD")
   taxRateBps       Int    @default(0) // basis points, 825 = 8.25%
   cardSurchargeBps Int    @default(0)
-  dunningRetryDays Json? // e.g. [1, 3, 7]
+  dunningRetryDays Json? // e.g. [3, 5, 7, 7] → 5 attempts inside a month
   lateFeeCents     Int    @default(0)
   overdueBlockDays Int? // null = never block access for overdue invoices
+  // What happens when an invoice is still unpaid at the next renewal:
+  // CANCEL    → void the invoice and end the membership (no stacked invoices)
+  // KEEP_OPEN → leave it open and issue the next period's invoice as well
+  unpaidRenewalAction String @default("CANCEL")
 
   // Square account for this location (each location can use its own Square
   // business). Secrets are encrypted at rest via lib/secrets.ts. When unset,

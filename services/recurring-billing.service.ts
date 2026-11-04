@@ -23,6 +23,8 @@ import {
   chargeInvoiceWithDefaultCard,
   computeInvoiceMath,
   createInvoice,
+  invoiceRemainingCents,
+  parseUnpaidRenewalAction,
 } from "./billing.service";
 import { computeDiscountCents, findRecurringDiscountsForMember, stackedDiscountCents } from "./discount.service";
 import { applyPendingChangeIfDue } from "./portal-membership.service";
@@ -112,7 +114,58 @@ export type GenerateResult = {
   charged: string[];
   failed: Array<{ invoiceId: string; reason: string }>;
   skipped: Array<{ subscriptionId: string; reason: string }>;
+  /** Memberships ended at renewal because the previous invoice was never paid. */
+  cancelledForNonPayment: Array<{ subscriptionId: string; invoiceId: string }>;
 };
+
+/**
+ * Renewal-time check for an unpaid previous period. With the location's
+ * `unpaidRenewalAction = CANCEL` (default) we make one last attempt on the card
+ * on file and, if that fails too, void the invoice and end the membership —
+ * so a member never accumulates stacked unpaid invoices. Returns the invoice we
+ * acted on, or null when there was nothing outstanding / the policy is KEEP_OPEN.
+ */
+export async function handleUnpaidAtRenewal(
+  sub: Pick<SubForBilling, "id" | "memberId" | "locationId" | "location">,
+  billingDate: Date,
+  opts: { actorId?: string } = {},
+): Promise<{ invoiceId: string; outcome: "recovered" | "cancelled" } | null> {
+  const prisma = getPrisma();
+  if (parseUnpaidRenewalAction(sub.location.unpaidRenewalAction) !== "CANCEL") return null;
+  const outstanding = await prisma.invoice.findFirst({
+    where: { subscriptionId: sub.id, status: { in: ["SCHEDULED", "PAST_DUE", "FAILED"] }, totalCents: { gt: 0 }, dueDate: { lt: startOfUtcDay(billingDate) } },
+    orderBy: { dueDate: "asc" },
+    select: { id: true, number: true, attemptCount: true, dueDate: true, lastFailureReason: true, totalCents: true, refundedCents: true },
+  });
+  if (!outstanding) return null;
+
+  // Last chance: the member may have fixed their card after the retry schedule ran out.
+  const hasCard = (await isSquareConfigured(sub.locationId)) && Boolean(await prisma.paymentMethod.findFirst({ where: { memberId: sub.memberId, status: { not: "EXPIRED" }, squareCardId: { not: null } }, select: { id: true } }));
+  if (hasCard) {
+    try {
+      await chargeInvoiceWithDefaultCard(outstanding.id, opts.actorId);
+      return { invoiceId: outstanding.id, outcome: "recovered" };
+    } catch {
+      /* fall through to cancellation */
+    }
+  }
+
+  const fresh = await prisma.invoice.findUnique({ where: { id: outstanding.id }, select: { attemptCount: true, lastFailureReason: true } });
+  const attempts = fresh?.attemptCount ?? outstanding.attemptCount;
+  const reason = fresh?.lastFailureReason ?? outstanding.lastFailureReason ?? "no card on file";
+  const { cancelNowAndRefund } = await import("./membership.service");
+  await cancelNowAndRefund(
+    {
+      subscriptionId: sub.id,
+      reason: "Non-payment",
+      notes: `Invoice #${outstanding.number} (due ${outstanding.dueDate.toISOString().slice(0, 10)}) was still unpaid at renewal after ${attempts} attempt${attempts === 1 ? "" : "s"} — ${reason}. Invoice voided automatically.`,
+      refundLastPayment: false,
+      nonPayment: { unpaidCents: invoiceRemainingCents(outstanding) },
+    },
+    opts.actorId,
+  );
+  return { invoiceId: outstanding.id, outcome: "cancelled" };
+}
 
 /**
  * One-off plans (day passes, punch cards, prepaid blocks) never renew, so once
@@ -146,7 +199,7 @@ export async function expireLapsedOneOffSubscriptions(now = new Date()): Promise
 /** Generate + attempt to collect every invoice that is due as of `now`. */
 export async function generateDueInvoices(now = new Date(), opts?: { subscriptionId?: string; actorId?: string }): Promise<GenerateResult> {
   const prisma = getPrisma();
-  const result: GenerateResult = { scanned: 0, backfilled: 0, created: [], charged: [], failed: [], skipped: [] };
+  const result: GenerateResult = { scanned: 0, backfilled: 0, created: [], charged: [], failed: [], skipped: [], cancelledForNonPayment: [] };
 
   const subs = await prisma.membershipSubscription.findMany({
     where: {
@@ -201,6 +254,14 @@ export async function generateDueInvoices(now = new Date(), opts?: { subscriptio
     }
 
     try {
+      // Previous period still unpaid? Last try on the card, otherwise void it and end the membership.
+      const unpaid = await handleUnpaidAtRenewal(sub, billingDate, { actorId: opts?.actorId });
+      if (unpaid?.outcome === "cancelled") {
+        result.cancelledForNonPayment.push({ subscriptionId: sub.id, invoiceId: unpaid.invoiceId });
+        result.skipped.push({ subscriptionId: sub.id, reason: `cancelled for non-payment (invoice ${unpaid.invoiceId} voided)` });
+        continue;
+      }
+
       // Self-service downgrade scheduled for this renewal? Apply it first so the invoice reflects the new plan.
       let billable = sub;
       if (sub.pendingChangeAt && sub.pendingChangeAt <= billingDate) {
@@ -211,7 +272,7 @@ export async function generateDueInvoices(now = new Date(), opts?: { subscriptio
         }
       }
       const r = await issueInvoiceForSubscription(billable, billingDate, { actorId: opts?.actorId, now });
-      if (r.invoiceId) result.created.push(r.invoiceId);
+      if (r.invoiceId && !r.skippedReason) result.created.push(r.invoiceId);
       if (r.charged) result.charged.push(r.invoiceId!);
       if (r.failureReason && r.invoiceId) result.failed.push({ invoiceId: r.invoiceId, reason: r.failureReason });
       if (r.skippedReason) result.skipped.push({ subscriptionId: sub.id, reason: r.skippedReason });

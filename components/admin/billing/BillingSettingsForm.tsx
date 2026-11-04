@@ -12,6 +12,7 @@ export type BillingSettingsValues = {
   dunningRetryDays: number[];
   lateFeeCents: number;
   overdueBlockDays: number | null;
+  unpaidRenewalAction: "CANCEL" | "KEEP_OPEN";
 };
 
 type Section = "tax" | "dunning" | "general";
@@ -89,6 +90,15 @@ export function TaxSettingsSection({ slug, settings, canEdit = true }: { slug: s
   );
 }
 
+/** "3, 5, 7, 7" → "due date, then day 3, 8, 15, 22". */
+function retryScheduleSummary(raw: string): string {
+  const days = raw.split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (!days.length) return "due date only";
+  let acc = 0;
+  const offsets = days.map((d) => (acc += d));
+  return `due date, then day ${offsets.join(", ")}`;
+}
+
 /** General (currency + card surcharge) and dunning (retry schedule, late fee, overdue block) sections. */
 export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: string; settings: BillingSettingsValues; canEdit?: boolean }) {
   const router = useRouter();
@@ -101,6 +111,7 @@ export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: 
     retryDays: settings.dunningRetryDays.join(", "),
     lateFee: (settings.lateFeeCents / 100).toFixed(2),
     blockDays: settings.overdueBlockDays != null ? String(settings.overdueBlockDays) : "",
+    unpaidRenewalAction: settings.unpaidRenewalAction,
   });
 
   function reset() {
@@ -110,6 +121,7 @@ export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: 
       retryDays: settings.dunningRetryDays.join(", "),
       lateFee: (settings.lateFeeCents / 100).toFixed(2),
       blockDays: settings.overdueBlockDays != null ? String(settings.overdueBlockDays) : "",
+      unpaidRenewalAction: settings.unpaidRenewalAction,
     });
     setEditing(null);
   }
@@ -129,7 +141,7 @@ export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: 
         if (!Number.isFinite(lateFeeCents) || lateFeeCents < 0) throw new Error("Late fee must be zero or positive");
         const blockDays = draft.blockDays.trim() === "" ? null : Math.round(Number(draft.blockDays));
         if (blockDays != null && (!Number.isFinite(blockDays) || blockDays < 0)) throw new Error("Block days must be zero or positive");
-        patch = { dunningRetryDays: days, lateFeeCents, overdueBlockDays: blockDays };
+        patch = { dunningRetryDays: days, lateFeeCents, overdueBlockDays: blockDays, unpaidRenewalAction: draft.unpaidRenewalAction };
       }
       await patchSettings(slug, patch);
       toast({ tone: "success", title: "Billing settings saved" });
@@ -145,8 +157,8 @@ export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: 
   return (
     <>
       <SettingsSection
-        title="Dunning & late fees"
-        description="What happens when a card is declined. Members are emailed after each failed attempt; access is blocked while an invoice is past due."
+        title="Failed payments & retries"
+        description="What happens when a card is declined. The first attempt is on the due date; each retry is texted/emailed to the member and access is blocked while an invoice is past due. A new default card is charged immediately."
         editing={editing === "dunning"}
         onEdit={() => setEditing("dunning")}
         onCancel={reset}
@@ -155,15 +167,19 @@ export function BillingSettingsForm({ slug, settings, canEdit = true }: { slug: 
         canEdit={canEdit && editing !== "general"}
       >
         {editing === "dunning" ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Input label="Retry after (days)" value={draft.retryDays} onChange={(e) => setDraft((d) => ({ ...d, retryDays: e.target.value }))} hint="Days after the failure to retry, e.g. 1, 3, 7. After the last retry the invoice stays overdue." />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Retry after (days between attempts)" value={draft.retryDays} onChange={(e) => setDraft((d) => ({ ...d, retryDays: e.target.value }))} hint={`e.g. 3, 5, 7, 7 → ${retryScheduleSummary(draft.retryDays)}`} />
+            <Select label="Still unpaid at the next renewal" value={draft.unpaidRenewalAction} onChange={(e) => setDraft((d) => ({ ...d, unpaidRenewalAction: e.target.value as "CANCEL" | "KEEP_OPEN" }))} hint="One final charge is attempted first. Cancelling voids the unpaid invoice so members never stack up multiple open invoices.">
+              <option value="CANCEL">Void the invoice and cancel the membership</option>
+              <option value="KEEP_OPEN">Keep the invoice open and bill the next period too</option>
+            </Select>
             <Input label="Late fee" type="number" min={0} step="0.01" prefix="$" value={draft.lateFee} onChange={(e) => setDraft((d) => ({ ...d, lateFee: e.target.value }))} hint="Added once, after the final retry fails. 0 = none." />
             <Input label="Block access after (days)" type="number" min={0} value={draft.blockDays} onChange={(e) => setDraft((d) => ({ ...d, blockDays: e.target.value }))} placeholder="Immediately" hint="Grace period before door access is disabled for an overdue member." />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Retry schedule" value={settings.dunningRetryDays.map((d) => `day ${d}`).join(", ")} />
-            <Field label="Max attempts" value={String(settings.dunningRetryDays.length + 1)} />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Attempts" value={`${settings.dunningRetryDays.length + 1} total — ${retryScheduleSummary(settings.dunningRetryDays.join(","))}`} />
+            <Field label="Unpaid at renewal" value={settings.unpaidRenewalAction === "CANCEL" ? "Void invoice & cancel membership" : "Keep open, bill next period"} />
             <Field label="Late fee" value={settings.lateFeeCents > 0 ? `$${(settings.lateFeeCents / 100).toFixed(2)}` : "None"} />
             <Field label="Access block" value={settings.overdueBlockDays == null || settings.overdueBlockDays === 0 ? "Immediately when overdue" : `${settings.overdueBlockDays} days after due`} />
           </div>

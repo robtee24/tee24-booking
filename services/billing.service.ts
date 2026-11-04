@@ -1032,6 +1032,12 @@ export async function vaultCard(input: {
   });
   if (makeDefault) await setDefaultPaymentMethod(input.memberId, pm.id, input.actorId ?? undefined);
 
+  // A fresh default card is the member fixing a declined payment — collect right away
+  // instead of waiting for the next dunning retry (which may already be exhausted).
+  if (makeDefault) {
+    void retryOpenInvoicesForMember(input.memberId, input.actorId ?? undefined).catch((e) => console.warn("[billing] retry after card add failed", e));
+  }
+
   void audit({
     organizationId: member?.organizationId ?? null,
     actorId: input.actorId ?? undefined,
@@ -1042,6 +1048,32 @@ export async function vaultCard(input: {
     metadata: { source: input.source ?? "admin" },
   });
   return prisma.paymentMethod.findUniqueOrThrow({ where: { id: pm.id } });
+}
+
+/**
+ * Try the default card on every open invoice the member owes (oldest first).
+ * Stops at the first decline so one bad card doesn't burn through the whole
+ * retry budget. Returns the number of invoices recovered.
+ */
+export async function retryOpenInvoicesForMember(memberId: string, actorId?: string): Promise<{ attempted: number; recovered: number }> {
+  const prisma = getPrisma();
+  const open = await prisma.invoice.findMany({
+    where: { memberId, status: { in: [...OPEN_STATUSES] }, totalCents: { gt: 0 }, dueDate: { lte: new Date() } },
+    orderBy: { dueDate: "asc" },
+    select: { id: true },
+  });
+  let attempted = 0;
+  let recovered = 0;
+  for (const inv of open) {
+    attempted++;
+    try {
+      await chargeInvoiceWithDefaultCard(inv.id, actorId);
+      recovered++;
+    } catch {
+      break;
+    }
+  }
+  return { attempted, recovered };
 }
 
 /** Disable a card at Square and remove it locally (promotes another card to default). */
@@ -1114,9 +1146,10 @@ function linesTable(inv: NonNullable<Awaited<ReturnType<typeof loadInvoiceForEma
   <tr><td style="padding:10px 0;border-top:1px solid #e2e8f0;font-weight:600;">Total</td><td style="padding:10px 0;border-top:1px solid #e2e8f0;text-align:right;font-weight:600;">${money(inv.totalCents, cur)}</td></tr></table>`;
 }
 
-export async function sendReceiptEmail(invoiceId: string) {
+export async function sendReceiptEmail(invoiceId: string, opts: { to?: string } = {}) {
   const inv = await loadInvoiceForEmail(invoiceId);
-  if (!inv || !inv.member.email) return false;
+  const to = opts.to ?? inv?.member.email;
+  if (!inv || !to) return false;
   const pm = inv.charges[0]?.paymentMethod;
   const paidWith = pm ? `${pm.brand} •••• ${pm.last4}` : inv.charges[0]?.squarePaymentId ? "card" : "cash / other";
   const html = emailShell(
@@ -1125,7 +1158,13 @@ export async function sendReceiptEmail(invoiceId: string) {
   <p style="margin:0 0 16px;color:#475569;">Hi ${esc(inv.member.firstName)}, thanks for your payment${inv.paidAt ? ` on ${inv.paidAt.toLocaleDateString()}` : ""}. Paid with ${esc(paidWith)}.</p>
   ${linesTable(inv)}`,
   );
-  await sendEmail({ to: inv.member.email, subject: `Receipt from ${inv.location.businessName ?? inv.location.name} — #${inv.number}`, html, ledger: { memberId: inv.memberId, locationId: inv.locationId, source: "billing.receipt" } });
+  await sendEmail({
+    to,
+    subject: `${opts.to ? "[TEST] " : ""}Receipt from ${inv.location.businessName ?? inv.location.name} — #${inv.number}`,
+    html,
+    // Re-sends to another address (admin tests) are not the member's record of delivery.
+    ledger: opts.to ? false : { memberId: inv.memberId, locationId: inv.locationId, source: "billing.receipt" },
+  });
   return true;
 }
 
@@ -1480,6 +1519,8 @@ export async function memberBalances(locationId: string) {
 // Location billing settings
 // ---------------------------------------------------------------------------
 
+export type UnpaidRenewalAction = "CANCEL" | "KEEP_OPEN";
+
 export type BillingSettings = {
   currency: string;
   taxRateBps: number;
@@ -1487,9 +1528,16 @@ export type BillingSettings = {
   dunningRetryDays: number[];
   lateFeeCents: number;
   overdueBlockDays: number | null;
+  /** Still unpaid when the next renewal comes due: void it + cancel, or keep it open and stack the next invoice. */
+  unpaidRenewalAction: UnpaidRenewalAction;
 };
 
-export const DEFAULT_DUNNING_RETRY_DAYS = [1, 3, 7];
+/** Attempt 1 on the due date, then +3, +5, +7, +7 days → 5 attempts, all inside a monthly cycle (days 0/3/8/15/22). */
+export const DEFAULT_DUNNING_RETRY_DAYS = [3, 5, 7, 7];
+
+export function parseUnpaidRenewalAction(v: unknown): UnpaidRenewalAction {
+  return v === "KEEP_OPEN" ? "KEEP_OPEN" : "CANCEL";
+}
 
 export function parseDunningRetryDays(v: unknown): number[] {
   if (!Array.isArray(v)) return DEFAULT_DUNNING_RETRY_DAYS;
@@ -1497,7 +1545,7 @@ export function parseDunningRetryDays(v: unknown): number[] {
   return days.length ? days : DEFAULT_DUNNING_RETRY_DAYS;
 }
 
-export function billingSettingsOf(loc: Pick<Location, "currency" | "taxRateBps" | "cardSurchargeBps" | "dunningRetryDays" | "lateFeeCents" | "overdueBlockDays">): BillingSettings {
+export function billingSettingsOf(loc: Pick<Location, "currency" | "taxRateBps" | "cardSurchargeBps" | "dunningRetryDays" | "lateFeeCents" | "overdueBlockDays" | "unpaidRenewalAction">): BillingSettings {
   return {
     currency: loc.currency,
     taxRateBps: loc.taxRateBps,
@@ -1505,6 +1553,7 @@ export function billingSettingsOf(loc: Pick<Location, "currency" | "taxRateBps" 
     dunningRetryDays: parseDunningRetryDays(loc.dunningRetryDays),
     lateFeeCents: loc.lateFeeCents,
     overdueBlockDays: loc.overdueBlockDays,
+    unpaidRenewalAction: parseUnpaidRenewalAction(loc.unpaidRenewalAction),
   };
 }
 
@@ -1519,6 +1568,7 @@ export async function updateBillingSettings(locationId: string, patch: Partial<B
   if (patch.dunningRetryDays !== undefined) data.dunningRetryDays = parseDunningRetryDays(patch.dunningRetryDays);
   if (patch.lateFeeCents !== undefined) data.lateFeeCents = clampInt(patch.lateFeeCents, 0, 100_000);
   if (patch.overdueBlockDays !== undefined) data.overdueBlockDays = patch.overdueBlockDays == null ? null : clampInt(patch.overdueBlockDays, 0, 365);
+  if (patch.unpaidRenewalAction !== undefined) data.unpaidRenewalAction = parseUnpaidRenewalAction(patch.unpaidRenewalAction);
   const after = await prisma.location.update({ where: { id: locationId }, data });
   void audit({
     organizationId: before.organizationId,
