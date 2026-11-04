@@ -296,7 +296,7 @@ export async function deliverPush(input: DeliverPushInput): Promise<DeliverPushR
   const body = clampPushBody(input.body);
   const title = input.title?.trim() || settings.orgName || "Tee24";
   const tickets = await sendExpoPush(
-    devices.map((d) => ({ to: d.pushToken, title, body, data: input.data, sound: "default", priority: "high" })),
+    devices.map((d) => ({ to: d.pushToken, title, body, data: input.data, sound: "default", priority: "high", channelId: "default" })),
   );
 
   let okCount = 0;
