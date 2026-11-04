@@ -10,7 +10,7 @@ import { otpService } from "@/services/otp.service";
 import { toE164 } from "@/lib/phone";
 import { isAppReviewPhone } from "@/lib/app-review";
 import { issuePhoneVerificationToken, MOBILE_TRANSFER_AUDIENCE } from "@/lib/phone-verification";
-import { cleanDevice, completeSignIn, findMemberByPhone, unlockMemberDevice } from "@/services/mobile-auth.service";
+import { cleanDevice, completeSignIn, findMemberByPhone } from "@/services/mobile-auth.service";
 import { clientIp, fail, handleError, ok, readJson } from "../../_shared";
 import { getMemberHome } from "@/services/mobile-member.service";
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     // App Store review account: no texted OTP (any or no code is accepted), and
-    // never pinned to one device so any reviewer's phone can sign in.
+    // never pinned to one device: any number of phones stay signed in at once.
     const review = isAppReviewPhone(e164);
     if (!review && !code) return fail("Phone and code required", 400, "BAD_REQUEST");
     const result = review ? ({ ok: true } as const) : await otpService.verifyOtp(e164, code);
@@ -51,8 +51,7 @@ export async function POST(req: NextRequest) {
       return fail("This membership is cancelled. Rejoin at tee24.golf or text us at (502) 410-2382.", 403, "MEMBERSHIP_CANCELLED");
     }
 
-    if (review) await unlockMemberDevice(member.id, null, "member_signout");
-    const signIn = await completeSignIn(member.id, device, clientIp(req));
+    const signIn = await completeSignIn(member.id, device, clientIp(req), { multiDevice: review });
     if (!signIn.ok) {
       const verificationToken = await issuePhoneVerificationToken(e164, MOBILE_TRANSFER_AUDIENCE);
       return fail(

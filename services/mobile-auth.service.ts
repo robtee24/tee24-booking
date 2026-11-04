@@ -90,8 +90,25 @@ export type CompleteSignInResult =
  * After the OTP check passed for `memberId`: bind/verify the device and issue
  * a session, or report a mismatch so the app can offer a transfer request.
  */
-export async function completeSignIn(memberId: string, device: DeviceInfo, ip?: string | null): Promise<CompleteSignInResult> {
+export async function completeSignIn(
+  memberId: string,
+  device: DeviceInfo,
+  ip?: string | null,
+  opts: { multiDevice?: boolean } = {},
+): Promise<CompleteSignInResult> {
   const prisma = getPrisma();
+  if (opts.multiDevice) {
+    // Shared test account: every phone gets its own live device row, none ever displaces another.
+    const meta = { platform: device.platform ?? "ios", name: device.name, model: device.model, osVersion: device.osVersion, appVersion: device.appVersion, lastSeenAt: new Date() };
+    const row = await prisma.memberDevice.upsert({
+      where: { memberId_deviceId: { memberId, deviceId: device.deviceId } },
+      update: { ...meta, revokedAt: null, revokedById: null, revokedReason: null },
+      create: { memberId, deviceId: device.deviceId, ...meta },
+    });
+    const session = await issueMobileSession({ memberId, deviceRowId: row.id, ip });
+    return { ok: true, token: session.token, expiresAt: session.expiresAt, memberId, bound: "existing" };
+  }
+
   const active = await getActiveDevice(memberId);
 
   if (active && active.deviceId !== device.deviceId) {
