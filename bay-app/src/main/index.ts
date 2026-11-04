@@ -9,6 +9,7 @@ import { launchPlay, launchHelperOnly, pathsExist, startWatching } from './launc
 import * as poller from './poller';
 import * as remote from './remote';
 import * as tools from './tools';
+import { wipeCourses } from './maintenance';
 import * as windows from './windows';
 import * as autostart from './autostart';
 import * as screenWatch from './screen';
@@ -211,9 +212,10 @@ function registerIpc() {
   });
   handle('admin:saveLocal', (patch: Record<string, unknown>) => {
     requireAdmin();
-    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'golfinLauncherPath', 'idraCalibrationPath', 'idraUpdatesPath', 'openAtLogin', 'idleCloseMinutes', 'restartEveryIdleCloses'] as const;
+    const allowed = ['apiBaseUrl', 'launchMonitorPath', 'gsproPath', 'golfinLauncherPath', 'idraCalibrationPath', 'idraUpdatesPath', 'openAtLogin', 'idleCloseMinutes', 'restartEveryIdleCloses', 'weeklyCourseWipe'] as const;
     const clean: Record<string, unknown> = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
+    if ('weeklyCourseWipe' in clean) clean.weeklyCourseWipe = Boolean(clean.weeklyCourseWipe);
     if ('idleCloseMinutes' in clean) {
       const n = Number(clean.idleCloseMinutes);
       clean.idleCloseMinutes = Number.isFinite(n) && n >= 0 ? Math.min(240, Math.round(n)) : 10;
@@ -243,6 +245,13 @@ function registerIpc() {
     return launchHelperOnly(which);
   });
   handle('admin:pathsExist', () => pathsExist());
+  handle('admin:wipeCoursesNow', () => {
+    requireAdmin();
+    if (poller.getState().launcher.running) throw new Error('Close GSPro first — courses cannot be removed while it is running.');
+    const r = wipeCourses('staff pressed Clean now');
+    poller.forcePublish();
+    return r;
+  });
   // ---- IDRA tools (calibration / updates live in the GolfIn Launcher) ----
   handle('admin:idraTool', async (tool: tools.IdraTool) => {
     requireAdmin();

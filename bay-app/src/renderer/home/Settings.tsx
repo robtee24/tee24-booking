@@ -176,8 +176,19 @@ function LaunchPaths({ state }: { state: KioskState }) {
   const [gsPath, setGsPath] = useState(state.settings.gsproPath);
   const [idleMin, setIdleMin] = useState(String(state.settings.idleCloseMinutes ?? 10));
   const [restartEvery, setRestartEvery] = useState(String(state.settings.restartEveryIdleCloses ?? 4));
+  const [weeklyWipe, setWeeklyWipe] = useState(state.settings.weeklyCourseWipe !== false);
   const [exists, setExists] = useState<{ launchMonitor: boolean; gspro: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [wipeMsg, setWipeMsg] = useState<string | null>(null);
+
+  async function wipeNow() {
+    if (!window.confirm('Delete every downloaded course now (keeps Bootleggers, the practice area and the range)?')) return;
+    setWipeMsg('Cleaning…');
+    const res = await kiosk.adminWipeCoursesNow();
+    if (isErr(res)) return setWipeMsg(res.error);
+    const r = res as { removed: string[]; failed: string[]; freedBytes: number };
+    setWipeMsg(`Removed ${r.removed.length} course${r.removed.length === 1 ? '' : 's'} (${(r.freedBytes / 1024 ** 3).toFixed(1)} GB)${r.failed.length ? `; could not remove ${r.failed.join(', ')}` : ''}.`);
+  }
 
   async function refresh() {
     setExists((await kiosk.adminPathsExist()) as { launchMonitor: boolean; gspro: boolean });
@@ -188,6 +199,7 @@ function LaunchPaths({ state }: { state: KioskState }) {
     const patch: Record<string, unknown> = { launchMonitorPath: lmPath.trim(), gsproPath: gsPath.trim(), idleCloseMinutes: Number(idleMin) || 0 };
     // Only send when changed: saving it resets the "closes since last restart" counter.
     if ((Number(restartEvery) || 0) !== (state.settings.restartEveryIdleCloses ?? 4)) patch.restartEveryIdleCloses = Number(restartEvery) || 0;
+    patch.weeklyCourseWipe = weeklyWipe;
     const r = await kiosk.adminSaveLocal(patch);
     if (isErr(r)) return setMsg(r.error);
     setMsg('Saved.');
@@ -245,6 +257,24 @@ function LaunchPaths({ state }: { state: KioskState }) {
         </div>
         <div className="hint">
           Keeps GSPro and the launch-monitor software fresh. A 30-second notice shows first and staff can cancel it. Windows must be set to sign in automatically or the kiosk will wait at the lock screen.
+        </div>
+      </div>
+      <div className="field">
+        <label className="label">Weekly course cleanup</label>
+        <div className="row">
+          <label className="row" style={{ gap: 8 }}>
+            <input type="checkbox" checked={weeklyWipe} onChange={(e) => setWeeklyWipe(e.target.checked)} />
+            <span className="muted">Delete downloaded courses and restart at the first inactivity close after Monday 12:01 AM</span>
+          </label>
+        </div>
+        <div className="hint">
+          Clears <code>C:\GSProV1\Core\GSP\Courses</code> except Bootleggers_GSP, gsp_practicearea and multi_range_gsp.
+          {state.settings.lastCourseWipeAt ? ` Last cleaned ${new Date(state.settings.lastCourseWipeAt).toLocaleString()}.` : ' Not run yet on this PC.'}
+        </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <button className="btn" onClick={wipeNow} disabled={state.launcher.running}>Clean now</button>
+          {state.launcher.running && <span className="muted">Close GSPro first.</span>}
+          {wipeMsg && <span className="muted">{wipeMsg}</span>}
         </div>
       </div>
       {msg && <div className="success">{msg}</div>}

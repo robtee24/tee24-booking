@@ -9,6 +9,7 @@ import * as windows from './windows';
 import * as screenWatch from './screen';
 import * as players from './players';
 import type { IdraTool } from './tools';
+import { courseWipeDue, wipeCourses } from './maintenance';
 
 /**
  * Kiosk state machine.
@@ -149,7 +150,13 @@ function afterIdleClose() {
   const s = getSettings();
   const count = (s.idleCloseCount ?? 0) + 1;
   const every = s.restartEveryIdleCloses ?? 0;
-  if (every > 0 && count >= every) {
+  if (courseWipeDue()) {
+    // First inactivity close of the week: clear downloaded courses (GSPro is
+    // closed at this point) and restart regardless of the Nth-close counter.
+    const r = wipeCourses('first idle close after Monday 00:01');
+    updateSettings({ idleCloseCount: 0 });
+    scheduleRestart(`weekly course cleanup, ${r.removed.length} removed`);
+  } else if (every > 0 && count >= every) {
     updateSettings({ idleCloseCount: 0 });
     scheduleRestart(`${count} inactivity closes`);
   } else {

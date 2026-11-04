@@ -135,6 +135,10 @@ export interface KioskSettings {
   restartEveryIdleCloses: number;
   /** Inactivity closes since the last maintenance restart (persisted so it survives kiosk restarts) */
   idleCloseCount: number;
+  /** Once a week (first inactivity close after Monday 00:01) delete downloaded GSPro courses and restart. */
+  weeklyCourseWipe: boolean;
+  /** When the course cleanup last ran (ISO). */
+  lastCourseWipeAt: string | null;
   /** Exe path the Windows logon task was last registered with (null = not registered) */
   autostartTaskExe: string | null;
   /** Set once the first-run wizard has been completed */
@@ -162,6 +166,8 @@ const DEFAULTS: KioskSettings = {
   idleCloseMinutes: 10,
   restartEveryIdleCloses: 4,
   idleCloseCount: 0,
+  weeklyCourseWipe: true,
+  lastCourseWipeAt: null,
   autostartTaskExe: null,
   setupCompletedAt: null,
 };

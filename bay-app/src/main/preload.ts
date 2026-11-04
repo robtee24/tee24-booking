@@ -65,6 +65,7 @@ const api = {
   idraToolDone: () => ipcRenderer.invoke('admin:idraToolDone'),
   adminDetectGolfin: () => ipcRenderer.invoke('admin:detectGolfin'),
   adminScreenTest: () => ipcRenderer.invoke('admin:screenTest'),
+  adminWipeCoursesNow: () => ipcRenderer.invoke('admin:wipeCoursesNow'),
   adminRemoteStatus: () => ipcRenderer.invoke('admin:remoteStatus'),
   adminRemoteInstall: () => ipcRenderer.invoke('admin:remoteInstall'),
   adminRemoteUninstall: () => ipcRenderer.invoke('admin:remoteUninstall'),

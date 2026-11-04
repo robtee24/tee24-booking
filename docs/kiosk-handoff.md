@@ -197,6 +197,10 @@ The installed app is a normal Windows program.
 
 Remote desktop from the admin console is optional. On the kiosk: **Settings → Remote support → Install remote support agent** (MeshCentral, outbound only). Then the location’s **Troubleshoot** page can open that PC. Until an agent is reporting, a screenshot plus `main.log` is the path.
 
+### Weekly course cleanup (kiosk 1.4.1, 4 Nov 2026)
+
+Downloaded GSPro courses fill the bay drives. At the **first inactivity close after Monday 00:01 local**, the kiosk deletes everything in `C:\GSProV1\Core\GSP\Courses` except `Bootleggers_GSP`, `gsp_practicearea` and `multi_range_gsp`, then restarts Windows (same 30-second notice as the Nth-close restart; it also resets that counter). GSPro is already closed when the wipe runs. If the bay is unused all Monday, the cleanup happens at the first idle close later that week — it is "due" until it has run once since the most recent Monday 00:01, so the first idle close after installing 1.4.1 runs it too, whatever the day. `bay-app/src/main/maintenance.ts`; per-PC switch and a **Clean now** button in kiosk Settings → Launch paths; last run is stored as `lastCourseWipeAt` in the settings JSON. The folder's ACL gives Authenticated Users Modify, so no elevation is needed.
+
 ### Remote-support server (deployed 27 Oct 2026)
 
 - MeshCentral runs on Fly.io: app `tee24-remote`, region `ord`, one machine, volume `meshcentral_data` (config and DB live on the volume, so the Dockerfile’s `config.json` is only used on first boot). Public URL **https://remote.tee24.golf** (Fly cert issued; CNAME at Bluehost → `tee24-remote.fly.dev`). The site is served by Fly, not Vercel — Vercel is serverless and cannot hold the agents’ persistent WebSockets.
