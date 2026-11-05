@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui";
 import { KpiCard } from "@/components/ui/charts";
 import { listTransferRequests } from "@/services/mobile-auth.service";
 import { MobileAppClient, type DeviceDTO, type TransferDTO } from "./MobileAppClient";
+import { SendPushCard, type PushLocation } from "./SendPushCard";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,21 @@ export default async function MobileAppPage({ searchParams }: { searchParams: Pr
     member: { id: d.member.id, firstName: d.member.firstName, lastName: d.member.lastName, phone: d.member.phone, email: d.member.email, locationSlug: d.member.location.slug, locationName: d.member.location.name },
   }));
 
+  // Locations this admin can push to, with how many members are reachable at each.
+  const pushLocationRows = await prisma.location.findMany({
+    where: locationIds ? { id: { in: locationIds } } : {},
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const reachableRows = await prisma.memberDevice.findMany({
+    where: { revokedAt: null, pushEnabled: true, pushToken: { not: null }, member: { mergedIntoId: null, ...(locationIds ? { locationId: { in: locationIds } } : {}) } },
+    select: { memberId: true, member: { select: { locationId: true } } },
+    distinct: ["memberId"],
+  });
+  const reachableByLocation = new Map<string, number>();
+  for (const r of reachableRows) reachableByLocation.set(r.member.locationId, (reachableByLocation.get(r.member.locationId) ?? 0) + 1);
+  const pushLocations: PushLocation[] = pushLocationRows.map((l) => ({ id: l.id, name: l.name, reachable: reachableByLocation.get(l.id) ?? 0 }));
+
   return (
     <div className="space-y-6">
       <PageHeader title="Mobile App" description="Member app devices, new-phone requests and usage." />
@@ -73,6 +89,7 @@ export default async function MobileAppPage({ searchParams }: { searchParams: Pr
         <KpiCard label="App unlocks · 30d" value={unlocks30.toLocaleString()} />
         <KpiCard label="GSPro imports · 30d" value={imports30.toLocaleString()} />
       </div>
+      <SendPushCard locations={pushLocations} />
       <MobileAppClient pending={pending.map(toDto)} recent={recent.map(toDto)} devices={initialDevices} highlightRequestId={sp.request ?? null} />
     </div>
   );
