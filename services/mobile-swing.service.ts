@@ -90,11 +90,16 @@ export function deriveFlags(report: SwinglabReport, club: string | null): SwingF
   return flags.sort((a, b) => b.severity - a.severity);
 }
 
-/** 0–100 headline number for the card. Purely presentational. */
+/**
+ * 0–100 headline number for the card. Purely presentational.
+ * Scaled so the median tour pro in the bank lands ~90 and a typical
+ * beginner's fault set (2 priority + 4 medium + 1 minor) ~40; the rules
+ * themselves are calibrated to fire on only the worst ~10% of pros.
+ */
 export function swingScore(report: SwinglabReport): number {
   const penalty = (report.feedback ?? []).reduce((a, f) => a + (f.severity === 3 ? 14 : f.severity === 2 ? 9 : 5), 0);
   const lowConf = report.source?.pose_low_confidence_ratio ?? 0;
-  return Math.max(35, Math.min(99, Math.round(96 - penalty - lowConf * 20)));
+  return Math.max(20, Math.min(99, Math.round(97 - 0.8 * penalty - lowConf * 15)));
 }
 
 /** Strip bulky arrays (club path, per-frame data) before storing. */
