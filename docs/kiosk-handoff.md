@@ -221,7 +221,7 @@ Settings → **Lockdown & exit** (`bay-app/src/main/lockdown.ts`). Windows gives
 - Kiosk: the home **League** tile is gone; the toolbar League button opens the submit flow, which starts with a "Week N - Course" picker (TBA weeks are listed but disabled). The server's check/submit reject the card unless the chosen week's course name is found in the OCR text (`courseOnCard` in `lib/league/ocr.ts`: filler words like Golf/Links/GL ignored, one-letter OCR slips tolerated). Placeholder detection is `isPlaceholderCourse` (empty, "TBA", "TBD", "Course TBA").
 - Unverified: that GSPro's scorecard screen actually shows the course name. If real cards get rejected for "isn't for Pebble Beach", loosen `courseProblems` in `services/league.service.ts` (server-only, no kiosk release).
 
-### IDRA update fallout, PC cleanup, sign out, walk-ins (kiosk 1.4.4, 15 Nov 2026 — built and installed on bay 11 only, not released)
+### IDRA update fallout, PC cleanup, sign out, walk-ins (kiosk 1.4.4, 15 Nov 2026 — tested on Clarksville bay 11 only before release)
 
 What broke: IDRA updated itself from 8.2.6 to 8.3.4 and the kiosk kept starting the saved `…\IDRA\8.2.6\IDRAMonitor.exe`, which puts its outdated GolfIn plugin files back into GSPro. Result: GSPro crashing while starting and dropping back to home.
 
