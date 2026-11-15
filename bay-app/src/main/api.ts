@@ -173,6 +173,32 @@ export function cancelTimeout(bookingId: string) {
   });
 }
 
+// ---------- Walk-in reservations (Play button) ----------
+
+export type WalkInBooking = { id: string; firstName: string; lastInitial: string; start: string; end: string };
+
+/**
+ * What Play should do right now, decided by the server (services/bay-walkin.service.ts):
+ *  - launch:  nothing to ask, start GSPro.
+ *  - confirm: `next` has the bay booked within 30 minutes; ask before starting.
+ *  - walkin:  bay is free; ask for a duration (one of `options`) and a phone number.
+ */
+export type WalkInPlan =
+  | { mode: 'launch'; reason: string; serverNow?: string }
+  | { mode: 'confirm'; next: WalkInBooking; serverNow: string; timezone: string }
+  | { mode: 'walkin'; next: WalkInBooking | null; options: { minutes: number; end: string }[]; maxMinutes: number; serverNow: string; timezone: string };
+
+/** Short timeout: this runs between the Play tap and GSPro starting. */
+export function getWalkInPlan() {
+  const s = getSettings();
+  return request<WalkInPlan>('GET', `/api/bay-app/walk-in?deviceId=${encodeURIComponent(s.deviceId)}`, undefined, null, 6000);
+}
+
+export function createWalkIn(minutes: number, phone: string) {
+  const s = getSettings();
+  return request<{ booking: WalkInBooking & { checkedInAt: string }; serverNow: string }>('POST', '/api/bay-app/walk-in', { deviceId: s.deviceId, minutes, phone }, null, 12000);
+}
+
 // ---------- Players / unauthorized guests ----------
 
 export function addCompanionMember(bookingId: string, phone: string) {

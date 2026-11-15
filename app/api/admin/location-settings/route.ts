@@ -87,6 +87,7 @@ const SETTINGS_SELECT = {
   bayAppWarningMinutes: true,
   bayAppAutoCancelOnTimeout: true,
   bayAppGuestEnforcement: true,
+  bayAppWalkInBooking: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -222,6 +223,7 @@ export async function PATCH(req: Request) {
     const bayAppWarningMinutes = body.bayAppWarningMinutes === undefined ? undefined : clamp(body.bayAppWarningMinutes, 1, 60, 5);
     const bayAppAutoCancelOnTimeout = body.bayAppAutoCancelOnTimeout === undefined ? undefined : Boolean(body.bayAppAutoCancelOnTimeout);
     const bayAppGuestEnforcement = body.bayAppGuestEnforcement === undefined ? undefined : Boolean(body.bayAppGuestEnforcement);
+    const bayAppWalkInBooking = body.bayAppWalkInBooking === undefined ? undefined : Boolean(body.bayAppWalkInBooking);
 
     const data = pickDefined({
       ...details,
@@ -241,6 +243,7 @@ export async function PATCH(req: Request) {
       bayAppWarningMinutes,
       bayAppAutoCancelOnTimeout,
       bayAppGuestEnforcement,
+      bayAppWalkInBooking,
     });
 
     const updated = await getPrisma().location.update({

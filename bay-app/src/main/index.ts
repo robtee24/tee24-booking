@@ -4,13 +4,14 @@ import * as api from './api';
 import * as exportsMod from './exports';
 import * as league from './league';
 import { ApiError } from './api';
-import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings, findGolfinLauncher } from './store';
-import { launchPlay, launchHelperOnly, pathsExist, startWatching } from './launcher';
+import { getSettings, updateSettings, clearRegistration, defaultLaunchMonitorPath, migrateSettings, findGolfinLauncher, isRegistered } from './store';
+import { launchPlay, launchHelperOnly, pathsExist, startWatching, getLauncherState } from './launcher';
 import * as poller from './poller';
 import * as remote from './remote';
 import * as tools from './tools';
 import { wipeCourses } from './maintenance';
 import * as lockdown from './lockdown';
+import * as pcsetup from './pcsetup';
 import * as windows from './windows';
 import * as autostart from './autostart';
 import * as screenWatch from './screen';
@@ -125,7 +126,29 @@ function registerIpc() {
     poller.forcePublish();
     return st;
   });
-  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'export' | 'league' | 'none') => poller.setUserMode(mode));
+  // Asked before Play starts GSPro: is there a reservation to warn about, or a walk-in to book?
+  // Never blocks play: offline, an older server without the endpoint, or any error all mean "just launch".
+  handle('kiosk:playCheck', async (): Promise<api.WalkInPlan> => {
+    if (!isRegistered()) return { mode: 'launch', reason: 'UNREGISTERED' };
+    if (getLauncherState().running) return { mode: 'launch', reason: 'SESSION_RUNNING' };
+    try {
+      const plan = await api.getWalkInPlan();
+      if (plan?.mode === 'confirm' && plan.next) return plan;
+      if (plan?.mode === 'walkin' && plan.options?.length) return plan;
+      return { mode: 'launch', reason: plan?.mode === 'launch' ? plan.reason : 'NO_OPTIONS' };
+    } catch (e) {
+      log.warn('[walk-in] check failed; starting GSPro without it:', e instanceof Error ? e.message.slice(0, 200) : e);
+      return { mode: 'launch', reason: 'UNAVAILABLE' };
+    }
+  });
+  handle('kiosk:walkIn', async (minutes: number, phone: string) => {
+    const r = await api.createWalkIn(Number(minutes), String(phone ?? ''));
+    log.info(`[walk-in] reserved ${r.booking.id} until ${r.booking.end}`);
+    void poller.pollNow(); // countdown and schedule pick up the new reservation
+    return r;
+  });
+  handle('kiosk:signOut', () => poller.signOut());
+  handle('kiosk:overlay', (mode: 'help' | 'schedule' | 'export' | 'league' | 'signout' | 'none') => poller.setUserMode(mode));
   handle('kiosk:acceptUpcoming', (id: string) => poller.acceptUpcoming(id));
   handle('kiosk:checkIn', async (bookingId: string, phone: string) => {
     const r = await api.checkIn(bookingId, phone);
@@ -236,6 +259,16 @@ function registerIpc() {
   handle('admin:lockdownSet', async (on: boolean) => {
     requireAdmin();
     return lockdown.setLockdown(!!on);
+  });
+  // ---- PC cleanup (remove preinstalled apps, tune Windows for GSPro) ----
+  handle('admin:pcSetupStatus', () => pcsetup.getStatus());
+  handle('admin:pcSetupApply', async (opts: { groups?: string[]; tune?: boolean }) => {
+    requireAdmin();
+    return pcsetup.apply(opts, progress);
+  });
+  handle('admin:pcSetupUndo', async () => {
+    requireAdmin();
+    return pcsetup.undoTuning(progress);
   });
   handle('admin:browseExe', async (title: string) => {
     requireAdmin();

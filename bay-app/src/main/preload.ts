@@ -24,7 +24,13 @@ const api = {
 
   // Player actions
   play: () => ipcRenderer.invoke('kiosk:play'),
-  openOverlay: (mode: 'help' | 'schedule' | 'export' | 'league' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
+  /** Before Play: should we warn about a reservation, book a walk-in, or just launch? Never rejects. */
+  playCheck: () => ipcRenderer.invoke('kiosk:playCheck'),
+  /** Reserve this bay from now for `minutes` under `phone` (walk-in). */
+  walkIn: (minutes: number, phone: string) => ipcRenderer.invoke('kiosk:walkIn', minutes, phone),
+  /** Close GSPro and the launch-monitor software and return to the kiosk home screen. */
+  signOut: () => ipcRenderer.invoke('kiosk:signOut'),
+  openOverlay: (mode: 'help' | 'schedule' | 'export' | 'league' | 'signout' | 'none') => ipcRenderer.invoke('kiosk:overlay', mode),
   acceptUpcoming: (bookingId: string) => ipcRenderer.invoke('kiosk:acceptUpcoming', bookingId),
   checkIn: (bookingId: string, phone: string) => ipcRenderer.invoke('kiosk:checkIn', bookingId, phone),
   getSchedule: (dateISO?: string) => ipcRenderer.invoke('kiosk:schedule', dateISO),
@@ -68,6 +74,9 @@ const api = {
   adminWipeCoursesNow: () => ipcRenderer.invoke('admin:wipeCoursesNow'),
   adminLockdownStatus: () => ipcRenderer.invoke('admin:lockdownStatus'),
   adminLockdownSet: (on: boolean) => ipcRenderer.invoke('admin:lockdownSet', on),
+  adminPcSetupStatus: () => ipcRenderer.invoke('admin:pcSetupStatus'),
+  adminPcSetupApply: (opts: { groups: string[]; tune: boolean }) => ipcRenderer.invoke('admin:pcSetupApply', opts),
+  adminPcSetupUndo: () => ipcRenderer.invoke('admin:pcSetupUndo'),
   adminRemoteStatus: () => ipcRenderer.invoke('admin:remoteStatus'),
   adminRemoteInstall: () => ipcRenderer.invoke('admin:remoteInstall'),
   adminRemoteUninstall: () => ipcRenderer.invoke('admin:remoteUninstall'),

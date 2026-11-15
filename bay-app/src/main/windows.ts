@@ -1,5 +1,8 @@
 import { BrowserWindow, screen, app } from 'electron';
+import { execFile } from 'child_process';
+import fs from 'fs';
 import path from 'path';
+import log from 'electron-log';
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const isDev = !app.isPackaged && !!process.env.VITE_DEV_SERVER_URL;
@@ -66,12 +69,15 @@ export function createHome(): BrowserWindow {
   return win;
 }
 
-/** Toolbar sizes: the narrow Help/Schedule strip, and the wider "Back to kiosk" card used while an admin is in an IDRA tool. */
-const TOOLBAR_NARROW: [number, number] = [92, 400];
+/**
+ * Toolbar sizes: the narrow strip (five 76 px buttons plus the countdown chip),
+ * and the wider "Back to kiosk" card used while an admin is in an IDRA tool.
+ */
+const TOOLBAR_NARROW: [number, number] = [92, 540];
 const TOOLBAR_WIDE: [number, number] = [280, 320];
 let toolbarWide = false;
 
-/** Narrow always-on-top strip hugging the right edge: Help / Schedule / Export / countdown. */
+/** Narrow always-on-top strip hugging the right edge: Help / Schedule / League / Export / Sign Out / countdown. */
 export function createToolbar(): BrowserWindow {
   const existing = get('toolbar');
   if (existing) return existing;
@@ -185,34 +191,63 @@ export function hideHome() {
   get('home')?.hide();
 }
 
+function parkScript(): string {
+  const packaged = path.join(process.resourcesPath, 'park-home.ps1');
+  if (app.isPackaged && fs.existsSync(packaged)) return packaged;
+  const dev = path.join(__dirname, '..', '..', 'resources', 'park-home.ps1');
+  return fs.existsSync(dev) ? dev : packaged;
+}
+
 /**
  * Keep home visible but *underneath* GSPro while a session runs, so the
  * moment GSPro's window closes the player sees the kiosk, not the desktop.
  *
- * Verified on Windows 11: a hidden window re-shown with showInactive() is
- * placed below the current foreground window. So: drop the (topmost) toolbar
- * for a beat, hide home so GSPro takes foreground, then re-show home inactive
- * and bring the toolbar back. Idempotent; cheap enough to call on each publish.
+ * Electron cannot place a window below another program's window, and the old
+ * trick (hide home, re-show it with showInactive()) only looked right while
+ * GSPro's window appeared *after* the re-show: Windows puts a re-shown window
+ * on top, so once the kiosk started waiting for GSPro's window, home landed
+ * over GSPro. resources/park-home.ps1 asks Windows for the exact order and
+ * hands GSPro the keyboard; home is never hidden, so nothing flashes.
+ *
+ * Idempotent and cheap to call on each publish: it only does work when
+ * `force` is set (a session just started), GSPro changed, or home has the
+ * focus again (someone Alt+Tabbed to it).
+ *
+ * If the helper fails, home is hidden instead so GSPro is at least usable;
+ * `stillWanted` guards against hiding it after the session has ended.
  */
 let parking = false;
-export function parkHomeBehind(force = false) {
+let parkedForPid: number | null = null;
+export function parkHomeBehind(gsproPid: number, force = false, stillWanted: () => boolean = () => true) {
   const home = get('home');
   if (!home || parking) return;
-  if (home.isVisible() && !home.isFocused() && !force) return; // already parked
+  if (!force && parkedForPid === gsproPid && !home.isFocused()) return; // already parked
   parking = true;
-  const toolbar = get('toolbar');
-  const toolbarWasVisible = !!toolbar?.isVisible();
-  toolbar?.hide();
-  home.hide();
-  setTimeout(() => {
-    try {
-      const h = get('home');
-      if (h && !h.isVisible()) h.showInactive();
-      if (toolbarWasVisible) showToolbar();
-    } finally {
-      parking = false;
-    }
-  }, 300);
+  parkedForPid = gsproPid;
+  if (!home.isVisible()) home.showInactive();
+  const hwnd = home.getNativeWindowHandle().readBigUInt64LE(0).toString();
+  const started = Date.now();
+  const giveWay = (why: string) => {
+    log.warn(`[windows] could not park home behind GSPro (${why}); hiding it instead`);
+    if (stillWanted()) get('home')?.hide();
+  };
+  try {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', parkScript(), '-GsproPid', String(gsproPid), '-HomeHwnd', hwnd, '-WaitMs', '5000'],
+      { windowsHide: true, timeout: 20_000 },
+      (err, stdout) => {
+        parking = false;
+        const code: unknown = err ? (err as { code?: unknown }).code : 0;
+        if (code === 0) log.info(`[windows] home parked behind GSPro in ${Date.now() - started} ms (${String(stdout).trim()})`);
+        else if (code === 2) log.info('[windows] GSPro closed before home could be parked behind it');
+        else giveWay(`exit ${String(code)}${err?.message ? `: ${err.message.split('\n')[0]}` : ''}`);
+      },
+    );
+  } catch (e) {
+    parking = false;
+    giveWay(e instanceof Error ? e.message : String(e)); // could not start PowerShell (PC out of memory)
+  }
 }
 
 export function broadcast(channel: string, payload: unknown) {

@@ -252,18 +252,33 @@ export function clearRegistration(): KioskSettings {
   });
 }
 
+/** True for `<IDRA_ROOT>\<version>\IDRAMonitor.exe`, i.e. a path the kiosk resolved itself rather than one an admin browsed to. */
+function isVersionedIdraPath(p: string): boolean {
+  const parts = path.win32.relative(IDRA_ROOT, p).split('\\');
+  return parts.length === 2 && /^\d+(\.\d+)*$/.test(parts[0]) && parts[1].toLowerCase() === IDRA_EXE.toLowerCase();
+}
+
 /**
- * One-time fix-ups for settings written by older builds. Returns a description
- * of what changed (for the log) or null.
+ * Keep the IDRA launch path pointing at the newest installed IDRA. Runs at
+ * boot and before every Play. Returns a description of what changed (for the
+ * log) or null.
+ *
+ * An IDRA update installs into a new version folder and leaves the old one in
+ * place, so "the saved path still exists" does not mean it is current. The old
+ * IDRAMonitor puts its own GolfIn plugin files back into GSPro, and an
+ * outdated plugin loader crashes a newer GSPro at startup (seen 11–15 Nov
+ * 2026: the kiosk kept starting 8.2.6 after the 8.3.4 update). A path outside
+ * the versioned IDRA folders was chosen by an admin and is left alone.
  */
 export function migrateSettings(): string | null {
   const s = load();
   if (s.launchMonitor !== 'IDRA') return null;
-  const stale = !s.launchMonitorPath || s.launchMonitorPath === LEGACY_IDRA_PATH || !fs.existsSync(s.launchMonitorPath);
-  if (!stale) return null;
+  const current = s.launchMonitorPath;
+  const stale = !current || current === LEGACY_IDRA_PATH || !fs.existsSync(current);
+  if (!stale && !isVersionedIdraPath(current)) return null;
   const found = findIdraMonitor();
-  if (!found || found === s.launchMonitorPath) return null;
-  const before = s.launchMonitorPath || '(blank)'; // `s` is the live cache; read before updating
+  if (!found || found.toLowerCase() === current.toLowerCase()) return null;
+  const before = current || '(blank)'; // `s` is the live cache; read before updating
   updateSettings({ launchMonitorPath: found });
   return `launchMonitorPath ${before} → ${found}`;
 }

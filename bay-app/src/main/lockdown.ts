@@ -77,7 +77,7 @@ export async function getLockdownStatus(): Promise<LockdownStatus> {
   return { supported: true, userPolicies, winKeysDisabled, on: userPolicies && winKeysDisabled };
 }
 
-async function currentSid(): Promise<string> {
+export async function currentSid(): Promise<string> {
   const { stdout } = await execFileP(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-Command', '[Security.Principal.WindowsIdentity]::GetCurrent().User.Value'],

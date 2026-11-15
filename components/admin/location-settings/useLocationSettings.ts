@@ -40,6 +40,7 @@ export type LocationSettings = {
   bayAppWarningMinutes?: number | null;
   bayAppAutoCancelOnTimeout?: boolean | null;
   bayAppGuestEnforcement?: boolean | null;
+  bayAppWalkInBooking?: boolean | null;
   updatedAt?: string | null;
 };
 

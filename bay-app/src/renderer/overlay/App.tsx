@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { kiosk, isErr, useKioskState, useServerNow, formatCountdown, formatTime, formatPhoneInput } from '../shared/bridge';
+import { kiosk, isErr, useKioskState, useServerNow, formatCountdown, formatTime, formatPhoneInput, bookingName } from '../shared/bridge';
 import type { Booking, KioskState } from '../shared/types';
 import { TroubleshootFlow } from '../shared/TroubleshootFlow';
 import { ScheduleView } from '../shared/ScheduleView';
@@ -41,6 +41,7 @@ export function App() {
         </Modal>
       )}
       {mode === 'league' && <LeagueOverlay onClose={() => kiosk.openOverlay('none')} />}
+      {mode === 'signout' && <SignOutConfirm />}
       {mode === 'idle' && deadline && <IdleWarning deadline={deadline} minutes={state.settings.idleCloseMinutes} />}
       {mode === 'restart' && deadline && <RestartNotice deadline={deadline} />}
       {mode === 'players' && (state.players.alert || state.players.done) && (
@@ -78,6 +79,36 @@ function IdleWarning({ deadline, minutes }: { deadline: string; minutes: number 
       <div className="modal-foot" style={{ justifyContent: 'center' }}>
         <button className="btn btn-primary btn-lg" onClick={() => kiosk.openOverlay('none')}>
           Keep playing
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Sign out: one confirmation, because it closes GSPro mid-round ----------
+
+function SignOutConfirm() {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal" style={{ textAlign: 'center' }}>
+      <div className="modal-head" style={{ textAlign: 'center' }}>
+        <div className="eyebrow">Sign out</div>
+        <h1>Finished playing?</h1>
+        <p>Signing out closes GSPro and the launch monitor and returns this bay to the home screen. A round in progress is not saved.</p>
+      </div>
+      <div className="modal-foot" style={{ justifyContent: 'center', borderTop: 'none', paddingTop: 28 }}>
+        <button className="btn btn-lg" disabled={busy} onClick={() => kiosk.openOverlay('none')}>
+          Keep playing
+        </button>
+        <button
+          className="btn btn-primary btn-lg"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void kiosk.signOut();
+          }}
+        >
+          {busy ? <span className="spinner" /> : null} Sign out
         </button>
       </div>
     </div>
@@ -182,7 +213,7 @@ function Unlock({ booking, deadline, now, tz }: { booking: Booking; deadline: st
     <div className="modal">
       <div className="modal-head" style={{ textAlign: 'center' }}>
         <div className="eyebrow">Reservation starting</div>
-        <h1>Reservation for {booking.firstName} {booking.lastInitial}.</h1>
+        <h1>Reservation for {bookingName(booking)}</h1>
         <p>{formatTime(booking.start, tz)} – {formatTime(booking.end, tz)} · Enter the phone number you booked with to unlock the bay.</p>
       </div>
       <div className="modal-body" style={{ textAlign: 'center' }}>
@@ -226,7 +257,7 @@ function Upcoming({ booking, now, tz, state }: { booking: Booking; now: number; 
     <div className="modal">
       <div className="modal-head" style={{ textAlign: 'center' }}>
         <div className="eyebrow">Heads up</div>
-        <h1>Reservation in {mins} min for {booking.firstName} {booking.lastInitial}.</h1>
+        <h1>Reservation in {mins} min for {bookingName(booking)}</h1>
         <p>This bay is reserved from {formatTime(booking.start, tz)} to {formatTime(booking.end, tz)}. Please wrap up your round so the bay is ready on time.</p>
       </div>
       <div className="modal-body" style={{ textAlign: 'center' }}>

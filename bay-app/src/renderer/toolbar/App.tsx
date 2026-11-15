@@ -1,7 +1,7 @@
 import { kiosk, useKioskState, useServerNow, formatCountdown } from '../shared/bridge';
-import { HelpIcon, CalendarIcon, UploadIcon, TrophyIcon } from '../shared/Icons';
+import { HelpIcon, CalendarIcon, UploadIcon, TrophyIcon, SignOutIcon } from '../shared/Icons';
 
-/** Floating Help / Schedule / Export strip shown on the right edge while GSPro runs. */
+/** Floating Help / Schedule / League / Export / Sign Out strip shown on the right edge while GSPro runs. */
 export function App() {
   const state = useKioskState();
   const now = useServerNow(state?.serverOffsetMs ?? 0);
@@ -54,6 +54,10 @@ export function App() {
       >
         <UploadIcon size={26} />
         Export
+      </button>
+      <button className="fab fab-signout" onClick={() => kiosk.openOverlay('signout')} title="Close GSPro and return to the home screen">
+        <SignOutIcon size={26} />
+        Sign Out
       </button>
       {cd && left !== null && left > 0 && (
         <div className="fab fab-countdown" title={cd.label}>

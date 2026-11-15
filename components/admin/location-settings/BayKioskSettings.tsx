@@ -24,6 +24,7 @@ export function BayKioskSettings({
       bayAppWarningMinutes: clampInt(data.bayAppWarningMinutes, 1, 60, 10),
       bayAppAutoCancelOnTimeout: data.bayAppAutoCancelOnTimeout === true,
       bayAppGuestEnforcement: data.bayAppGuestEnforcement === true,
+      bayAppWalkInBooking: data.bayAppWalkInBooking === true,
     }),
     [data]
   );
@@ -41,6 +42,7 @@ export function BayKioskSettings({
         bayAppWarningMinutes: Number(draft.bayAppWarningMinutes),
         bayAppAutoCancelOnTimeout: draft.bayAppAutoCancelOnTimeout,
         bayAppGuestEnforcement: draft.bayAppGuestEnforcement,
+        bayAppWalkInBooking: draft.bayAppWalkInBooking,
       });
       setEditing(false);
       toast({ tone: "success", title: "Kiosk settings saved" });
@@ -69,6 +71,7 @@ export function BayKioskSettings({
           <Field label="Upcoming reservation notice" value={`${clampInt(data.bayAppWarningMinutes, 1, 60, 10)} minutes before`} />
           <Field label="Auto-cancel if not unlocked" value={data.bayAppAutoCancelOnTimeout === true ? "Yes" : "No (prompt just closes)"} />
           <Field label="Unauthorized-guest enforcement" value={data.bayAppGuestEnforcement === true ? "On (player count checked, guests charged)" : "Off"} />
+          <Field label="Walk-in reservations at the bay" value={data.bayAppWalkInBooking === true ? "On (Play asks for a duration and phone number)" : "Off (Play just starts GSPro)"} />
         </div>
       ) : (
         <div className="space-y-5">
@@ -111,6 +114,12 @@ export function BayKioskSettings({
             onChange={(v) => setDraft((d) => ({ ...d, bayAppGuestEnforcement: v }))}
             label="Enforce player count (unauthorized-guest charge)"
             hint="Off by default. When on, the kiosk reads the player count from GSPro, compares it with the reservation's members and guest passes, and shows the too-many-players prompt (charge or exit) with an alert in Bay Alerts. When off, the kiosk only does the reservation notice and phone unlock."
+          />
+          <Toggle
+            checked={draft.bayAppWalkInBooking}
+            onChange={(v) => setDraft((d) => ({ ...d, bayAppWalkInBooking: v }))}
+            label="Walk-in reservations at the bay"
+            hint="Off by default. When on, pressing Play on a free bay asks how long the player wants (up to 3 hours, or until the next reservation) and their phone number, then reserves the bay for them. If someone else has the bay booked within 30 minutes, Play shows who and when and asks them to confirm instead. Works whether or not the kiosk unlock prompt above is enabled."
           />
         </div>
       )}

@@ -2,7 +2,7 @@ import { spawn, execFile, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import log from 'electron-log';
-import { getSettings, launchMonitorStartsGspro } from './store';
+import { getSettings, launchMonitorStartsGspro, migrateSettings } from './store';
 
 export type LauncherState = {
   /** True while a GSPro process exists on this PC (however it was started). */
@@ -66,12 +66,33 @@ function spawnDetached(exe: string): ChildProcess | null {
 const GSPRO_POLL_MS = 2000;
 /** How long after Play we keep "running" while waiting for GSPro to appear. */
 const GSPRO_START_GRACE_MS = 45_000;
-/** Delay between first seeing the GSPro process and hiding home (lets its window paint). */
-const GSPRO_SETTLE_MS = 1500;
+/**
+ * Home stays up until GSPro owns a window, not for a fixed time after its
+ * process appears: the gap between the two varies with the GSPro build and how
+ * busy the PC is, and stepping aside inside it shows the Windows desktop.
+ * Once `gsproPid` is set the poller puts home underneath GSPro's window
+ * (windows.parkHomeBehind), which needs that window to exist.
+ */
+const GSPRO_WINDOW_POLL_MS = 200;
+/** Give up waiting for the window after this long and let home step aside anyway. */
+const GSPRO_WINDOW_WAIT_MS = 60_000;
+/** Used when the window check itself could not run: GSPro's window showed 11.7 s after its process on the Clarksville PC (15 Nov 2026). */
+const GSPRO_WINDOW_FALLBACK_MS = 12_000;
 
 function gsproImageName(): string {
   const p = getSettings().gsproPath;
   return (p && path.basename(p)) || 'GSPro.exe';
+}
+
+/** Run tasklist; `undefined` when it failed, timed out or could not be spawned (PC out of memory). */
+function tasklist(args: string[]): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    try {
+      execFile('tasklist.exe', args, { windowsHide: true, timeout: 8000 }, (err, stdout) => resolve(err ? undefined : stdout));
+    } catch {
+      resolve(undefined);
+    }
+  });
 }
 
 /**
@@ -79,22 +100,55 @@ function gsproImageName(): string {
  * found none, or `undefined` when tasklist itself failed/timed out (the PC is
  * busy; GSPro loading pegs the disk) — callers must treat that as "unknown".
  */
-export function findGsproPid(): Promise<number | null | undefined> {
-  if (process.platform !== 'win32') return Promise.resolve(null);
-  const image = gsproImageName();
+export async function findGsproPid(): Promise<number | null | undefined> {
+  if (process.platform !== 'win32') return null;
+  const stdout = await tasklist(['/FI', `IMAGENAME eq ${gsproImageName()}`, '/FO', 'CSV', '/NH']);
+  if (stdout === undefined) return undefined;
+  // "GSPro.exe","12345","Console","1","1,234 K"   or   INFO: No tasks are running...
+  const m = stdout.match(/^"[^"]+","(\d+)"/m);
+  if (m) return parseInt(m[1], 10);
+  return /no tasks/i.test(stdout) || stdout.trim() === '' ? null : undefined;
+}
+
+/**
+ * Wait for GSPro's first *visible* window. Resolves `'window'` once it is on
+ * screen, `'gone'` if the process exits first (it crashed while starting),
+ * `'timeout'`, or `'unknown'` when the check could not run at all.
+ *
+ * GSPro (Unity) creates its window hidden as soon as the process starts and
+ * only shows it about ten seconds later. `tasklist /V` reports the title of
+ * that hidden window, so it cannot be used here: home was hidden 9 s too early
+ * and the player saw the desktop, then the kiosk again, then GSPro. .NET's
+ * `Process.MainWindowHandle` only counts visible windows, so one PowerShell
+ * polls that until it is non-zero.
+ */
+function waitForGsproWindow(pid: number): Promise<'window' | 'gone' | 'timeout' | 'unknown'> {
+  const script = [
+    `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue`,
+    'if (-not $p) { exit 2 }',
+    `$end = (Get-Date).AddMilliseconds(${GSPRO_WINDOW_WAIT_MS})`,
+    'while ((Get-Date) -lt $end) {',
+    '  try { $p.Refresh(); if ($p.HasExited) { exit 2 } } catch { exit 2 }',
+    '  if ($p.MainWindowHandle -ne [IntPtr]::Zero) { exit 0 }',
+    `  Start-Sleep -Milliseconds ${GSPRO_WINDOW_POLL_MS}`,
+    '}',
+    'exit 3',
+  ].join('\n');
   return new Promise((resolve) => {
-    execFile(
-      'tasklist.exe',
-      ['/FI', `IMAGENAME eq ${image}`, '/FO', 'CSV', '/NH'],
-      { windowsHide: true, timeout: 8000 },
-      (err, stdout) => {
-        if (err) return resolve(undefined);
-        // "GSPro.exe","12345","Console","1","1,234 K"   or   INFO: No tasks are running...
-        const m = stdout.match(/^"[^"]+","(\d+)"/m);
-        if (m) return resolve(parseInt(m[1], 10));
-        resolve(/no tasks/i.test(stdout) || stdout.trim() === '' ? null : undefined);
-      },
-    );
+    try {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { windowsHide: true, timeout: GSPRO_WINDOW_WAIT_MS + 15_000 },
+        (err) => {
+          // For a process that ran and exited non-zero, execFile puts the exit code in err.code.
+          const code: unknown = err ? (err as { code?: unknown }).code : 0;
+          resolve(code === 0 ? 'window' : code === 2 ? 'gone' : code === 3 ? 'timeout' : 'unknown');
+        },
+      );
+    } catch {
+      resolve('unknown'); // could not spawn (PC out of memory)
+    }
   });
 }
 
@@ -131,9 +185,26 @@ async function tick() {
       if (!state.running || state.gsproPid !== pid || !seen) {
         const owner = state.running ? state.sessionOwner : pendingOwner ?? 'external';
         if (!state.running) log.info(`[launcher] GSPro detected (pid ${pid}, started by ${owner})`);
-        // GSPro's first window appears a moment after the process does; wait so
-        // home does not drop away to the bare desktop before GSPro paints.
-        if (!seen) await new Promise((r) => setTimeout(r, GSPRO_SETTLE_MS));
+        // GSPro's first window appears a while after the process does; keep home
+        // up until it exists so the bare desktop never shows in between.
+        if (!seen) {
+          const waitedFrom = Date.now();
+          const win = await waitForGsproWindow(pid);
+          if (win === 'gone') {
+            // GSPro exited before it ever showed a window: it crashed while
+            // starting. Home never stepped aside; say so instead of leaving
+            // "starting" up until the grace period runs out.
+            log.warn(`[launcher] GSPro (pid ${pid}) exited ${Date.now() - waitedFrom} ms after starting, before showing a window`);
+            if (state.running) endSession({ lastError: 'GSPro closed while it was starting. Press Play to try again.' });
+            return;
+          }
+          if (win === 'unknown') {
+            log.warn(`[launcher] could not check for GSPro's window; waiting ${GSPRO_WINDOW_FALLBACK_MS} ms instead`);
+            await new Promise((r) => setTimeout(r, Math.max(0, GSPRO_WINDOW_FALLBACK_MS - (Date.now() - waitedFrom))));
+          } else {
+            log.info(`[launcher] GSPro window ${win === 'window' ? 'visible' : 'not seen (timed out)'} after ${Date.now() - waitedFrom} ms`);
+          }
+        }
         state = {
           ...state,
           running: true,
@@ -198,7 +269,6 @@ function beginSession(owner: NonNullable<LauncherState['sessionOwner']>) {
  *   start anything; just mark the session running so home hides again.
  */
 export function launchPlay(): LauncherState {
-  const s = getSettings();
   state = { ...state, lastError: null };
 
   if (state.running && (seen || pendingSince)) {
@@ -206,6 +276,11 @@ export function launchPlay(): LauncherState {
     emit();
     return state;
   }
+
+  // An IDRA update since the last Play leaves the saved path on the old version.
+  const moved = migrateSettings();
+  if (moved) log.info(`[launcher] ${moved}`);
+  const s = getSettings();
 
   if (s.launchMonitorPath && launchMonitorStartsGspro(s.launchMonitorPath)) {
     try {
@@ -241,7 +316,9 @@ export function launchPlay(): LauncherState {
     gspro = spawnDetached(s.gsproPath);
     const lmErr = state.lastError;
     beginSession('gspro');
-    state = { ...state, gsproPid: gspro?.pid ?? null, lastError: lmErr };
+    // gsproPid is left for the watcher to set once GSPro has a window; setting
+    // it here would hide home straight away, before GSPro has drawn anything.
+    state = { ...state, lastError: lmErr };
     gspro?.on('exit', (code) => log.info(`[launcher] GSPro (spawned) exited (${code})`));
   } catch (e) {
     state = { ...state, running: false, lastError: e instanceof Error ? e.message : String(e), sessionOwner: null };
@@ -254,6 +331,8 @@ export function launchPlay(): LauncherState {
 
 /** Settings → "Test" next to a path: start just that one program. */
 export function launchHelperOnly(which: 'launchMonitor' | 'gspro'): LauncherState {
+  const moved = which === 'launchMonitor' ? migrateSettings() : null;
+  if (moved) log.info(`[launcher] ${moved}`);
   const s = getSettings();
   try {
     const exe = which === 'gspro' ? s.gsproPath : s.launchMonitorPath;
@@ -261,7 +340,6 @@ export function launchHelperOnly(which: 'launchMonitor' | 'gspro'): LauncherStat
     if (which === 'gspro') {
       gspro = child;
       beginSession('gspro');
-      state.gsproPid = child?.pid ?? null;
     } else if (launchMonitorStartsGspro(exe)) {
       lm = child;
       beginSession('launchMonitor');

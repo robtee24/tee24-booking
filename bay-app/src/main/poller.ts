@@ -27,7 +27,7 @@ import { courseWipeDue, wipeCourses } from './maintenance';
  *  - help / schedule modes are user-initiated from the toolbar or home screen.
  */
 
-export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'league' | 'idle' | 'players' | 'restart';
+export type OverlayMode = 'none' | 'unlock' | 'upcoming' | 'help' | 'schedule' | 'export' | 'league' | 'signout' | 'idle' | 'players' | 'restart';
 
 /** An admin opened an IDRA tool (GolfIn Launcher); home is hidden until they come back. */
 export type Maintenance = { tool: IdraTool; exe: string; viaLauncher: boolean; startedAt: string } | null;
@@ -51,6 +51,8 @@ export interface KioskState {
   players: players.PlayersState;
   /** Admin is in an IDRA tool (calibration / updates) with the home screen hidden */
   maintenance: Maintenance;
+  /** Sign Out was pressed: home is up and GSPro / the launch monitor are being closed */
+  signingOut: boolean;
 }
 
 const POLL_IDLE_MS = 15_000;
@@ -71,6 +73,7 @@ let state: KioskState = {
   screen: screenWatch.getScreen(),
   players: players.getPlayersState(null),
   maintenance: null,
+  signingOut: false,
 };
 
 const acceptedUpcoming = new Set<string>();
@@ -223,7 +226,7 @@ function publish() {
     log.info('[tools] GSPro started; leaving maintenance mode');
     maintenance = null;
   }
-  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher, screen: screenWatch.getScreen(), maintenance };
+  state = { ...state, registered: isRegistered(), settings: getSettings(), launcher, screen: screenWatch.getScreen(), maintenance, signingOut };
   windows.broadcast('kiosk:state', state);
   applyWindows();
 }
@@ -257,7 +260,10 @@ function applyWindows() {
   if (inSession) {
     // Home stays visible *under* GSPro (see windows.parkHomeBehind), so GSPro
     // closing reveals the kiosk, never the desktop.
-    windows.parkHomeBehind(!wasInSession);
+    windows.parkHomeBehind(launcher.gsproPid!, !wasInSession, () => {
+      const l = getLauncherState();
+      return l.running && !!l.gsproPid && !homeForced;
+    });
     windows.showToolbar();
   } else if (inMaintenance) {
     windows.hideHome();
@@ -276,6 +282,48 @@ export function setHomeForced(v: boolean) {
   homeForced = v;
   if (v) maintenance = null; // the shortcut also ends an IDRA tools session
   publish();
+}
+
+// ---------- Sign out (toolbar) ----------
+
+let signingOut = false;
+
+/**
+ * The player is done: bring the kiosk home screen up straight away, then close
+ * GSPro, the launch-monitor software and the GolfIn Launcher behind it. Home
+ * shows "Signing out…" (Play disabled) until GSPro is really gone, so a quick
+ * second tap cannot attach to the session that is being closed.
+ *
+ * The bay's reservation is left alone; this only ends what is on screen.
+ */
+export async function signOut(): Promise<{ ok: true }> {
+  userMode = 'none';
+  if (signingOut) return { ok: true };
+  if (!getLauncherState().running) {
+    evaluate();
+    publish();
+    return { ok: true };
+  }
+  signingOut = true;
+  homeForced = true; // home over GSPro now, the same way Ctrl+Shift+T does it
+  maintenance = null;
+  log.info('[signout] player signed out; closing the session');
+  evaluate();
+  publish();
+  try {
+    await closeSession('sign out');
+    // The watcher needs a couple of polls to confirm GSPro is gone. Dropping
+    // homeForced before that would park home behind a window that is closing.
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && getLauncherState().running) await new Promise((r) => setTimeout(r, 500));
+    if (getLauncherState().running) log.warn('[signout] GSPro still reported running 15 s after closing it');
+  } finally {
+    signingOut = false;
+    homeForced = false;
+    evaluate();
+    publish();
+  }
+  return { ok: true };
 }
 
 // ---------- IDRA tools (maintenance mode) ----------
@@ -423,7 +471,7 @@ function evaluate() {
       if (!acceptedUpcoming.has(next.id)) {
         overlay = { mode: 'upcoming', booking: next, deadline: next.start };
       }
-      if (!countdown) countdown = { label: `${next.firstName} ${next.lastInitial}. starts in`, until: next.start };
+      if (!countdown) countdown = { label: `${next.firstName}${next.lastInitial ? ` ${next.lastInitial}.` : ''} starts in`, until: next.start };
     }
   }
 

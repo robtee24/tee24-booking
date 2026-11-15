@@ -167,7 +167,7 @@ export function ExportFlow({ currentBooking, onClose }: { currentBooking: Bookin
           <button className={`export-file ${useBooking ? 'on' : ''}`} onClick={() => setUseBooking((v) => !v)} style={{ marginBottom: 10 }}>
             <span className="check">{useBooking && <CheckIcon size={18} />}</span>
             <span style={{ flex: 1 }}>
-              <span className="name">{currentBooking.firstName} {currentBooking.lastInitial}. — this reservation</span>
+              <span className="name">{currentBooking.firstName}{currentBooking.lastInitial ? ` ${currentBooking.lastInitial}.` : ''} — this reservation</span>
               <span className="tiny" style={{ display: 'block' }}>Uses the account on the booking{wantsEmail ? ' (and its email, unless you type another below)' : ''}</span>
             </span>
           </button>

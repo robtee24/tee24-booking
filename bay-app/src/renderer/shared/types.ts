@@ -1,11 +1,12 @@
 // Type-only re-exports from the main process (erased at build time).
 export type { KioskState, OverlayMode, Maintenance } from '../../main/poller';
 export type { IdraTool, OpenToolResult } from '../../main/tools';
-export type { StatusResponse, Booking, AdminLocation, AdminSession } from '../../main/api';
+export type { StatusResponse, Booking, AdminLocation, AdminSession, WalkInPlan, WalkInBooking } from '../../main/api';
 export type { KioskBridge } from '../../main/preload';
 export type { KioskSettings } from '../../main/store';
 export type { UpdatePhase } from '../../main/updater';
 export type { RemoteAgentStatus } from '../../main/remote';
+export type { PcSetupStatus, PcSetupResult, PcSetupUndoResult } from '../../main/pcsetup';
 export type { LauncherState } from '../../main/launcher';
 export type { FoundCsv, ExportResult } from '../../main/exports';
 export type { GsproScreen, ScreenKind } from '../../main/screen';

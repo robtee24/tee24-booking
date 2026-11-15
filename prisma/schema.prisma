@@ -108,6 +108,8 @@ model Location {
   bayAppAutoCancelOnTimeout Boolean @default(false)
   /// Kiosk reads GSPro's player count and charges/alerts for unauthorized guests. Off = reservation unlock only.
   bayAppGuestEnforcement    Boolean @default(false)
+  /// Kiosk Play asks a walk-in how long they want and their phone number, and reserves the bay for them. Off = Play just starts GSPro.
+  bayAppWalkInBooking       Boolean @default(false)
 
   // Attendance / Door dedupe window (hours between unlocks counted as same visit)
   attendanceDedupeHours     Int @default(2)

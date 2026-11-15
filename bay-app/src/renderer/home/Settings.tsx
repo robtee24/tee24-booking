@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { kiosk, isErr } from '../shared/bridge';
-import type { AdminSession, KioskState, RemoteAgentStatus, UpdatePhase } from '../shared/types';
+import type { AdminSession, KioskState, PcSetupResult, PcSetupStatus, PcSetupUndoResult, RemoteAgentStatus, UpdatePhase } from '../shared/types';
 import { AdminLogin } from '../shared/AdminLogin';
 import { AssignBay } from './Setup';
 import { labelLM } from '../shared/TroubleshootFlow';
 import { BackIcon, WrenchIcon, UploadIcon } from '../shared/Icons';
 
 type Session = Omit<AdminSession, 'token'>;
-type Tab = 'bay' | 'assignment' | 'launch' | 'idra' | 'lockdown' | 'remote' | 'app';
+type Tab = 'bay' | 'assignment' | 'launch' | 'idra' | 'lockdown' | 'pc' | 'remote' | 'app';
 type IdraTool = 'calibration' | 'updates';
 type PathsExist = { launchMonitor: boolean; gspro: boolean; golfinLauncher: boolean; idraCalibration: boolean; idraUpdates: boolean };
 
@@ -57,6 +57,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
                 ['launch', 'Play button'],
                 ['idra', 'IDRA tools'],
                 ['lockdown', 'Lockdown & exit'],
+                ['pc', 'PC cleanup'],
                 ['remote', 'Remote support'],
                 ['app', 'App & updates'],
               ] as [Tab, string][]).map(([k, label]) => (
@@ -71,6 +72,7 @@ export function Settings({ state, onClose }: { state: KioskState; onClose: () =>
               {tab === 'launch' && <LaunchPaths state={state} />}
               {tab === 'idra' && <IdraTools state={state} />}
               {tab === 'lockdown' && <Lockdown />}
+              {tab === 'pc' && <PcCleanup state={state} />}
               {tab === 'remote' && <Remote />}
               {tab === 'app' && <AppUpdates state={state} />}
             </div>
@@ -608,6 +610,147 @@ function Lockdown() {
         Not covered: Ctrl+Esc (Start), Alt+Tab and the physical power button — a full lock-out needs Windows Assigned Access, which also blocks GSPro’s own windows.
       </div>
     </div>
+    </div>
+  );
+}
+
+// ---------- PC cleanup (remove preinstalled apps, tune Windows for GSPro) ----------
+
+function PcCleanup({ state }: { state: KioskState }) {
+  const [st, setSt] = useState<PcSetupStatus | null>(null);
+  // Group ids the admin has unticked; everything found is removed by default.
+  const [skip, setSkip] = useState<string[]>([]);
+  const [tune, setTune] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string[] | null>(null);
+  const [problems, setProblems] = useState<string[]>([]);
+
+  async function refresh() {
+    setErr(null);
+    const r = await kiosk.adminPcSetupStatus();
+    if (isErr(r)) return setErr(r.error);
+    setSt(r as PcSetupStatus);
+  }
+  useEffect(() => {
+    refresh();
+    return kiosk.onProgress(setProgress);
+  }, []);
+
+  const groups = (st?.groups ?? []).filter((g) => g.apps.length > 0 && !skip.includes(g.id));
+  const appCount = groups.reduce((n, g) => n + g.apps.length, 0);
+  const steps = (st?.tune ?? []).filter((t) => t.applicable);
+  const tuneLeft = steps.filter((t) => !t.on).length;
+  const willTune = tune && tuneLeft > 0;
+  const gsproOpen = state.launcher.running;
+
+  async function run() {
+    const parts = [
+      appCount > 0 ? `remove ${appCount} app${appCount === 1 ? '' : 's'} from this computer for every Windows account` : '',
+      willTune ? 'change Windows settings for GSPro' : '',
+    ].filter(Boolean);
+    const note = appCount > 0 ? ' Removed apps can only be put back from Microsoft Store.' : '';
+    if (!confirm(`This will ${parts.join(' and ')}.${note} Continue?`)) return;
+    setBusy(true); setErr(null); setDone(null); setProblems([]);
+    const r = await kiosk.adminPcSetupApply({ groups: appCount > 0 ? groups.map((g) => g.id) : [], tune: willTune });
+    setBusy(false); setProgress(null);
+    if (isErr(r)) return setErr(r.error);
+    const res = r as PcSetupResult;
+    setSt(res.status);
+    setDone([
+      res.removed.length ? `Removed ${res.removed.length} app${res.removed.length === 1 ? '' : 's'}: ${res.removed.join(', ')}.` : '',
+      res.tuned.length ? `Windows tuned: ${res.tuned.join('; ')}. Restart Windows for all of it to take effect.` : '',
+    ].filter(Boolean));
+    setProblems([
+      ...res.skipped.map((s) => `Skipped “${s.label}”: ${s.reason}.`),
+      ...res.failed.map((f) => `Could not finish “${f.label}”: ${f.error}`),
+    ]);
+  }
+
+  async function undo() {
+    if (!confirm('Put the Windows settings back to how they were before the tuning? Removed apps are not reinstalled.')) return;
+    setBusy(true); setErr(null); setDone(null); setProblems([]);
+    const r = await kiosk.adminPcSetupUndo();
+    setBusy(false); setProgress(null);
+    if (isErr(r)) return setErr(r.error);
+    const res = r as PcSetupUndoResult;
+    setSt(res.status);
+    setTune(false);
+    setDone([`Windows settings restored (${res.restored}). Restart Windows for all of it to take effect.`]);
+    setProblems(res.failed.map((f) => `Could not restore ${f.label}: ${f.error}`));
+  }
+
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <div>
+          <div className="card-title">Remove preinstalled apps</div>
+          <div className="card-sub">
+            Removes the apps Windows and the PC maker install that a bay never uses. Only the apps listed here are touched; untick a group to keep it.
+          </div>
+        </div>
+        {!st ? (
+          <div className="row muted"><span className="spinner" /> Checking this computer…</div>
+        ) : (
+          st.groups.map((g) => (
+            <label key={g.id} className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <input
+                type="checkbox"
+                style={{ width: 22, height: 22, marginTop: 2, flex: 'none' }}
+                disabled={busy || g.apps.length === 0}
+                checked={g.apps.length > 0 && !skip.includes(g.id)}
+                onChange={(e) => setSkip((s) => (e.target.checked ? s.filter((x) => x !== g.id) : [...s, g.id]))}
+              />
+              <span>
+                <strong>{g.label}</strong>{g.apps.length > 0 && <span className="muted"> · {g.apps.length}</span>}
+                <br />
+                <span className="muted">{g.apps.length > 0 ? g.apps.join(', ') : 'Nothing left to remove'}</span>
+              </span>
+            </label>
+          ))
+        )}
+        <div className="hint">
+          Always kept: NVIDIA software, Xbox Game Bar and Game Mode, OMEN Gaming Hub, HP support and diagnostics, audio and video codecs, Microsoft Store, Edge, OneDrive, Notepad, Terminal, Snipping Tool, Quick Assist and Windows Security.
+          Removing Microsoft 365 can take several minutes.
+        </div>
+      </div>
+
+      <div className="card stack">
+        <div>
+          <div className="card-title">Tune Windows for GSPro</div>
+          <div className="card-sub">
+            Sets Windows up to run only the kiosk, the launch monitor software and GSPro. Every change here can be undone.
+          </div>
+        </div>
+        {steps.map((t) => (
+          <div key={t.id} className="row" style={{ gap: 10 }}>
+            {t.on ? <span className="badge badge-ok"><span className="dot" /> Done</span> : <span className="badge badge-warn">Not set</span>}
+            <span>{t.label}</span>
+          </div>
+        ))}
+        <label className="row" style={{ gap: 10 }}>
+          <input type="checkbox" style={{ width: 22, height: 22 }} disabled={busy || tuneLeft === 0} checked={willTune} onChange={(e) => setTune(e.target.checked)} />
+          <span className="muted">{tuneLeft === 0 ? 'All tuning is in place' : `Apply the ${tuneLeft} setting${tuneLeft === 1 ? '' : 's'} not yet in place`}</span>
+        </label>
+      </div>
+
+      {progress && busy && <div className="row muted"><span className="spinner" /> {progress}</div>}
+      {done?.map((d) => <div key={d} className="success">{d}</div>)}
+      {problems.map((p) => <div key={p} className="error">{p}</div>)}
+      {err && <div className="error">{err}</div>}
+      <div className="row">
+        <button className="btn btn-primary" disabled={busy || !st || gsproOpen || (appCount === 0 && !willTune)} onClick={run}>
+          {busy ? <span className="spinner" /> : 'Clean up this PC'}
+        </button>
+        {st?.canUndo && <button className="btn btn-danger" disabled={busy || gsproOpen} onClick={undo}>Undo tuning</button>}
+        <button className="btn btn-ghost" disabled={busy} onClick={refresh}>Refresh</button>
+        {gsproOpen && <span className="muted">Close GSPro first.</span>}
+      </div>
+      <div className="hint">
+        Windows will ask for permission (UAC) once. Run it again after a big Windows update, which can bring some of these apps back.
+        Not changed: Windows Update, Windows Security, and the memory service (SysMain) that an 8 GB bay PC relies on.
+      </div>
     </div>
   );
 }

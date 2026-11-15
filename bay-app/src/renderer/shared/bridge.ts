@@ -56,6 +56,11 @@ export function formatTime(iso: string, tz?: string): string {
   }
 }
 
+/** "Chris B." — or just the first name when there is no last name (walk-in reservations). */
+export function bookingName(b: { firstName: string; lastInitial?: string | null }): string {
+  return b.lastInitial ? `${b.firstName} ${b.lastInitial}.` : b.firstName;
+}
+
 export function formatPhoneInput(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 10);
   if (d.length <= 3) return d;
