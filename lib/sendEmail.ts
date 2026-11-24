@@ -6,11 +6,13 @@
  *   RESEND_API_KEY=re_...
  *   RESEND_FROM='Tee24 Reservations <reservations@tee24.golf>'
  *   FROM_EMAIL='Tee24 Reservations <reservations@tee24.golf>' // legacy fallback
+ *   EMAIL_REPLY_TO=info@tee24.golf  // optional; mailbox that gets every reply (this is the default)
+ *   EMAIL_REPLY_DOMAIN=notifications.tee24.golf  // optional; when set, replies also land in the admin inbox
  *   COMMS_DRY_RUN=1  → log instead of calling Resend (safe for local testing)
  */
 import { Resend } from 'resend';
 import { recordOutbound, type LedgerOption } from '@/lib/message-ledger';
-import { defaultReplyTo } from '@/lib/inbound-email';
+import { replyToAddresses } from '@/lib/inbound-email';
 import { memberBaseUrl } from '@/lib/public-url';
 
 type SendEmailResult = {
@@ -146,9 +148,9 @@ async function sendEmailInner(opts: SendEmailOptions): Promise<SendEmailResult> 
     if (opts.text) payload.text = opts.text;
     if (opts.bcc) payload.bcc = opts.bcc;
     if (opts.cc) payload.cc = opts.cc;
-    // Replies should land in the inbox: default Reply-To to the inbound domain when configured.
-    const replyTo = opts.replyTo ?? defaultReplyTo();
-    if (replyTo) payload.replyTo = replyTo;
+    // Replies never go to the sending address: they go to the admin inbox (when
+    // inbound email is set up) and to the front-desk mailbox.
+    payload.replyTo = replyToAddresses(opts.replyTo);
     if (opts.headers) payload.headers = opts.headers;
     if (opts.tags) payload.tags = opts.tags;
     if (opts.attachments?.length) payload.attachments = opts.attachments;

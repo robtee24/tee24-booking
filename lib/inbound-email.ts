@@ -21,6 +21,35 @@ export function defaultReplyTo(): string | null {
   return d ? `inbox@${d}` : null;
 }
 
+/** Where replies go when there is no inbound domain and the send didn't set its own Reply-To. */
+export const FALLBACK_REPLY_TO = "info@tee24.golf";
+
+/** `EMAIL_REPLY_TO` overrides the built-in address without a code change. */
+export function fallbackReplyTo(): string {
+  const v = (process.env.EMAIL_REPLY_TO ?? "").trim();
+  return v.includes("@") ? v : FALLBACK_REPLY_TO;
+}
+
+/**
+ * Reply-To for an outgoing email.
+ *
+ *  • Admin-inbox address (`inbox@` / `reply+<id>@` on the inbound domain) →
+ *    that address plus the front-desk mailbox, so a reply lands in both.
+ *  • Any other address the caller chose (e.g. the org's Reply-To setting) →
+ *    that address only.
+ *  • Nothing chosen → the inbox address when inbound email is set up, plus the
+ *    front-desk mailbox; otherwise the mailbox alone.
+ */
+export function replyToAddresses(chosen?: string | null): string[] {
+  const mailbox = fallbackReplyTo();
+  const primary = (chosen ?? "").trim() || defaultReplyTo();
+  if (!primary) return [mailbox];
+  const domain = inboundReplyDomain();
+  const isInboxAddress = !!domain && bareAddress(primary).endsWith(`@${domain}`);
+  if (!isInboxAddress || bareAddress(primary) === bareAddress(mailbox)) return [primary];
+  return [primary, mailbox];
+}
+
 export function threadReplyTo(conversationId: string): string | null {
   const d = inboundReplyDomain();
   return d ? `reply+${conversationId}@${d}` : null;
