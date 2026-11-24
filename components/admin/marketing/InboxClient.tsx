@@ -349,6 +349,7 @@ function Conversations({ initial, admins, currentAdminId, scope, locations }: Pr
                             {out && m.sentByAdminId ? ` · ${adminName(m.sentByAdminId)}` : ""}
                             {out && m.status !== "SENT" && m.status !== "DELIVERED" ? ` · ${m.status.toLowerCase()}` : ""}
                             {m.source === "website.contact" ? " · website form" : ""}
+                            {m.source === "staff.email" ? " · sent from mailbox" : ""}
                           </div>
                         </div>
                       </div>

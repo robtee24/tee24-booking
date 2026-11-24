@@ -44,6 +44,7 @@ const SOURCE_LABELS: Record<string, string> = {
   "daypass.purchase": "Day pass",
   "member.invite": "Member invite",
   "inbound.email": "Inbound email",
+  "staff.email": "Sent from staff mailbox",
   "inbound.sms": "Inbound text",
   "website.contact": "Website form",
 };

@@ -436,6 +436,93 @@ export async function ingestInboundEmail(input: {
   return { duplicate: false as const, messageId: msg.id, conversationId: conversation.id, memberId, visitorId };
 }
 
+/**
+ * An email a staff member sent from their own mailbox (e.g. Gmail) that the
+ * inbound address was copied on. Filed as OUTBOUND under the person it was
+ * sent to, so the thread in the inbox shows both sides.
+ */
+export async function ingestStaffSentEmail(input: {
+  from: string;
+  /** The customer the email was written to. */
+  to: string;
+  /** Every address on the message, to pick up a `reply+<conversationId>@` thread address. */
+  recipients?: string[];
+  subject?: string | null;
+  html?: string | null;
+  text?: string | null;
+  providerId?: string | null;
+  sentAt?: Date;
+}) {
+  const prisma = getPrisma();
+  const from = input.from.trim().toLowerCase();
+  const to = input.to.trim().toLowerCase();
+
+  if (input.providerId) {
+    const dup = await prisma.message.findFirst({ where: { providerId: input.providerId, direction: "OUTBOUND" }, select: { id: true } });
+    if (dup) return { duplicate: true as const, messageId: dup.id };
+  }
+
+  const threadId = parseReplyAddress(input.recipients ?? []);
+  let conversation = threadId ? await prisma.conversation.findUnique({ where: { id: threadId }, include: { member: { select: { locationId: true } } } }) : null;
+  let memberId = conversation?.memberId ?? null;
+  let visitorId = conversation?.visitorId ?? null;
+  let locationId = conversation?.locationId ?? conversation?.member?.locationId ?? null;
+
+  if (!memberId && !visitorId) {
+    const member = await resolveMemberByAddress("EMAIL", to, locationId);
+    if (member) {
+      memberId = member.id;
+      locationId = locationId ?? member.locationId;
+    } else {
+      const lead = await findOrCreateLeadByEmail(to, { locationId, source: "Staff email" });
+      if (lead) {
+        visitorId = lead.id;
+        locationId = locationId ?? lead.locationId;
+      }
+    }
+  }
+
+  if (!conversation) {
+    conversation = await prisma.conversation.findFirst({
+      where: memberId ? { memberId, status: "OPEN" } : visitorId ? { visitorId, status: "OPEN" } : { id: "__none__" },
+      orderBy: { lastMessageAt: "desc" },
+      include: { member: { select: { locationId: true } } },
+    });
+  }
+  const sentAt = input.sentAt ?? new Date();
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: { memberId, visitorId, locationId, status: "OPEN", subject: input.subject?.trim() || "Email", lastMessageAt: sentAt },
+      include: { member: { select: { locationId: true } } },
+    });
+  }
+
+  const admin = await prisma.admin.findFirst({ where: { email: { equals: from, mode: "insensitive" } }, select: { id: true } });
+  const body = (input.html && input.html.trim()) || (input.text ?? "").replace(/\n/g, "<br>") || "(empty message)";
+  const msg = await prisma.message.create({
+    data: {
+      conversationId: conversation.id,
+      memberId,
+      locationId,
+      channel: "EMAIL",
+      direction: "OUTBOUND",
+      status: "SENT",
+      category: "TRANSACTIONAL",
+      subject: input.subject ?? null,
+      body,
+      fromAddress: from,
+      toAddress: to,
+      providerId: input.providerId ?? null,
+      sentByAdminId: admin?.id ?? null,
+      source: "staff.email",
+    },
+  });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: sentAt } });
+  if (visitorId) await prisma.visitor.update({ where: { id: visitorId }, data: { lastContactedAt: sentAt } }).catch(() => {});
+
+  return { duplicate: false as const, messageId: msg.id, conversationId: conversation.id, memberId, visitorId };
+}
+
 /* ------------------------------------------------------------------ */
 /* Flat message log — every email/SMS, in or out, member or not.       */
 /* ------------------------------------------------------------------ */

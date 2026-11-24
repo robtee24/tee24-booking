@@ -72,6 +72,48 @@ export function bareAddress(addr: string | null | undefined): string {
   return (m ? m[1] : addr).trim().toLowerCase();
 }
 
+const domainOf = (addr: string | null | undefined) => bareAddress(addr).split("@")[1] ?? "";
+
+/** The address the app itself sends from (RESEND_FROM / RESEND_FROM_EMAIL / FROM_EMAIL). */
+export function appSenderAddress(): string {
+  return bareAddress(process.env.RESEND_FROM || process.env.RESEND_FROM_EMAIL || process.env.FROM_EMAIL || "");
+}
+
+export type InboundRoute =
+  /** A customer (or anyone outside) wrote to us → file as received. */
+  | { kind: "received" }
+  /** Staff wrote to a customer from their own mailbox and the inbox got a copy → file as sent. */
+  | { kind: "staff-sent"; recipient: string }
+  /** Our own automated mail coming back (e.g. a contact-form email forwarded from the mailbox). */
+  | { kind: "own" }
+  /** Staff-to-staff mail that only reached us through a forward or BCC. */
+  | { kind: "internal" };
+
+/**
+ * Decide what a message arriving at the inbound domain is. Mail reaches it three
+ * ways: a reply addressed to `inbox@` / `reply+<id>@`, the front-desk mailbox
+ * forwarding what it receives, and a copy (BCC or mail-server rule) of what
+ * staff send from that mailbox.
+ */
+export function classifyInboundEmail(input: {
+  from: string | null | undefined;
+  to?: Array<string | null | undefined> | null;
+  cc?: Array<string | null | undefined> | null;
+}): InboundRoute {
+  const from = bareAddress(input.from);
+  const inboundDomain = inboundReplyDomain();
+  const staffDomain = domainOf(fallbackReplyTo());
+  if (from && (from === appSenderAddress() || (inboundDomain && domainOf(from) === inboundDomain))) return { kind: "own" };
+  if (!staffDomain || domainOf(from) !== staffDomain) return { kind: "received" };
+
+  const recipients = [...(input.to ?? []), ...(input.cc ?? [])].map(bareAddress).filter((a) => a.includes("@"));
+  const outside = recipients.find((a) => domainOf(a) !== staffDomain && domainOf(a) !== inboundDomain);
+  if (outside) return { kind: "staff-sent", recipient: outside };
+  // Written straight to the inbox address (e.g. a staff member who is also a member replying to a booking email).
+  if (inboundDomain && recipients.some((a) => domainOf(a) === inboundDomain)) return { kind: "received" };
+  return { kind: "internal" };
+}
+
 /** Display name from `Jane Doe <jane@x.com>`, or null. */
 export function displayName(addr: string | null | undefined): string | null {
   if (!addr) return null;

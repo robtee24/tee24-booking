@@ -4,7 +4,10 @@
  *  • email.sent / delivered / delivery_delayed / opened / clicked / bounced /
  *    complained → update the matching outbound Message (by provider id).
  *  • email.received → fetch the full body from the Receiving API and thread it
- *    into the inbox (`ingestInboundEmail`).
+ *    into the inbox: mail from outside is filed as received
+ *    (`ingestInboundEmail`), a copy of what staff sent from their own mailbox
+ *    is filed as sent (`ingestStaffSentEmail`), and each email is filed once
+ *    however many copies arrive.
  *
  * Setup (Resend dashboard → Webhooks): endpoint `/api/webhooks/resend`, events
  * above, then store the signing secret as RESEND_WEBHOOK_SECRET. Receiving
@@ -13,8 +16,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getPrisma } from "@/lib/db";
-import { ingestInboundEmail } from "@/services/inbox.service";
-import { bareAddress, displayName, isAutomatedSender } from "@/lib/inbound-email";
+import { ingestInboundEmail, ingestStaffSentEmail } from "@/services/inbox.service";
+import { bareAddress, classifyInboundEmail, displayName, isAutomatedSender } from "@/lib/inbound-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,13 +90,24 @@ export async function POST(req: NextRequest) {
   const type = event.type ?? "unknown";
   const data = event.data ?? {};
   const emailId: string | null = data.email_id ?? null;
-  const externalId = `${type}:${emailId ?? req.headers.get("svix-id") ?? Date.now()}`;
+  // A received email is keyed by its Message-ID, not Resend's id: the same email
+  // can reach the inbound address twice (sent to `inbox@` and to the front-desk
+  // mailbox, which forwards its copy here) and must show up once.
+  const receivedMessageId: string | null = type === "email.received" && typeof data.message_id === "string" && data.message_id.trim() ? data.message_id.trim() : null;
+  const externalId = `${type}:${receivedMessageId ?? emailId ?? req.headers.get("svix-id") ?? Date.now()}`;
 
   const delivery = await prisma.webhookDelivery.upsert({
     where: { provider_externalId: { provider: "RESEND", externalId } },
     create: { provider: "RESEND", eventType: type, externalId, payload: event as any, signature: req.headers.get("svix-signature") ?? null, status: "RECEIVED" },
     update: { attempts: { increment: 1 } },
   });
+
+  // attempts > 0 → the row already existed. Same Resend id = a retry of the same
+  // event (carry on; ingest is idempotent). Different id = the second copy.
+  const firstCopyId = (delivery.payload as { data?: { email_id?: string } } | null)?.data?.email_id;
+  if (receivedMessageId && delivery.attempts > 0 && firstCopyId !== emailId) {
+    return NextResponse.json({ ok: true, handled: false, reason: "duplicate copy" });
+  }
 
   try {
     let result: Record<string, unknown> = { handled: false };
@@ -144,6 +158,10 @@ async function handleReceived(data: Record<string, any>): Promise<Record<string,
   const to: string[] = [...(data.to ?? []), ...(data.received_for ?? []), ...(data.cc ?? [])].map((x: string) => String(x));
   if (!emailId || !from) return { handled: false, reason: "missing id/from" };
 
+  const route = classifyInboundEmail({ from, to: data.to, cc: data.cc });
+  if (route.kind === "own") return { handled: false, reason: "our own outgoing mail" };
+  if (route.kind === "internal") return { handled: false, reason: "internal mail" };
+
   // Body/headers aren't in the webhook — fetch them.
   let html: string | null = null;
   let text: string | null = null;
@@ -166,16 +184,33 @@ async function handleReceived(data: Record<string, any>): Promise<Record<string,
   }
   if (isAutomatedSender(data.from ?? from, headers)) return { handled: false, reason: "automated sender" };
 
+  const unavailable = "(body unavailable — Resend API key lacks receiving access)";
+  const receivedAt = data.created_at ? new Date(data.created_at) : new Date();
+
+  if (route.kind === "staff-sent") {
+    const r = await ingestStaffSentEmail({
+      from,
+      to: route.recipient,
+      recipients: to,
+      subject: data.subject ?? null,
+      html,
+      text: text ?? (html ? null : unavailable),
+      providerId: emailId,
+      sentAt: receivedAt,
+    });
+    return { handled: true, staffSent: true, ...r };
+  }
+
   const r = await ingestInboundEmail({
     from,
     fromName,
     to,
     subject: data.subject ?? null,
     html,
-    text: text ?? (html ? null : "(body unavailable — Resend API key lacks receiving access)"),
+    text: text ?? (html ? null : unavailable),
     providerId: emailId,
     messageId: data.message_id ?? null,
-    receivedAt: data.created_at ? new Date(data.created_at) : new Date(),
+    receivedAt,
   });
   return { handled: true, ...r };
 }
