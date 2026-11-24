@@ -16,6 +16,7 @@ import { isOptInMessage, isOptOutMessage } from "@/lib/quo";
 import { adminRoutes } from "@/lib/admin/routes";
 import { resolveMemberByAddress } from "@/lib/message-ledger";
 import { defaultReplyTo, parseReplyAddress, threadReplyTo } from "@/lib/inbound-email";
+import { emailFrontDeskMemberMessage } from "@/lib/front-desk-email";
 import { findOrCreateLeadByEmail, findOrCreateLeadByPhone } from "./lead.service";
 
 export type InboxFilter = {
@@ -684,6 +685,87 @@ function previewOf(body: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 160);
+}
+
+/* ------------------------------------------------------------------ */
+/* Member portal (Contact → "Send us a message")                       */
+/* ------------------------------------------------------------------ */
+
+export type PortalMessageMember = {
+  id: string;
+  organizationId: string | null;
+  locationId: string;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  location?: { slug: string; name: string } | null;
+};
+
+/**
+ * A message a signed-in member wrote in the portal. Filed on the member's open
+ * conversation (so it shows in the admin Inbox and on their profile), and
+ * copied by email to the front-desk mailbox.
+ */
+export async function ingestPortalMessage(
+  member: PortalMessageMember,
+  input: { body: string; subject?: string | null; topic?: string | null; channel: "EMAIL" | "SMS" },
+) {
+  const prisma = getPrisma();
+  const subject = input.subject?.trim() || null;
+  const now = new Date();
+
+  let convo = await prisma.conversation.findFirst({
+    where: { memberId: member.id, locationId: member.locationId, status: "OPEN" },
+    orderBy: { lastMessageAt: "desc" },
+  });
+  if (!convo) {
+    convo = await prisma.conversation.create({
+      data: { memberId: member.id, locationId: member.locationId, status: "OPEN", subject: subject ?? "Member message", lastMessageAt: now },
+    });
+  }
+
+  const msg = await prisma.message.create({
+    data: {
+      conversationId: convo.id,
+      memberId: member.id,
+      locationId: member.locationId,
+      direction: "INBOUND",
+      channel: input.channel,
+      status: "DELIVERED",
+      category: "TRANSACTIONAL",
+      subject,
+      body: input.body,
+      fromAddress: (input.channel === "SMS" ? member.phone : member.email) ?? null,
+      source: "portal.contact",
+    },
+  });
+  await prisma.conversation.update({ where: { id: convo.id }, data: { lastMessageAt: now } });
+
+  const slug = member.location?.slug ?? null;
+  const conversationPath = `${slug ? adminRoutes.loc.marketing.inbox(slug) : adminRoutes.inbox()}?c=${convo.id}`;
+  void adminNotify({
+    organizationId: member.organizationId,
+    locationId: member.locationId,
+    kind: "message.inbound",
+    severity: "INFO",
+    title: `New message from ${member.firstName} ${member.lastName}`,
+    body: subject ?? input.body.slice(0, 120),
+    link: conversationPath,
+    data: { conversationId: convo.id, messageId: msg.id },
+  });
+
+  const copy = await emailFrontDeskMemberMessage({
+    member: { firstName: member.firstName, lastName: member.lastName, email: member.email, phone: member.phone, locationName: member.location?.name ?? null },
+    subject,
+    topic: input.topic ?? null,
+    body: input.body,
+    replyBy: input.channel,
+    conversationPath,
+    profilePath: slug ? adminRoutes.loc.members.detailTab(slug, member.id, "messaging") : null,
+  });
+
+  return { conversationId: convo.id, messageId: msg.id, emailed: copy.ok };
 }
 
 /* ------------------------------------------------------------------ */

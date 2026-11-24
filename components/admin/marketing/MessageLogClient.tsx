@@ -47,6 +47,7 @@ const SOURCE_LABELS: Record<string, string> = {
   "staff.email": "Sent from staff mailbox",
   "inbound.sms": "Inbound text",
   "website.contact": "Website form",
+  "portal.contact": "Member portal",
 };
 const sourceLabel = (s: string | null) => (s ? SOURCE_LABELS[s] ?? s : "");
 
